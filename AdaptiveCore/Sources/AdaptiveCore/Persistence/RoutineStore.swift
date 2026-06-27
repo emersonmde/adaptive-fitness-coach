@@ -120,4 +120,29 @@ public final class RoutineStore {
         // earliest routine today, i.e. its next occurrence is the same weekday next week.
         return routines(on: weekday).first
     }
+
+    /// The next scheduled occurrence across all routines: the routine and the exact `Date` it
+    /// next fires (its repeat-day at its scheduled time, or midnight if no time is set). Drives
+    /// the phone's "Up Next" hero ("Tomorrow · 7:00 AM"). Returns nil if nothing is scheduled.
+    public func nextOccurrence(now: Date = Date(), calendar: Calendar = .current) -> (routine: Routine, date: Date)? {
+        var best: (routine: Routine, date: Date)?
+        for routine in routines where !routine.repeatDays.isEmpty {
+            for day in routine.repeatDays {
+                var components = DateComponents()
+                components.weekday = day.rawValue
+                if let time = routine.scheduleTime {
+                    components.hour = time.hour
+                    components.minute = time.minute
+                } else {
+                    components.hour = 0
+                    components.minute = 0
+                }
+                guard let date = calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTime) else { continue }
+                if best == nil || date < best!.date {
+                    best = (routine, date)
+                }
+            }
+        }
+        return best
+    }
 }

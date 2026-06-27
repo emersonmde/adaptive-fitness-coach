@@ -1,19 +1,24 @@
 import SwiftUI
 import AdaptiveCore
 
-/// P1 — the hub. The user's routines, grouped by the days they repeat. "New routine" is the
-/// primary action. (The AI-draft shortcut from the design is deferred past P0.)
+/// P1 — the hub, rebuilt dark/neon. Top to bottom: an "Up Next" hero (what's next), a
+/// week-at-a-glance strip, then one card per routine (a routine owns its days, shown once —
+/// no more day-section duplication). "New routine" is the focal lime CTA.
 struct WeekView: View {
     let store: RoutineStore
     @State private var showingNewRoutine = false
 
+    /// Planned length used by the hero estimate (the P0 session is the beginner run/walk seed).
+    private var sessionDuration: TimeInterval { IntervalPlan.beginnerRunWalk().plannedDuration }
+
     var body: some View {
         NavigationStack {
-            Group {
+            ZStack {
+                Theme.bg.ignoresSafeArea()
                 if store.routines.isEmpty {
                     emptyState
                 } else {
-                    routineList
+                    content
                 }
             }
             .navigationTitle("Your Week")
@@ -36,68 +41,65 @@ struct WeekView: View {
         }
     }
 
-    private var routineList: some View {
-        List {
-            ForEach(DayOfWeek.weekOrder, id: \.self) { day in
-                let routines = store.routines(on: day)
-                if !routines.isEmpty {
-                    Section(day.fullName) {
-                        ForEach(routines) { routine in
-                            NavigationLink(value: routine) {
-                                RoutineRow(routine: routine)
-                            }
+    private var content: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                if let next = store.nextOccurrence() {
+                    NavigationLink(value: next.routine) {
+                        UpNextCard(routine: next.routine, date: next.date, estimatedDuration: sessionDuration)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                WeekStrip(store: store)
+                    .padding(.horizontal, 2)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("ROUTINES")
+                        .font(.caption.weight(.semibold))
+                        .tracking(1.5)
+                        .foregroundStyle(Theme.textTertiary)
+                        .padding(.horizontal, 4)
+
+                    ForEach(store.routines) { routine in
+                        NavigationLink(value: routine) {
+                            RoutineCard(routine: routine)
+                        }
+                        .buttonStyle(.plain)
+                        .scrollTransition { view, phase in
+                            view.opacity(phase.isIdentity ? 1 : 0.5)
+                                .scaleEffect(phase.isIdentity ? 1 : 0.97)
                         }
                     }
                 }
+
+                PrimaryButton(title: "New routine", systemImage: "plus") {
+                    showingNewRoutine = true
+                }
+                .padding(.top, 4)
             }
+            .padding(16)
         }
     }
 
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("No routines yet", systemImage: "figure.run")
-        } description: {
-            Text("Create a routine to schedule your week. Adaptive runs build themselves from your heart rate.")
-        } actions: {
-            Button("New routine") { showingNewRoutine = true }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("newRoutineEmptyState")
-        }
-    }
-}
-
-/// A single routine summarized for the week list: icon, name, day badges.
-struct RoutineRow: View {
-    let routine: Routine
-
-    var body: some View {
-        let tint = RoutineTheme.tint(for: routine.type)
-        HStack(spacing: 12) {
-            Image(systemName: RoutineTheme.symbol(for: routine.type))
-                .font(.title3)
-                .foregroundStyle(tint)
-                .frame(width: 40, height: 40)
-                .background(tint.opacity(0.15))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(routine.name)
-                    .font(.headline)
-                HStack(spacing: 6) {
-                    if let time = routine.scheduleTime {
-                        Text(time.formatted)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    if routine.type == .adaptiveRun {
-                        Text("Adaptive · HR-driven")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+        VStack(spacing: 16) {
+            Image(systemName: "figure.run")
+                .font(.system(size: 44))
+                .foregroundStyle(Theme.accent)
+            Text("No routines yet")
+                .font(.title2.bold())
+                .foregroundStyle(Theme.textPrimary)
+            Text("Build your week. Adaptive runs build themselves from your heart rate.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+            PrimaryButton(title: "New routine", systemImage: "plus") {
+                showingNewRoutine = true
             }
-            Spacer()
+            .accessibilityIdentifier("newRoutineEmptyState")
+            .padding(.top, 4)
         }
-        .padding(.vertical, 2)
+        .padding(32)
     }
 }

@@ -5,6 +5,8 @@ import AdaptiveCore
 struct DayPicker: View {
     @Binding var selection: Set<DayOfWeek>
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         HStack(spacing: 6) {
             ForEach(DayOfWeek.weekOrder, id: \.self) { day in
@@ -15,9 +17,10 @@ struct DayPicker: View {
                     Text(day.letter)
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 38)
-                        .background(isOn ? Color.accentColor : Color(.secondarySystemFill))
-                        .foregroundStyle(isOn ? .white : .secondary)
-                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                        .background(isOn ? Theme.accent : Theme.surface2,
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .foregroundStyle(isOn ? Theme.bg : Theme.textSecondary)
+                        .shadow(color: Theme.accent.opacity(isOn && !reduceMotion ? 0.3 : 0), radius: 8, y: 2)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(day.fullName)

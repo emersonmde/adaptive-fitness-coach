@@ -18,13 +18,14 @@ struct WorkoutCompleteView: View {
             VStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 40))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(WatchTheme.run)
+                    .symbolEffect(.bounce, options: .nonRepeating)
 
                 Text("Done")
                     .font(.title3.bold())
                 Text("Saved to Health")
                     .font(.caption2)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(WatchTheme.run)
 
                 VStack(spacing: 6) {
                     stat("Time", summary.totalDuration.clockString)

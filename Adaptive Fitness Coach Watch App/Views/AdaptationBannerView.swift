@@ -9,12 +9,13 @@ struct AdaptationBannerView: View {
 
     var body: some View {
         Text(message)
-            .font(.caption2.weight(.medium))
+            .font(.caption2.weight(.semibold))
             .multilineTextAlignment(.center)
-            .foregroundStyle(.white)
+            // Recover-amber, not red: "the plan adjusted" (calm), distinct from the hot-HR readout.
+            .foregroundStyle(WatchTheme.walk)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: Capsule())
+            .glassEffect(.regular, in: .capsule)
             .transition(.move(edge: .top).combined(with: .opacity))
     }
 }

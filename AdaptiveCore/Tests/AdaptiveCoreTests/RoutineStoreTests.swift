@@ -115,6 +115,42 @@ struct RoutineStoreTests {
         #expect(FileManager.default.fileExists(atPath: backup.path))
     }
 
+    @Test func nextOccurrencePicksSoonestAcrossRoutines() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let now = cal.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 9))!
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: now)!
+        let dayAfter = cal.date(byAdding: .day, value: 2, to: now)!
+        let wdTomorrow = DayOfWeek(rawValue: cal.component(.weekday, from: tomorrow))!
+        let wdDayAfter = DayOfWeek(rawValue: cal.component(.weekday, from: dayAfter))!
+
+        let store = makeStore()
+        store.add(run("Sooner", at: ScheduleTime(hour: 6, minute: 0), days: [wdTomorrow]))
+        store.add(run("Later", at: ScheduleTime(hour: 6, minute: 0), days: [wdDayAfter]))
+
+        let next = store.nextOccurrence(now: now, calendar: cal)
+        #expect(next?.routine.name == "Sooner")
+        #expect(next?.date == cal.date(from: DateComponents(year: 2026, month: 6, day: 16, hour: 6)))
+    }
+
+    @Test func nextOccurrenceSkipsPassedTimeTodayToNextWeek() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let now = cal.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 9))!
+        let today = DayOfWeek(rawValue: cal.component(.weekday, from: now))!
+
+        let store = makeStore()
+        store.add(run("Earlier today", at: ScheduleTime(hour: 6, minute: 0), days: [today]))
+        let next = store.nextOccurrence(now: now, calendar: cal)
+        // 06:00 already passed today → next is the same weekday next week (June 22).
+        #expect(next?.date == cal.date(from: DateComponents(year: 2026, month: 6, day: 22, hour: 6)))
+    }
+
+    @Test func nextOccurrenceNilWhenNoRoutines() {
+        let store = makeStore()
+        #expect(store.nextOccurrence() == nil)
+    }
+
     @Test func missingFileStartsEmptyWithoutBackup() {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("routines-missing-\(UUID().uuidString).json")

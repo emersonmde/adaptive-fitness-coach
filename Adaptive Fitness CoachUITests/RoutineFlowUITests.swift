@@ -54,8 +54,9 @@ final class RoutineFlowUITests: XCTestCase {
         app.buttons["Wednesday"].firstMatch.tap()
         app.buttons["Next"].firstMatch.tap()
 
-        // Tap the routine row to open its detail/schedule screen.
-        let row = app.staticTexts["Tempo Run"]
+        // Open the routine's detail/schedule. The name now appears in both the Up-Next hero and
+        // its routine row, so target the first match explicitly (both navigate to the same detail).
+        let row = app.staticTexts["Tempo Run"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
 

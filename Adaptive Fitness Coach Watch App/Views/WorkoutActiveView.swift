@@ -10,10 +10,23 @@ struct WorkoutActiveView: View {
     let manager: WorkoutSessionManager
 
     @State private var confirmingEnd = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var phase: IntervalPhase? { manager.currentPhase }
     private var isRun: Bool { phase?.isRun ?? false }
     private var tint: Color { WorkoutColors.tint(for: phase) }
+
+    /// Fraction of the current interval elapsed (for the ambient pre-switch cue).
+    private var intervalProgress: Double {
+        guard manager.intervalTarget > 0 else { return 0 }
+        return min(1, manager.intervalElapsed / manager.intervalTarget)
+    }
+    /// True in the final few seconds before a switch — when the cue brightens so the haptic
+    /// isn't the user's only warning.
+    private var nearingSwitch: Bool {
+        let remaining = manager.intervalTarget - manager.intervalElapsed
+        return manager.intervalTarget > 0 && remaining > 0 && remaining <= 5
+    }
 
     /// Distinct labels so warmup/cooldown walks don't read as mid-session recovery walks.
     private var phaseLabel: String {
@@ -34,7 +47,8 @@ struct WorkoutActiveView: View {
 
     var body: some View {
         ZStack {
-            tint.opacity(0.22).ignoresSafeArea()
+            // Deep tinted-black field: the colored ground telegraphs run/walk before the word reads.
+            WorkoutColors.field(for: phase).ignoresSafeArea()
 
             VStack(spacing: 2) {
                 // Top: HR · progress · session clock
@@ -69,6 +83,15 @@ struct WorkoutActiveView: View {
                     .monospacedDigit()
 
                 Spacer(minLength: 0)
+
+                // Ambient pre-switch cue: a thin interval-progress line that brightens in the
+                // last few seconds, so the upcoming switch is anticipated visually too (N5).
+                Capsule()
+                    .fill(tint.opacity(nearingSwitch ? 0.9 : 0.3))
+                    .frame(width: max(6, intervalProgress * 120), height: 3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: nearingSwitch)
 
                 // Bottom: zone bar + unobtrusive End control
                 ZoneBarView(currentZoneIndex: manager.currentZoneIndex, targetZoneIndex: manager.targetZone)

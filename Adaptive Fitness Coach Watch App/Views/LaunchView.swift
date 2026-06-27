@@ -35,7 +35,7 @@ struct LaunchView: View {
                         .font(.title3.bold())
                         .frame(maxWidth: .infinity)
                 }
-                .tint(.green)
+                .tint(WatchTheme.run)
             } else {
                 Spacer(minLength: 0)
                 Image(systemName: "iphone.and.arrow.forward")

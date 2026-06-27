@@ -1,8 +1,9 @@
 import SwiftUI
 import AdaptiveCore
 
-/// Detail + schedule (P5) for one routine: edit days, set the time, toggle reminders, delete.
-/// Edits write straight back to the store, which syncs to the watch and reschedules reminders.
+/// Detail + schedule (P5) for one routine, dark/neon. Edit days, set the time, toggle reminders,
+/// delete. Edits write straight back to the store, which syncs to the watch and reschedules
+/// reminders.
 struct RoutineDetailView: View {
     let store: RoutineStore
     let routineID: Routine.ID
@@ -13,13 +14,14 @@ struct RoutineDetailView: View {
 
     /// Local editable copy; committed to the store on each change. Loaded reactively by id.
     @State private var draft: Routine?
+    @State private var confirmingDelete = false
 
     var body: some View {
-        Group {
+        ZStack {
+            Theme.bg.ignoresSafeArea()
             if let draft {
                 form(for: draft)
             } else {
-                // Routine was deleted out from under us.
                 ContentUnavailableView("Routine unavailable", systemImage: "exclamationmark.triangle")
             }
         }
@@ -33,42 +35,72 @@ struct RoutineDetailView: View {
     }
 
     private func form(for routine: Routine) -> some View {
-        Form {
-            Section("Days") {
-                DayPicker(selection: Binding(
-                    get: { draft?.repeatDays ?? [] },
-                    set: { setDays($0) }
-                ))
-                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
-            }
-
-            Section("Schedule") {
-                // Single source of truth: the picker reads/writes the draft's scheduleTime,
-                // displaying the default time when none is set yet.
-                DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
-
-                Toggle("Reminders", isOn: Binding(
-                    get: { draft?.reminderEnabled ?? false },
-                    set: { setReminders($0) }
-                ))
-
-                if routine.reminderEnabled {
-                    Text("A reminder launches the session on your watch — leave your phone behind.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(spacing: 18) {
+                if let next = nextDate(for: routine) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "calendar")
+                            .foregroundStyle(Theme.accent)
+                        Text("Next · \(RelativeWhen.string(for: next))")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(Theme.textPrimary)
+                        Spacer()
+                    }
+                    .padding(14)
+                    .background(Theme.surface1, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
-            }
 
-            Section {
-                Button("Delete Routine", role: .destructive, action: delete)
-                    .frame(maxWidth: .infinity)
+                FieldSection(title: "DAYS") {
+                    DayPicker(selection: Binding(
+                        get: { draft?.repeatDays ?? [] },
+                        set: { setDays($0) }
+                    ))
+                }
+
+                FieldSection(title: "SCHEDULE") {
+                    VStack(spacing: 4) {
+                        DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
+                            .foregroundStyle(Theme.textPrimary)
+                        Divider().overlay(Theme.hairline)
+                        Toggle("Reminders", isOn: Binding(
+                            get: { draft?.reminderEnabled ?? false },
+                            set: { setReminders($0) }
+                        ))
+                        .tint(Theme.accent)
+                        .foregroundStyle(Theme.textPrimary)
+                        if routine.reminderEnabled {
+                            Text("A reminder launches the session on your watch — leave your phone behind.")
+                                .font(.caption)
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.top, 4)
+                        }
+                    }
+                }
+
+                Button(role: .destructive) {
+                    confirmingDelete = true
+                } label: {
+                    Text("Delete Routine")
+                        .font(.headline)
+                        .foregroundStyle(Theme.hot)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Theme.hot.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
             }
+            .padding(16)
+        }
+        .confirmationDialog("Delete this routine?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive, action: delete)
+            Button("Cancel", role: .cancel) {}
         }
     }
 
     // MARK: - Bindings / state sync
 
-    /// Bridges the `Date`-based picker to the model's `ScheduleTime`, defaulting the display.
     private var timeBinding: Binding<Date> {
         Binding(
             get: {
@@ -82,7 +114,6 @@ struct RoutineDetailView: View {
         )
     }
 
-    /// Mutate the draft and commit to the store, which triggers watch sync + reminder reschedule.
     private func commit(_ mutate: (inout Routine) -> Void) {
         guard var routine = draft else { return }
         mutate(&routine)
@@ -91,21 +122,13 @@ struct RoutineDetailView: View {
         NotificationManager.shared.reschedule(for: routine)
     }
 
-    private func setDays(_ days: Set<DayOfWeek>) {
-        commit { $0.repeatDays = days }
-    }
-
-    private func setTime(_ time: ScheduleTime) {
-        commit { $0.scheduleTime = time }
-    }
+    private func setDays(_ days: Set<DayOfWeek>) { commit { $0.repeatDays = days } }
+    private func setTime(_ time: ScheduleTime) { commit { $0.scheduleTime = time } }
 
     private func setReminders(_ on: Bool) {
         commit {
             $0.reminderEnabled = on
-            // Ensure an explicit default time exists so a reminder has something to fire on.
-            if on, $0.scheduleTime == nil {
-                $0.scheduleTime = Self.defaultTime
-            }
+            if on, $0.scheduleTime == nil { $0.scheduleTime = Self.defaultTime }
         }
     }
 
@@ -113,5 +136,17 @@ struct RoutineDetailView: View {
         NotificationManager.shared.cancel(routineID: routineID)
         store.remove(id: routineID)
         dismiss()
+    }
+
+    /// Next fire date for *this* routine, for the "Next · …" echo.
+    private func nextDate(for routine: Routine, now: Date = Date(), calendar: Calendar = .current) -> Date? {
+        guard !routine.repeatDays.isEmpty else { return nil }
+        return routine.repeatDays.compactMap { day -> Date? in
+            var c = DateComponents()
+            c.weekday = day.rawValue
+            let t = routine.scheduleTime ?? Self.defaultTime
+            c.hour = t.hour; c.minute = t.minute
+            return calendar.nextDate(after: now, matching: c, matchingPolicy: .nextTime)
+        }.min()
     }
 }
