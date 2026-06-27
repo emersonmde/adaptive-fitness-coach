@@ -33,7 +33,9 @@ final class WorkoutSessionManager {
     /// Run intervals completed so far and the plan's total, for the ambient progress readout.
     private(set) var intervalsCompleted = 0
     private(set) var totalRunIntervals = 0
-    private(set) var adaptationMessage: String?
+    /// The most recent adaptation, for a brief glanceable on-screen cue. Cleared after a few
+    /// seconds. Carries the action (direction) rather than a sentence to read mid-run (N5).
+    private(set) var adaptationEvent: AdaptationEvent?
     private(set) var summary: SessionSummary?
     private(set) var routineName: String = "Adaptive Run"
 
@@ -166,19 +168,19 @@ final class WorkoutSessionManager {
             haptics.play(for: transition.to.isRun ? .toRun : .toWalk)
         }
         if let adaptation = result.adaptation {
-            showAdaptation(adaptation.message)
+            showAdaptation(adaptation)
         }
         if result.isComplete {
             finish()
         }
     }
 
-    private func showAdaptation(_ message: String) {
-        adaptationMessage = message
+    private func showAdaptation(_ event: AdaptationEvent) {
+        adaptationEvent = event
         adaptationClearTask?.cancel()
         adaptationClearTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(5))
-            self?.adaptationMessage = nil
+            try? await Task.sleep(for: .seconds(4))
+            self?.adaptationEvent = nil
         }
     }
 
@@ -226,7 +228,7 @@ final class WorkoutSessionManager {
         latestZone = nil
         currentHeartRate = 0
         currentZoneIndex = nil
-        adaptationMessage = nil
+        adaptationEvent = nil
         summary = nil
         intervalElapsed = 0
         sessionElapsed = 0

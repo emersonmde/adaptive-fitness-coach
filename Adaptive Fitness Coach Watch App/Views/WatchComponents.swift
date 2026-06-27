@@ -78,20 +78,24 @@ struct ZoneBarView: View {
     private var isHot: Bool { (activeSlot ?? 0) > targetSlot }
 
     var body: some View {
-        HStack(spacing: 2) {
+        // One clear element: the active segment dominates (taller, full color, soft glow), the
+        // target zone is marked by an outline merged *into* the bar (no separate underline), and
+        // inactive zones recede. The active segment pulses only when drifting hot.
+        HStack(spacing: 3) {
             ForEach(0..<zoneCount, id: \.self) { slot in
-                VStack(spacing: 2) {
-                    Capsule()
-                        .fill(color(for: slot).opacity(slot == activeSlot ? 1.0 : 0.25))
-                        .frame(height: slot == activeSlot ? 7 : 5)
-                        .scaleEffect(y: slot == activeSlot && isHot && hotPulse ? 1.35 : 1.0, anchor: .bottom)
-                    // Underline the aerobic target band so "where I should be" is legible.
-                    Capsule()
-                        .fill(.white.opacity(slot == targetSlot ? 0.5 : 0))
-                        .frame(height: 2)
-                }
+                let isActive = slot == activeSlot
+                Capsule()
+                    .fill(color(for: slot).opacity(isActive ? 1.0 : 0.22))
+                    .frame(height: isActive ? 10 : 5)
+                    .overlay(
+                        Capsule().strokeBorder(.white.opacity(slot == targetSlot ? 0.85 : 0), lineWidth: 1.5)
+                    )
+                    .shadow(color: isActive ? color(for: slot).opacity(0.6) : .clear,
+                            radius: isActive ? 5 : 0)
+                    .scaleEffect(y: isActive && isHot && hotPulse ? 1.3 : 1.0, anchor: .center)
             }
         }
+        .frame(height: 14)
         .animation(.easeInOut(duration: 0.3), value: activeSlot)
         .onChange(of: isHot) { _, hot in
             if hot && !reduceMotion {

@@ -99,9 +99,9 @@ struct WorkoutFlowTests {
         manager.receiveZone(4)               // running hot (above target zone 2)
         tick(manager, seconds: 3)            // sustained hot ≥ backOffWindow
 
-        // Run was cut short → now walking, an adaptation was applied, banner is showing.
+        // Run was cut short → now walking, an adaptation was applied, the cue is showing.
         #expect(manager.currentPhase == .walk)
-        #expect(manager.adaptationMessage != nil)
+        #expect(manager.adaptationEvent != nil)
     }
 
     @Test func heartRateReachesDisplayState() async {

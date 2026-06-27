@@ -26,7 +26,7 @@ struct SessionContainerView: View {
             case .idle:
                 LaunchView(routine: nextRoutine, estimatedDuration: plannedDuration, onStart: start)
             case .active:
-                WorkoutActiveView(manager: manager)
+                WorkoutSessionPager(manager: manager)
             case .complete:
                 if let summary = manager.summary {
                     WorkoutCompleteView(summary: summary) { manager.reset() }

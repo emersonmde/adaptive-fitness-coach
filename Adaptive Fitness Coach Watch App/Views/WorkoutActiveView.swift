@@ -1,28 +1,23 @@
 import SwiftUI
 import AdaptiveCore
 
-/// A2 / A3 — the core loop. One state fills the screen: a phase label (WARM UP / RUN / WALK /
+/// A2 / A3 — the core loop. One screen, pure glance: a phase label (WARM UP / RUN / WALK /
 /// COOL DOWN), a direction glyph, and the live interval timer, over a green (work) or amber
-/// (recover) field. These screens are confirmation, not instruction — the haptics lead, the
-/// screen reassures (N5). A small End control is the one deliberate affordance: every real
-/// workout needs a way to stop (and to end the underlying HKWorkoutSession cleanly).
+/// (recover) field. Confirmation, not instruction — the haptics lead (N5). No controls clutter
+/// the glance screen: End lives on a swipe-away controls page; adaptations show as a brief
+/// non-occluding cue at the bottom, never a sentence to read mid-stride.
 struct WorkoutActiveView: View {
     let manager: WorkoutSessionManager
 
-    @State private var confirmingEnd = false
+    @State private var switchPulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var phase: IntervalPhase? { manager.currentPhase }
     private var isRun: Bool { phase?.isRun ?? false }
     private var tint: Color { WorkoutColors.tint(for: phase) }
 
-    /// Fraction of the current interval elapsed (for the ambient pre-switch cue).
-    private var intervalProgress: Double {
-        guard manager.intervalTarget > 0 else { return 0 }
-        return min(1, manager.intervalElapsed / manager.intervalTarget)
-    }
-    /// True in the final few seconds before a switch — when the cue brightens so the haptic
-    /// isn't the user's only warning.
+    /// True in the final few seconds before a switch — when the timer brightens/pulses so the
+    /// haptic isn't the user's only warning.
     private var nearingSwitch: Bool {
         let remaining = manager.intervalTarget - manager.intervalElapsed
         return manager.intervalTarget > 0 && remaining > 0 && remaining <= 5
@@ -78,46 +73,42 @@ struct WorkoutActiveView: View {
                     .foregroundStyle(tint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
+                // The timer doubles as the pre-switch cue: in the final seconds it shifts to the
+                // phase color and gently pulses, so the upcoming switch is anticipated visually
+                // (N5) without adding another stacked line to the bottom.
                 Text(manager.intervalElapsed.clockString)
                     .font(.system(.title2, design: .rounded, weight: .bold))
                     .monospacedDigit()
+                    .foregroundStyle(nearingSwitch ? tint : Color.white)
+                    .scaleEffect(nearingSwitch && switchPulse && !reduceMotion ? 1.1 : 1.0)
+                    .animation(.easeInOut(duration: 0.2), value: nearingSwitch)
 
                 Spacer(minLength: 0)
 
-                // Ambient pre-switch cue: a thin interval-progress line that brightens in the
-                // last few seconds, so the upcoming switch is anticipated visually too (N5).
-                Capsule()
-                    .fill(tint.opacity(nearingSwitch ? 0.9 : 0.3))
-                    .frame(width: max(6, intervalProgress * 120), height: 3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: nearingSwitch)
-
-                // Bottom: zone bar + unobtrusive End control
+                // Bottom: zone bar, then a brief directional adaptation cue (non-occluding) in
+                // the space where the End control used to sit.
                 ZoneBarView(currentZoneIndex: manager.currentZoneIndex, targetZoneIndex: manager.targetZone)
-                Button("End", role: .destructive) { confirmingEnd = true }
-                    .font(.caption2)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
+
+                ZStack {
+                    // Reserve a constant slot so the layout doesn't jump when the cue appears.
+                    Color.clear.frame(height: 20)
+                    if let event = manager.adaptationEvent {
+                        AdaptationCue(event: event)
+                    }
+                }
+                .padding(.top, 3)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
-
-            // A4 banner overlays the top when an adaptation occurs.
-            if let message = manager.adaptationMessage {
-                VStack {
-                    AdaptationBannerView(message: message)
-                    Spacer()
-                }
-                .padding(.top, 2)
-            }
         }
         .animation(.easeInOut(duration: 0.25), value: isRun)
-        .animation(.easeInOut(duration: 0.25), value: manager.adaptationMessage)
-        .confirmationDialog("End this run?", isPresented: $confirmingEnd, titleVisibility: .visible) {
-            Button("End workout", role: .destructive) { manager.endManually() }
-            Button("Keep going", role: .cancel) {}
+        .animation(.easeInOut(duration: 0.3), value: manager.adaptationEvent)
+        .onChange(of: nearingSwitch) { _, near in
+            if near && !reduceMotion {
+                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { switchPulse = true }
+            } else {
+                withAnimation(.default) { switchPulse = false }
+            }
         }
     }
 }
