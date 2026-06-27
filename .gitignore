@@ -14,6 +14,17 @@ xcuserdata/
 .swiftpm/
 Package.resolved
 
+# Secrets — never commit App Store Connect API keys / provisioning
+*.p8
+*.mobileprovision
+*.p12
+*.cer
+
+# Build/distribution artifacts
+build-archive/
+*.xcarchive
+*.ipa
+
 # Misc
 *.moved-aside
 *.hmap
