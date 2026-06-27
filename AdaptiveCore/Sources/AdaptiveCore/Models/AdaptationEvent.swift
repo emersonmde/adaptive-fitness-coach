@@ -6,7 +6,7 @@ public enum AdaptationAction: String, Codable, Sendable, Hashable {
     case shortenedRun
     /// HR stayed comfortable through the planned run → the run was extended.
     case extendedRun
-    /// HR had not recovered by the end of a walk → the walk was extended.
+    /// HR had not recovered by the end of a walk → the walk was lengthened.
     case lengthenedWalk
     /// HR recovered quickly during a walk → the walk was ended early.
     case shortenedWalk

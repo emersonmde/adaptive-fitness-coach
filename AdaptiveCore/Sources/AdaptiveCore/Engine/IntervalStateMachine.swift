@@ -47,8 +47,13 @@ public struct IntervalStateMachine: Sendable {
 
     public private(set) var totalRunDuration: TimeInterval
     public private(set) var totalWalkDuration: TimeInterval
+    /// Run intervals reached (including those cut short by adaptation — the user still ran them).
     public private(set) var intervalsCompleted: Int
     public private(set) var adaptationsApplied: Int
+
+    /// Non-transition adaptations (extend/lengthen) already surfaced for the current segment,
+    /// used to show each banner at most once per segment.
+    private var announcedThisSegment: Set<AdaptationAction> = []
 
     public init(config: SessionConfig, adaptationConfig: AdaptationConfig = AdaptationConfig()) {
         self.segments = config.plan.segments
@@ -74,12 +79,15 @@ public struct IntervalStateMachine: Sendable {
         isComplete || segments.isEmpty ? nil : segments[currentIndex].targetDuration
     }
 
-    /// Advance the session by `deltaTime` seconds given the live `currentZone` (1–5), or nil
-    /// if zone data is unavailable. Returns what changed this tick.
+    /// Advance the session by `deltaTime` seconds given the live `currentZone` (a 1-based zone
+    /// position; see the watch backend's normalization), or nil if zone data is unavailable.
+    /// Returns what changed this tick. Callers should tick at roughly ≤1s granularity and clamp
+    /// `deltaTime` against background catch-up; a non-positive delta is ignored.
     public mutating func tick(deltaTime: TimeInterval, currentZone: Int?) -> TickResult {
         guard !isComplete, !segments.isEmpty else {
             return TickResult(isComplete: true)
         }
+        guard deltaTime > 0 else { return TickResult() }
 
         intervalElapsed += deltaTime
         sessionElapsed += deltaTime
@@ -123,9 +131,12 @@ public struct IntervalStateMachine: Sendable {
                 let transition = advance()
                 return TickResult(transition: transition, adaptation: event, isComplete: isComplete)
             case .extend:
+                // Keep extending the run while the user stays comfortable — a fit runner may
+                // run continuously and never reach a walk (per the PRD's vision). The target
+                // keeps growing each qualifying tick, but the banner is announced only once per
+                // run so the change never nags (Q5).
                 segments[currentIndex].targetDuration = target + policy.config.runExtendIncrement
-                adaptationsApplied += 1
-                return TickResult(adaptation: AdaptationEvent(action: .extendedRun, atSessionTime: sessionElapsed, zone: zone))
+                return announceOnce(.extendedRun, zone: zone)
             case .keepGoing:
                 return nil
             }
@@ -141,8 +152,7 @@ public struct IntervalStateMachine: Sendable {
             case .lengthen:
                 guard target < policy.config.maxWalkDuration else { return nil } // at cap → let it transition
                 segments[currentIndex].targetDuration = min(target + policy.config.walkLengthenIncrement, policy.config.maxWalkDuration)
-                adaptationsApplied += 1
-                return TickResult(adaptation: AdaptationEvent(action: .lengthenedWalk, atSessionTime: sessionElapsed, zone: zone))
+                return announceOnce(.lengthenedWalk, zone: zone)
             case .keepGoing:
                 return nil
             }
@@ -150,6 +160,16 @@ public struct IntervalStateMachine: Sendable {
         default:
             return nil
         }
+    }
+
+    /// Record a non-transition adaptation (extend/lengthen) and surface its banner at most once
+    /// per segment. Subsequent qualifying ticks still adjust the plan but stay silent, so the
+    /// run/walk can keep stretching without the banner re-appearing every increment.
+    private mutating func announceOnce(_ action: AdaptationAction, zone: Int) -> TickResult {
+        guard !announcedThisSegment.contains(action) else { return TickResult() }
+        announcedThisSegment.insert(action)
+        adaptationsApplied += 1
+        return TickResult(adaptation: AdaptationEvent(action: action, atSessionTime: sessionElapsed, zone: zone))
     }
 
     /// Move to the next segment, or complete the session. Returns the transition for haptics,
@@ -169,6 +189,7 @@ public struct IntervalStateMachine: Sendable {
         currentIndex = nextIndex
         intervalElapsed = 0
         policy.resetAccumulators()
+        announcedThisSegment.removeAll()
         return TransitionEvent(from: fromPhase, to: segments[currentIndex].phase)
     }
 }

@@ -7,8 +7,10 @@ import Foundation
 final class SimulatedWorkoutBackend: WorkoutBackend {
     var onHeartRate: ((Double) -> Void)?
     var onZoneChange: ((Int?) -> Void)?
+    var onFailure: (() -> Void)? // never invoked; the simulated workout cannot fail
 
-    /// One scripted reading: at `at` seconds into the session, report `zone` and `hr`.
+    /// One scripted reading: at `at` seconds into the session, report `zone` (1-based position)
+    /// and `hr`.
     struct Step: Sendable {
         let at: TimeInterval
         let zone: Int
@@ -16,12 +18,10 @@ final class SimulatedWorkoutBackend: WorkoutBackend {
     }
 
     private let script: [Step]
-    private let target: Int?
     private var task: Task<Void, Never>?
 
-    init(script: [Step] = SimulatedWorkoutBackend.demoScript, targetZoneIndex: Int? = 2) {
+    init(script: [Step] = SimulatedWorkoutBackend.demoScript) {
         self.script = script.sorted { $0.at < $1.at }
-        self.target = targetZoneIndex
     }
 
     func start() async throws {
@@ -43,8 +43,6 @@ final class SimulatedWorkoutBackend: WorkoutBackend {
         task = nil
         return WorkoutTotals(distanceMeters: 2400, averageHeartRate: 138)
     }
-
-    func preferredTargetZoneIndex() async -> Int? { target }
 
     /// A ~60s timeline that exercises both adaptation directions: comfortable → hot (back off)
     /// → recovered (shorten walk) → comfortable (extend). Target zone is 2.

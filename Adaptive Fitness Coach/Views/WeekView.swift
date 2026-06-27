@@ -24,6 +24,7 @@ struct WeekView: View {
                     } label: {
                         Label("New routine", systemImage: "plus")
                     }
+                    .accessibilityIdentifier("newRoutineToolbar")
                 }
             }
             .sheet(isPresented: $showingNewRoutine) {
@@ -60,6 +61,7 @@ struct WeekView: View {
         } actions: {
             Button("New routine") { showingNewRoutine = true }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("newRoutineEmptyState")
         }
     }
 }
@@ -97,16 +99,5 @@ struct RoutineRow: View {
             Spacer()
         }
         .padding(.vertical, 2)
-    }
-}
-
-extension ScheduleTime {
-    /// Localized short time string (e.g. "7:00 AM") for display.
-    var formatted: String {
-        var components = DateComponents()
-        components.hour = hour
-        components.minute = minute
-        let date = Calendar.current.date(from: components) ?? Date()
-        return date.formatted(date: .omitted, time: .shortened)
     }
 }

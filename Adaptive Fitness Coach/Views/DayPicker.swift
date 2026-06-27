@@ -27,22 +27,3 @@ struct DayPicker: View {
     }
 }
 
-/// Compact, read-only day badges shown on a routine card (e.g. MON · WED).
-struct DayBadges: View {
-    let days: Set<DayOfWeek>
-    let tint: Color
-
-    var body: some View {
-        HStack(spacing: 5) {
-            ForEach(DayOfWeek.weekOrder.filter(days.contains), id: \.self) { day in
-                Text(day.shortName)
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(tint.opacity(0.15))
-                    .foregroundStyle(tint)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-        }
-    }
-}

@@ -33,8 +33,21 @@ public final class RoutineStore {
     }
 
     private static func loadRoutines(from url: URL) -> [Routine] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        return (try? JSONDecoder().decode([Routine].self, from: data)) ?? []
+        // No file yet is the normal first-launch case → start empty.
+        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+
+        if let data = try? Data(contentsOf: url),
+           let routines = try? JSONDecoder().decode([Routine].self, from: data) {
+            return routines
+        }
+
+        // The file exists but couldn't be read/decoded. Preserve it as a `.corrupt` sidecar
+        // before we ever risk overwriting it with an empty set, then start empty rather than
+        // silently and permanently destroying the user's routines.
+        let backup = url.appendingPathExtension("corrupt")
+        try? FileManager.default.removeItem(at: backup)
+        try? FileManager.default.copyItem(at: url, to: backup)
+        return []
     }
 
     /// Persist to disk and notify the sync hook. Called after every mutation.
@@ -52,6 +65,7 @@ public final class RoutineStore {
         save(broadcast: true)
     }
 
+    /// Upsert: replaces the routine with the same id, or inserts it if not present.
     public func update(_ routine: Routine) {
         guard let index = routines.firstIndex(where: { $0.id == routine.id }) else {
             add(routine)
@@ -93,7 +107,7 @@ public final class RoutineStore {
     public func nextRoutine(fromWeekday weekday: DayOfWeek, hour: Int, minute: Int) -> Routine? {
         guard !routines.isEmpty else { return nil }
         let nowMinutes = hour * 60 + minute
-        // Search today (later than now) then each following day, wrapping around the week.
+        // Search today (only occurrences at/after now) then each following day, wrapping the week.
         for offset in 0..<7 {
             let day = DayOfWeek(rawValue: (weekday.rawValue - 1 + offset) % 7 + 1)!
             let candidates = routines(on: day).filter { routine in
@@ -102,6 +116,8 @@ public final class RoutineStore {
             }
             if let first = candidates.first { return first }
         }
+        // Nothing remains this week — the only occurrences are earlier today. Wrap to the
+        // earliest routine today, i.e. its next occurrence is the same weekday next week.
         return routines(on: weekday).first
     }
 }

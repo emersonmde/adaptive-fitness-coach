@@ -5,7 +5,14 @@ import AdaptiveCore
 /// parameters to confirm. Start begins a real workout immediately.
 struct LaunchView: View {
     let routine: Routine?
+    /// Planned session length, shown as a "~N min" estimate (the duration self-adjusts to HR).
+    var estimatedDuration: TimeInterval = 0
     let onStart: () -> Void
+
+    private var durationText: String {
+        guard estimatedDuration > 0 else { return "Run / Walk · adaptive" }
+        return "Run / Walk · ~\(Int((estimatedDuration / 60).rounded())) min"
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -18,7 +25,7 @@ struct LaunchView: View {
                     Text(routine.name)
                         .font(.title3.bold())
                         .multilineTextAlignment(.center)
-                    Text("Run / Walk · adaptive")
+                    Text(durationText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

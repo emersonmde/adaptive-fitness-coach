@@ -93,6 +93,9 @@
 		};
 		34704E352FECD82000C28688 /* Adaptive Fitness Coach Watch App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FACE000000000000000000E1 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+			);
 			path = "Adaptive Fitness Coach Watch App";
 			sourceTree = "<group>";
 		};
@@ -107,6 +110,16 @@
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FACE000000000000000000E1 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 34704E302FECD82000C28688 /* Adaptive Fitness Coach Watch App */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		34704E0B2FECD81F00C28688 /* Frameworks */ = {
@@ -636,6 +649,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Adaptive Fitness Coach Watch App/Adaptive Fitness Coach Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = "Adaptive Fitness Coach Watch App/Info.plist";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Adaptive Fitness Coach saves each session to Apple Health as a native workout.";
 				CURRENT_PROJECT_VERSION = 1;
@@ -671,6 +685,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Adaptive Fitness Coach Watch App/Adaptive Fitness Coach Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_FILE = "Adaptive Fitness Coach Watch App/Info.plist";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Adaptive Fitness Coach saves each session to Apple Health as a native workout.";
 				CURRENT_PROJECT_VERSION = 1;

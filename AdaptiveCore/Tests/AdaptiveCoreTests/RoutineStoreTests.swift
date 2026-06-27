@@ -49,9 +49,10 @@ struct RoutineStoreTests {
     @Test func localMutationsBroadcast() {
         var broadcasts = 0
         let store = makeStore { _ in broadcasts += 1 }
-        store.add(run())
-        store.update(store.routines[0])
-        store.remove(id: store.routines.isEmpty ? UUID() : store.routines[0].id)
+        let routine = run()
+        store.add(routine)
+        store.update(routine)
+        store.remove(id: routine.id)
         #expect(broadcasts == 3)
     }
 
@@ -89,5 +90,36 @@ struct RoutineStoreTests {
     @Test func nextRoutineNilWhenEmpty() {
         let store = makeStore()
         #expect(store.nextRoutine(fromWeekday: .monday, hour: 9, minute: 0) == nil)
+    }
+
+    @Test func nextRoutineWrapsWhenOnlyOccurrenceAlreadyPassedToday() {
+        let store = makeStore()
+        // Only a Monday 07:00 routine; it's Monday 09:00 (already passed). The next occurrence
+        // is the same routine next Monday — it must still surface, not return nil.
+        let routine = run("Early", at: ScheduleTime(hour: 7, minute: 0), days: [.monday])
+        store.add(routine)
+        let next = store.nextRoutine(fromWeekday: .monday, hour: 9, minute: 0)
+        #expect(next?.name == "Early")
+    }
+
+    @Test func corruptFileIsPreservedAndStoreStartsEmpty() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("routines-corrupt-\(UUID().uuidString).json")
+        try Data("{ not valid json".utf8).write(to: url)
+
+        let store = RoutineStore(fileURL: url)
+        #expect(store.routines.isEmpty) // didn't crash, started clean
+
+        // The unreadable file was preserved as a sidecar rather than silently destroyed.
+        let backup = url.appendingPathExtension("corrupt")
+        #expect(FileManager.default.fileExists(atPath: backup.path))
+    }
+
+    @Test func missingFileStartsEmptyWithoutBackup() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("routines-missing-\(UUID().uuidString).json")
+        let store = RoutineStore(fileURL: url)
+        #expect(store.routines.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: url.appendingPathExtension("corrupt").path))
     }
 }

@@ -3,6 +3,10 @@ import AdaptiveCore
 
 /// P2 — create a routine: name it, pick repeat days, choose a type. In P0 only Adaptive Run
 /// is functional; the type picker still shows Strength (disabled) so the model is visible.
+///
+/// The design's type-branch (Strength → workout library, Adaptive Run → straight to scheduling)
+/// is deferred: with only Adaptive Run selectable, "Next" saves and returns to the week list,
+/// where the routine is opened to schedule it. The library branch lands with P1.
 struct NewRoutineView: View {
     let store: RoutineStore
     @Environment(\.dismiss) private var dismiss

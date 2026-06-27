@@ -5,8 +5,9 @@ import HealthKit
 ///
 /// `HKLiveWorkoutBuilder` writes the workout, heart-rate, energy, and distance samples on the
 /// app's behalf (N2 — the OS is the system of record), so those are share types. We read heart
-/// rate for the live BPM display; zones come from the builder's delegate, which needs heart-rate
-/// access.
+/// rate for the live BPM display. Zones come from Apple's live classification
+/// (`didUpdateWorkoutZone`) — the personalized native zones the project deliberately uses
+/// instead of an app-computed estimate — which is driven by heart-rate access.
 @MainActor
 enum HealthKitAuthorization {
     static let healthStore = HKHealthStore()

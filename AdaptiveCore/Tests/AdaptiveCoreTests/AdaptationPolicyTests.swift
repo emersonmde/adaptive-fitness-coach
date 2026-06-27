@@ -74,26 +74,56 @@ struct AdaptationPolicyTests {
         #expect(result.atElapsed == 30) // held off until minRunDuration, not the 5s window
     }
 
-    @Test func intermittentHotResetsBackOffWindow() {
+    @Test func balancedFlappingDoesNotShorten() {
+        // HR riding the zone boundary 50/50 (5s hot / 5s in-zone) is ambiguous effort: with the
+        // leaky-integrator hysteresis the hot accumulator oscillates and never reaches the
+        // window, so no back-off fires.
         var policy = AdaptationPolicy()
-        // Alternate 10s hot / 1s in-zone repeatedly: never 20s sustained hot.
         var elapsed: TimeInterval = 0
         var sawShorten = false
-        for _ in 0..<5 {
-            for _ in 0..<10 { // hot
+        for _ in 0..<6 {
+            for zone in [4, 4, 4, 4, 4, 2, 2, 2, 2, 2] {
                 elapsed += 1
-                if policy.evaluateRun(currentZone: 4, targetZone: targetZone,
-                                      intervalElapsed: elapsed, segmentTarget: 200, deltaTime: 1) == .shorten {
+                if policy.evaluateRun(currentZone: zone, targetZone: targetZone,
+                                      intervalElapsed: elapsed, segmentTarget: 400, deltaTime: 1) == .shorten {
                     sawShorten = true
                 }
             }
-            for _ in 0..<1 { // in zone — resets accumulator
-                elapsed += 1
-                _ = policy.evaluateRun(currentZone: 2, targetZone: targetZone,
-                                       intervalElapsed: elapsed, segmentTarget: 200, deltaTime: 1)
-            }
         }
         #expect(!sawShorten)
+    }
+
+    @Test func mostlyHotEventuallyShortensDespiteBriefDips() {
+        // 10s hot / 1s dip, repeated: genuinely mostly-hot. Hysteresis lets the net-hot time
+        // accumulate across the brief dips and eventually backs off (the OLD hard-reset logic
+        // would have been permanently defeated by the 1s dips — the bug this fixes).
+        var policy = AdaptationPolicy()
+        var elapsed: TimeInterval = 0
+        var sawShorten = false
+        for _ in 0..<5 {
+            for zone in Array(repeating: 4, count: 10) + [2] {
+                elapsed += 1
+                if policy.evaluateRun(currentZone: zone, targetZone: targetZone,
+                                      intervalElapsed: elapsed, segmentTarget: 400, deltaTime: 1) == .shorten {
+                    sawShorten = true
+                }
+            }
+        }
+        #expect(sawShorten)
+    }
+
+    @Test func briefDipNearWindowCompletionStillShortens() {
+        // A single 1s dip just before the window completes must not wipe a nearly-full window.
+        var policy = AdaptationPolicy(config: AdaptationConfig(backOffWindow: 20, minRunDuration: 2))
+        var elapsed: TimeInterval = 0
+        var decision: RunDecision = .keepGoing
+        for zone in Array(repeating: 4, count: 19) + [2] + [4, 4] {
+            elapsed += 1
+            decision = policy.evaluateRun(currentZone: zone, targetZone: targetZone,
+                                          intervalElapsed: elapsed, segmentTarget: 400, deltaTime: 1)
+            if decision == .shorten { break }
+        }
+        #expect(decision == .shorten)
     }
 
     // MARK: - Extending (run)
@@ -146,9 +176,10 @@ struct AdaptationPolicyTests {
         #expect(result.atElapsed == 90)
     }
 
-    @Test func recoveredByEndDoesNotLengthen() {
+    @Test func recoveredWalkShortensRatherThanLengthens() {
         var policy = AdaptationPolicy()
-        // Recovered (zone 2) — but recoverWindow(30) triggers a shorten before the 90s end.
+        // Recovered (zone 2) — recoverWindow(30) triggers an early shorten before the 90s end,
+        // i.e. a recovered walk is cut short, never lengthened.
         let result = walkFor(&policy, zone: 2, seconds: 90, segmentTarget: 90)
         #expect(result.decision == .shorten)
     }

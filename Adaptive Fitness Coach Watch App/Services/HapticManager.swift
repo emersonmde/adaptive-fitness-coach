@@ -17,7 +17,9 @@ struct HapticManager {
         }
     }
 
-    /// → Walk: a single, softer, longer haptic — clearly different from the run double-tap.
+    /// → Walk: a single haptic, clearly distinct from the run double-tap. The design calls for
+    /// "single long, soft"; watchOS exposes no true long/soft `WKHapticType`, so `.directionDown`
+    /// is the closest single, gentler-reading cue. Revisit on-device against `.stop`/`.retry`.
     func playWalkTransition() {
         device.play(.directionDown)
     }

@@ -34,6 +34,9 @@ struct Adaptive_Fitness_CoachApp: App {
                 .task {
                     // Push current routines to the watch and (re)register reminders on launch.
                     PhoneConnectivityManager.shared.sync(routines: store.routines)
+                    // Install the notification delegate + category so reminders present in the
+                    // foreground and taps route. (Harmless under UI test; only the prompt is skipped.)
+                    NotificationManager.shared.configure()
                     // Skip the system notification prompt under UI test so it can't block the flow.
                     if !uiTesting {
                         await NotificationManager.shared.requestAuthorization()

@@ -8,6 +8,9 @@ import HealthKit
 final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
     var onHeartRate: ((Double) -> Void)?
     var onZoneChange: ((Int?) -> Void)?
+    /// Called if the session fails after starting (sensor loss, OS termination). Drives the
+    /// manager out of the active state instead of ticking against a dead session (N6).
+    var onFailure: (() -> Void)?
 
     private let healthStore = HealthKitAuthorization.healthStore
     private var session: HKWorkoutSession?
@@ -54,18 +57,17 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
         return WorkoutTotals(distanceMeters: distance, averageHeartRate: hr)
     }
 
-    func preferredTargetZoneIndex() async -> Int? {
-        do {
-            guard let config = try await healthStore.preferredWorkoutZoneConfiguration(for: HKQuantityType(.heartRate)) else {
-                return nil
-            }
-            let sorted = config.zones.sorted { $0.index < $1.index }
-            // Aerobic "Zone 2" = the second zone from the bottom.
-            if sorted.count >= 2 { return sorted[1].index }
-            return sorted.first?.index
-        } catch {
+    /// Map Apple's raw `HKWorkoutZone.index` to a 1-based position within the configuration's
+    /// sorted zones, so the engine compares like-for-like regardless of Apple's index base.
+    /// Returns nil if the update carries no usable zone/configuration.
+    nonisolated private static func normalizedPosition(for update: HKLiveWorkoutZoneUpdate) -> Int? {
+        guard let current = update.currentZoneDuration?.zone,
+              let zones = update.zoneGroup?.configuration.zones, !zones.isEmpty else {
             return nil
         }
+        let sorted = zones.sorted { $0.index < $1.index }
+        guard let position = sorted.firstIndex(where: { $0.index == current.index }) else { return nil }
+        return position + 1 // 1-based: lowest zone = 1
     }
 }
 
@@ -79,7 +81,10 @@ extension HealthKitWorkoutBackend: HKWorkoutSessionDelegate {
         date: Date
     ) {}
 
-    nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {}
+    nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
+        // The session died after starting — never fabricate continued guidance (N6).
+        Task { @MainActor in self.onFailure?() }
+    }
 }
 
 // MARK: - HKLiveWorkoutBuilderDelegate
@@ -104,9 +109,9 @@ extension HealthKitWorkoutBackend: HKLiveWorkoutBuilderDelegate {
         _ workoutBuilder: HKLiveWorkoutBuilder,
         didUpdateWorkoutZone zoneUpdate: HKLiveWorkoutZoneUpdate
     ) {
-        let index = zoneUpdate.currentZoneDuration?.zone.index
+        let position = Self.normalizedPosition(for: zoneUpdate)
         Task { @MainActor in
-            self.onZoneChange?(index)
+            self.onZoneChange?(position)
         }
     }
 }

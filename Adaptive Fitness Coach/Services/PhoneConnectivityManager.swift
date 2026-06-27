@@ -29,7 +29,9 @@ final class PhoneConnectivityManager: NSObject {
             let context = try WCMessageCodec.encode(routines: routines)
             try session.updateApplicationContext(context)
         } catch {
-            // Non-fatal: the watch keeps its last-known routines. Next change retries.
+            // Non-fatal: transient unreachability does not throw (the OS delivers the latest
+            // context once the watch is reachable); this catch only fires on an encode/state
+            // error, where the watch simply keeps its last-known routines.
             #if DEBUG
             print("PhoneConnectivity sync failed: \(error)")
             #endif

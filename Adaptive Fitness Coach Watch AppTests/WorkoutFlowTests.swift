@@ -7,6 +7,21 @@ import AdaptiveCore
 /// silent `SimulatedWorkoutBackend` (empty script) and `autoTick: false`, so zones and time are
 /// fed deterministically — the same engine that's unit-tested in AdaptiveCore, exercised here
 /// through the real device-shell wiring without HealthKit or a clock.
+/// A backend that fails on start (or on demand via `onFailure`) to exercise the failure paths.
+@MainActor
+private final class FailingBackend: WorkoutBackend {
+    var onHeartRate: ((Double) -> Void)?
+    var onZoneChange: ((Int?) -> Void)?
+    var onFailure: (() -> Void)?
+    let failOnStart: Bool
+
+    init(failOnStart: Bool = true) { self.failOnStart = failOnStart }
+
+    struct StartError: Error {}
+    func start() async throws { if failOnStart { throw StartError() } }
+    func end() async -> WorkoutTotals { WorkoutTotals() }
+}
+
 @MainActor
 struct WorkoutFlowTests {
 
@@ -94,6 +109,33 @@ struct WorkoutFlowTests {
         await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
         manager.receiveHeartRate(142)
         #expect(manager.currentHeartRate == 142)
+    }
+
+    // MARK: - Failure & manual end
+
+    @Test func startFailureSurfacesFailedStateWithoutFakingCompletion() async {
+        let manager = WorkoutSessionManager(backend: FailingBackend(), autoTick: false)
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        #expect(manager.sessionState == .failed)
+        #expect(manager.summary == nil) // never fabricate a "saved to Health" summary (N2/N6)
+    }
+
+    @Test func runtimeFailureStopsTheSession() async {
+        let backend = FailingBackend(failOnStart: false)
+        let manager = WorkoutSessionManager(backend: backend, autoTick: false)
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        #expect(manager.sessionState == .active)
+        backend.onFailure?() // simulate a mid-run sensor/session failure
+        #expect(manager.sessionState == .failed)
+    }
+
+    @Test func endManuallyCompletesAndBuildsSummary() async {
+        let manager = makeManager()
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        manager.endManually()
+        await waitUntilComplete(manager)
+        #expect(manager.sessionState == .complete)
+        #expect(manager.summary != nil)
     }
 
     // MARK: - Reset

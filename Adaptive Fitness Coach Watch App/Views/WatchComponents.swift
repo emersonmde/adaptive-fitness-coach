@@ -34,12 +34,15 @@ struct HeartRateView: View {
     }
 }
 
-/// A five-segment zone bar with the current zone highlighted. Ambient reassurance only —
-/// nothing here is required to follow the session (N5).
+/// A five-segment zone bar with the current zone highlighted and the aerobic target band
+/// underlined. Ambient reassurance only — nothing here is required to follow the session (N5).
+///
+/// Inputs are already-normalized **1-based zone positions** (see `WorkoutBackend`), so the
+/// mapping to a 0-based display slot is a plain `position - 1`, no base guessing.
 struct ZoneBarView: View {
-    /// Apple's current zone index, or nil before the first zone update.
+    /// Current 1-based zone position, or nil before the first zone update.
     let currentZoneIndex: Int?
-    /// The aerobic target zone index (highlighted subtly as the "good" band).
+    /// The aerobic target zone position (marked as the "good" band).
     let targetZoneIndex: Int
 
     private let zoneCount = 5
@@ -54,18 +57,25 @@ struct ZoneBarView: View {
         }
     }
 
-    /// Normalize Apple's index (which may be 0- or 1-based) into a 0..<5 slot for display.
-    private var activeSlot: Int? {
-        guard let i = currentZoneIndex else { return nil }
-        return max(0, min(zoneCount - 1, i <= 0 ? 0 : i - (i >= zoneCount ? 1 : 0)))
+    private func slot(forPosition position: Int) -> Int {
+        max(0, min(zoneCount - 1, position - 1))
     }
+
+    private var activeSlot: Int? { currentZoneIndex.map(slot(forPosition:)) }
+    private var targetSlot: Int { slot(forPosition: targetZoneIndex) }
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(0..<zoneCount, id: \.self) { slot in
-                Capsule()
-                    .fill(color(for: slot).opacity(slot == activeSlot ? 1.0 : 0.25))
-                    .frame(height: slot == activeSlot ? 7 : 5)
+                VStack(spacing: 2) {
+                    Capsule()
+                        .fill(color(for: slot).opacity(slot == activeSlot ? 1.0 : 0.25))
+                        .frame(height: slot == activeSlot ? 7 : 5)
+                    // Underline the aerobic target band so "where I should be" is legible.
+                    Capsule()
+                        .fill(.white.opacity(slot == targetSlot ? 0.5 : 0))
+                        .frame(height: 2)
+                }
             }
         }
         .animation(.easeInOut(duration: 0.3), value: activeSlot)

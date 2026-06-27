@@ -6,6 +6,8 @@ enum SessionState: Equatable {
     case idle
     case active
     case complete
+    /// The workout could not start, or failed after starting. Nothing was saved (N2/N6).
+    case failed
 }
 
 /// Drives the adaptive interval loop on top of a `WorkoutBackend` (real HealthKit or a
@@ -26,6 +28,11 @@ final class WorkoutSessionManager {
     private(set) var sessionElapsed: TimeInterval = 0
     private(set) var currentHeartRate: Double = 0
     private(set) var currentZoneIndex: Int?
+    /// The aerobic target zone position (1-based), exposed so the zone bar can mark the band.
+    private(set) var targetZone = 2
+    /// Run intervals completed so far and the plan's total, for the ambient progress readout.
+    private(set) var intervalsCompleted = 0
+    private(set) var totalRunIntervals = 0
     private(set) var adaptationMessage: String?
     private(set) var summary: SessionSummary?
     private(set) var routineName: String = "Adaptive Run"
@@ -34,9 +41,12 @@ final class WorkoutSessionManager {
     private let autoTick: Bool
     private var backend: WorkoutBackend?
 
+    /// Largest time step credited to the engine in one tick. Caps background catch-up so a
+    /// resume after suspension can't fast-forward through whole intervals in a single step.
+    private let maxTickDelta: TimeInterval = 3
+
     // Engine
     private var machine: IntervalStateMachine?
-    private var targetZoneIndex = 2
     private var latestZone: Int?
 
     // Ticking
@@ -72,30 +82,40 @@ final class WorkoutSessionManager {
         self.backend = backend
         backend.onHeartRate = { [weak self] hr in self?.receiveHeartRate(hr) }
         backend.onZoneChange = { [weak self] zone in self?.receiveZone(zone) }
+        backend.onFailure = { [weak self] in self?.handleFailure() }
 
-        if let target = await backend.preferredTargetZoneIndex() {
-            targetZoneIndex = target
-        }
+        targetZone = config.targetZone
 
         do {
             try await backend.start()
         } catch {
-            // Couldn't start the underlying workout; surface as immediate completion.
-            sessionState = .complete
-            summary = SessionSummary(totalDuration: 0)
+            // Couldn't start the underlying workout. Do NOT fake a saved workout — there is
+            // nothing in Health and nothing to log (N2/N6). Surface an explicit failure.
+            self.backend = nil
+            sessionState = .failed
             return
         }
 
         machine = IntervalStateMachine(
-            config: SessionConfig(plan: config.plan, targetZone: targetZoneIndex),
+            config: SessionConfig(plan: config.plan, targetZone: config.targetZone),
             adaptationConfig: adaptationConfig
         )
+        totalRunIntervals = config.plan.runIntervalCount
         currentPhase = machine?.currentPhase
         intervalTarget = machine?.currentTargetDuration ?? 0
         lastTickDate = Date()
         sessionState = .active
 
         if autoTick { startTicking() }
+    }
+
+    /// The session failed after starting (sensor loss, OS termination). Stop the loop and
+    /// surface the failure rather than ticking guidance against a dead workout (N6).
+    private func handleFailure() {
+        guard sessionState == .active else { return }
+        tickTask?.cancel(); tickTask = nil
+        backend = nil
+        sessionState = .failed
     }
 
     // MARK: - Signal intake (also the test seams)
@@ -118,9 +138,11 @@ final class WorkoutSessionManager {
                 guard let self else { return }
                 if self.sessionState != .active { return }
                 let now = Date()
-                let delta = now.timeIntervalSince(self.lastTickDate ?? now)
+                let elapsed = now.timeIntervalSince(self.lastTickDate ?? now)
                 self.lastTickDate = now
-                self.tick(delta: delta)
+                // Clamp background catch-up so a resume after suspension advances at most one
+                // capped step instead of fast-forwarding through intervals and bursting haptics.
+                self.tick(delta: min(elapsed, self.maxTickDelta))
             }
         }
     }
@@ -138,6 +160,7 @@ final class WorkoutSessionManager {
         intervalElapsed = machine.intervalElapsed
         intervalTarget = machine.currentTargetDuration ?? intervalTarget
         sessionElapsed = machine.sessionElapsed
+        intervalsCompleted = machine.intervalsCompleted
 
         if let transition = result.transition {
             haptics.play(for: transition.to.isRun ? .toRun : .toWalk)
@@ -145,9 +168,8 @@ final class WorkoutSessionManager {
         if let adaptation = result.adaptation {
             showAdaptation(adaptation.message)
         }
-        if result.isComplete, !isFinishing {
-            isFinishing = true
-            Task { await self.end() }
+        if result.isComplete {
+            finish()
         }
     }
 
@@ -162,14 +184,20 @@ final class WorkoutSessionManager {
 
     // MARK: - End
 
-    /// End early (user-initiated). Same path as a natural finish.
-    func endManually() {
-        guard sessionState == .active else { return }
-        Task { await end() }
+    /// End the session (user-initiated or natural completion). The single finishing entry
+    /// point — guarded so a user tap racing a natural completion can't double-finalize.
+    func finish() {
+        guard sessionState == .active, !isFinishing else { return }
+        isFinishing = true
+        Task { await self.end() }
     }
 
-    func end() async {
-        guard sessionState == .active else { return }
+    /// End early (user-initiated). Routed through the same guarded `finish()`.
+    func endManually() {
+        finish()
+    }
+
+    private func end() async {
         tickTask?.cancel()
         tickTask = nil
 
@@ -202,6 +230,8 @@ final class WorkoutSessionManager {
         summary = nil
         intervalElapsed = 0
         sessionElapsed = 0
+        intervalsCompleted = 0
+        totalRunIntervals = 0
         currentPhase = nil
         sessionState = .idle
     }

@@ -54,12 +54,15 @@ public struct IntervalPlan: Codable, Sendable, Hashable {
 }
 
 public extension IntervalPlan {
-    /// The default seed plan for a low-fitness beginner (resolves Q1).
+    /// The default seed plan for a low-fitness beginner — a starting point for Q1, not its
+    /// resolution (Q1's research-optimal ratio is still pending per the PRD).
     ///
     /// 5-minute warmup walk, 8 cycles of 60s run / 90s walk, 5-minute cooldown walk
     /// (~30 minutes total). Matches NHS Couch-to-5K Week 1. The ratio is only a seed: the
     /// adaptation engine shortens runs / lengthens walks for a struggling user and extends
     /// runs / shortens walks for a comfortable one, so a wrong seed self-corrects (N7).
+    ///
+    /// `cycles` is clamped to at least 1 so the factory never yields a runless "run".
     static func beginnerRunWalk(
         warmup: TimeInterval = 300,
         runDuration: TimeInterval = 60,
@@ -69,7 +72,7 @@ public extension IntervalPlan {
     ) -> IntervalPlan {
         var segments: [IntervalSegment] = []
         segments.append(IntervalSegment(phase: .warmupWalk, targetDuration: warmup))
-        for _ in 0..<cycles {
+        for _ in 0..<max(1, cycles) {
             segments.append(IntervalSegment(phase: .run, targetDuration: runDuration))
             segments.append(IntervalSegment(phase: .walk, targetDuration: walkDuration))
         }

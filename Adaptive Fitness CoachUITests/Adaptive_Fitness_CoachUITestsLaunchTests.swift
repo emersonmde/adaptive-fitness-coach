@@ -20,6 +20,7 @@ final class Adaptive_Fitness_CoachUITestsLaunchTests: XCTestCase {
     @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting"] // clean store, no permission prompt blocking the shot
         app.launch()
 
         // Insert steps here to perform after app launch but before taking a screenshot,

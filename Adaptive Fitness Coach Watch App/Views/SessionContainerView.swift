@@ -24,7 +24,7 @@ struct SessionContainerView: View {
         Group {
             switch manager.sessionState {
             case .idle:
-                LaunchView(routine: nextRoutine, onStart: start)
+                LaunchView(routine: nextRoutine, estimatedDuration: plannedDuration, onStart: start)
             case .active:
                 WorkoutActiveView(manager: manager)
             case .complete:
@@ -33,6 +33,14 @@ struct SessionContainerView: View {
                 } else {
                     ProgressView()
                 }
+            case .failed:
+                ContentUnavailableView {
+                    Label("Couldn't start", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text("The workout couldn't start. Nothing was saved. Check Health permissions and try again.")
+                } actions: {
+                    Button("Back") { manager.reset() }
+                }
             }
         }
         .task {
@@ -40,6 +48,9 @@ struct SessionContainerView: View {
             if simulate, manager.sessionState == .idle { start() }
         }
     }
+
+    /// Planned length of the P0 session, shown as an estimate on the launch screen.
+    private var plannedDuration: TimeInterval { IntervalPlan.beginnerRunWalk().plannedDuration }
 
     /// The next adaptive-run routine to surface on the launch screen, based on the current
     /// weekday/time. Falls back to any adaptive run if none is scheduled later today.

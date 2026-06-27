@@ -22,8 +22,8 @@ final class RoutineFlowUITests: XCTestCase {
         // Empty state first.
         XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 5))
 
-        // Open the create flow (toolbar "New routine", or the empty-state button).
-        let newRoutineButton = app.buttons["New routine"].firstMatch
+        // Open the create flow via the unambiguous empty-state button.
+        let newRoutineButton = app.buttons["newRoutineEmptyState"]
         XCTAssertTrue(newRoutineButton.waitForExistence(timeout: 5))
         newRoutineButton.tap()
 
@@ -46,7 +46,7 @@ final class RoutineFlowUITests: XCTestCase {
     func testCreatedRoutineOpensDetail() throws {
         let app = launchApp()
 
-        app.buttons["New routine"].firstMatch.tap()
+        app.buttons["newRoutineEmptyState"].tap()
         let nameField = app.textFields.firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
         nameField.tap()

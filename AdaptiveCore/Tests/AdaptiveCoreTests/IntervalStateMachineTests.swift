@@ -85,16 +85,17 @@ struct IntervalStateMachineTests {
 
     // MARK: - Extending
 
-    @Test func sustainedComfortExtendsRunWithoutTransitioning() {
+    @Test func sustainedComfortExtendsRunWithExactlyOneBanner() {
         let adapt = AdaptationConfig(backOffWindow: 999, extendWindow: 3, runExtendIncrement: 3)
         var machine = IntervalStateMachine(config: config([(.run, 5), (.walk, 5)]), adaptationConfig: adapt)
         let rec = drive(&machine, zone: { _ in 1 }, maxSeconds: 12)
 
-        #expect(rec.adaptations.allSatisfy { $0.action == .extendedRun })
-        #expect(!rec.adaptations.isEmpty)
-        // Still running — the run never handed off to the walk.
+        // The run keeps stretching (still running, never handed to the walk)...
         #expect(machine.currentPhase == .run)
         #expect(!rec.transitions.contains(TransitionEvent(from: .run, to: .walk)))
+        // ...but the "keep running" banner is surfaced exactly once, not every increment (Q5).
+        #expect(rec.adaptations.filter { $0.action == .extendedRun }.count == 1)
+        #expect(machine.adaptationsApplied == 1)
     }
 
     // MARK: - Walk lengthening / capping
@@ -126,12 +127,38 @@ struct IntervalStateMachineTests {
     @Test func warmupIsNotAdaptedEvenWhenHot() {
         let adapt = AdaptationConfig(backOffWindow: 1, minRunDuration: 1)
         var machine = IntervalStateMachine(config: config([(.warmupWalk, 5), (.run, 5)]), adaptationConfig: adapt)
-        let rec = drive(&machine, zone: { _ in 5 }, maxSeconds: 6)
+        // Capture only the warmup window (first 5s): drive 5 ticks and assert no adaptation
+        // occurred and the warmup ran its full fixed duration before transitioning.
+        var adaptationsDuringWarmup = 0
+        for _ in 0..<5 {
+            let r = machine.tick(deltaTime: 1, currentZone: 5)
+            if r.adaptation != nil { adaptationsDuringWarmup += 1 }
+        }
+        #expect(adaptationsDuringWarmup == 0)            // warmup is never adapted
+        #expect(machine.currentPhase == .run)            // transitioned at exactly 5s
+        #expect(machine.intervalsCompleted == 0)         // no run completed yet
+    }
 
-        // No adaptation during the warmup; it runs its full fixed 5s then transitions.
-        #expect(rec.transitions.first == TransitionEvent(from: .warmupWalk, to: .run))
-        #expect(rec.transitions.first.map { _ in machine.sessionElapsed } != nil)
-        #expect(!rec.adaptations.contains { $0.atSessionTime <= 5 && $0.action != .shortenedRun } || rec.adaptations.isEmpty)
+    // MARK: - Delta-time robustness
+
+    @Test func nonPositiveDeltaIsInert() {
+        var machine = IntervalStateMachine(config: config([(.run, 5)]))
+        let before = machine.sessionElapsed
+        let zero = machine.tick(deltaTime: 0, currentZone: nil)
+        let negative = machine.tick(deltaTime: -3, currentZone: nil)
+        #expect(zero == TickResult())
+        #expect(negative == TickResult())
+        #expect(machine.sessionElapsed == before) // no advancement, no corruption
+    }
+
+    @Test func variableDeltaStillCompletesAndTotalsAreConsistent() {
+        var machine = IntervalStateMachine(config: config([(.warmupWalk, 2), (.run, 4), (.walk, 4)]))
+        // Mixed deltas (the watch clamps background catch-up, but the engine must stay sane).
+        for delta in [0.5, 0.5, 1.0, 2.0, 1.0, 3.0, 2.0, 1.0] as [TimeInterval] {
+            _ = machine.tick(deltaTime: delta, currentZone: nil)
+        }
+        // Run + walk totals always sum to the session elapsed regardless of tick cadence.
+        #expect(abs((machine.totalRunDuration + machine.totalWalkDuration) - machine.sessionElapsed) < 0.0001)
     }
 
     // MARK: - Degraded path

@@ -91,15 +91,21 @@ public struct AdaptationPolicy: Sendable {
         timeAtOrBelowTarget = 0
     }
 
-    /// Advance the sustained-time accumulators for this tick. Crossing the target zone
-    /// boundary resets the opposite accumulator, so only *sustained* time counts.
+    /// Advance the sustained-time accumulators for this tick using a leaky integrator: the
+    /// active side accrues `deltaTime`, the opposite side *decays* by `deltaTime` rather than
+    /// resetting to zero. This is the hysteresis that makes "sustained" robust to flapping —
+    /// a brief 1–2s excursion across the zone boundary (common as HR rides the Zone 2/3 line)
+    /// only costs a couple of seconds off a nearly-complete window instead of wiping it, while
+    /// a genuinely sustained excursion still drives the opposite side to zero. This honors the
+    /// PRD's "smoothed/sustained, never a single reading" constraint at the decision layer even
+    /// though the zone itself is Apple's already-classified signal.
     private mutating func accumulate(currentZone: Int, targetZone: Int, deltaTime: TimeInterval) {
         if currentZone > targetZone {
             timeAboveTarget += deltaTime
-            timeAtOrBelowTarget = 0
+            timeAtOrBelowTarget = max(0, timeAtOrBelowTarget - deltaTime)
         } else {
             timeAtOrBelowTarget += deltaTime
-            timeAboveTarget = 0
+            timeAboveTarget = max(0, timeAboveTarget - deltaTime)
         }
     }
 

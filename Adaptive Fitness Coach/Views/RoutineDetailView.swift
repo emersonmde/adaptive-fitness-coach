@@ -1,16 +1,18 @@
 import SwiftUI
 import AdaptiveCore
 
-/// Detail + schedule (P5) for one routine: set the time, toggle reminders, edit days, delete.
+/// Detail + schedule (P5) for one routine: edit days, set the time, toggle reminders, delete.
 /// Edits write straight back to the store, which syncs to the watch and reschedules reminders.
 struct RoutineDetailView: View {
     let store: RoutineStore
     let routineID: Routine.ID
     @Environment(\.dismiss) private var dismiss
 
-    /// Local editable copy; committed to the store on each change.
+    /// The default reminder time when a routine has none yet (a neutral morning slot, not "now").
+    private static let defaultTime = ScheduleTime(hour: 7, minute: 0)
+
+    /// Local editable copy; committed to the store on each change. Loaded reactively by id.
     @State private var draft: Routine?
-    @State private var timeSelection = Date()
 
     var body: some View {
         Group {
@@ -23,7 +25,11 @@ struct RoutineDetailView: View {
         }
         .navigationTitle(draft?.name ?? "Routine")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear(perform: loadDraft)
+        // `.task(id:)` runs once per routine id and won't clobber an in-flight edit on a
+        // re-appearance the way `onAppear` would; it only (re)loads when the id actually changes.
+        .task(id: routineID) {
+            draft = store.routines.first { $0.id == routineID }
+        }
     }
 
     private func form(for routine: Routine) -> some View {
@@ -37,8 +43,9 @@ struct RoutineDetailView: View {
             }
 
             Section("Schedule") {
-                DatePicker("Time", selection: $timeSelection, displayedComponents: .hourAndMinute)
-                    .onChange(of: timeSelection) { _, newValue in setTime(newValue) }
+                // Single source of truth: the picker reads/writes the draft's scheduleTime,
+                // displaying the default time when none is set yet.
+                DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
 
                 Toggle("Reminders", isOn: Binding(
                     get: { draft?.reminderEnabled ?? false },
@@ -59,18 +66,20 @@ struct RoutineDetailView: View {
         }
     }
 
-    // MARK: - State sync
+    // MARK: - Bindings / state sync
 
-    private func loadDraft() {
-        guard let routine = store.routines.first(where: { $0.id == routineID }) else {
-            draft = nil
-            return
-        }
-        draft = routine
-        if let t = routine.scheduleTime {
-            var c = DateComponents(); c.hour = t.hour; c.minute = t.minute
-            timeSelection = Calendar.current.date(from: c) ?? Date()
-        }
+    /// Bridges the `Date`-based picker to the model's `ScheduleTime`, defaulting the display.
+    private var timeBinding: Binding<Date> {
+        Binding(
+            get: {
+                let t = draft?.scheduleTime ?? Self.defaultTime
+                return Calendar.current.date(from: DateComponents(hour: t.hour, minute: t.minute)) ?? Date()
+            },
+            set: { newDate in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                setTime(ScheduleTime(hour: c.hour ?? Self.defaultTime.hour, minute: c.minute ?? 0))
+            }
+        )
     }
 
     /// Mutate the draft and commit to the store, which triggers watch sync + reminder reschedule.
@@ -86,18 +95,16 @@ struct RoutineDetailView: View {
         commit { $0.repeatDays = days }
     }
 
-    private func setTime(_ date: Date) {
-        let c = Calendar.current.dateComponents([.hour, .minute], from: date)
-        commit { $0.scheduleTime = ScheduleTime(hour: c.hour ?? 0, minute: c.minute ?? 0) }
+    private func setTime(_ time: ScheduleTime) {
+        commit { $0.scheduleTime = time }
     }
 
     private func setReminders(_ on: Bool) {
-        // Default a time if none set yet, so a reminder has something to fire on.
         commit {
             $0.reminderEnabled = on
-            if on && $0.scheduleTime == nil {
-                let c = Calendar.current.dateComponents([.hour, .minute], from: timeSelection)
-                $0.scheduleTime = ScheduleTime(hour: c.hour ?? 7, minute: c.minute ?? 0)
+            // Ensure an explicit default time exists so a reminder has something to fire on.
+            if on, $0.scheduleTime == nil {
+                $0.scheduleTime = Self.defaultTime
             }
         }
     }

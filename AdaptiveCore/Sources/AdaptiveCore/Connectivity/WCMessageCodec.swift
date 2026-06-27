@@ -33,9 +33,9 @@ public enum WCMessageCodec {
 
     /// Decode routines from a received application-context dictionary.
     ///
-    /// A missing/older version is tolerated only when it matches `currentVersion`; anything
-    /// else throws so the receiver can keep its last-known-good routines rather than act on a
-    /// payload it may not understand.
+    /// The version must equal `currentVersion` exactly (a missing version decodes as 0 and is
+    /// rejected). On a version mismatch this throws so the receiver keeps its last-known-good
+    /// routines rather than acting on a payload it may not understand.
     public static func decodeRoutines(from message: [String: Any]) throws -> [Routine] {
         // A version field is required and must be understood.
         let version = message[Key.version] as? Int ?? 0
