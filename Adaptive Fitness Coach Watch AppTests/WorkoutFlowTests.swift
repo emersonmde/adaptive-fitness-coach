@@ -1,0 +1,114 @@
+import Foundation
+import Testing
+import AdaptiveCore
+@testable import Adaptive_Fitness_Coach_Watch_App
+
+/// Integration tests for the on-watch workout flow. They drive `WorkoutSessionManager` with a
+/// silent `SimulatedWorkoutBackend` (empty script) and `autoTick: false`, so zones and time are
+/// fed deterministically — the same engine that's unit-tested in AdaptiveCore, exercised here
+/// through the real device-shell wiring without HealthKit or a clock.
+@MainActor
+struct WorkoutFlowTests {
+
+    private func makeManager() -> WorkoutSessionManager {
+        WorkoutSessionManager(backend: SimulatedWorkoutBackend(script: []), autoTick: false)
+    }
+
+    private func shortPlan() -> IntervalPlan {
+        // warmup 2 + 2×(run 5 / walk 5) + cooldown 2
+        IntervalPlan.beginnerRunWalk(warmup: 2, runDuration: 5, walkDuration: 5, cycles: 2, cooldown: 2)
+    }
+
+    private func tick(_ manager: WorkoutSessionManager, seconds: Int) {
+        for _ in 0..<seconds { manager.tick(delta: 1) }
+    }
+
+    /// Completion finalizes through an async `end()` (the backend read-back is awaited), so
+    /// after the session finishes we yield until the state settles to `.complete`.
+    private func waitUntilComplete(_ manager: WorkoutSessionManager) async {
+        for _ in 0..<200 {
+            if manager.sessionState == .complete { return }
+            await Task.yield()
+        }
+    }
+
+    // MARK: - Lifecycle
+
+    @Test func beginActivatesInWarmup() async {
+        let manager = makeManager()
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        #expect(manager.sessionState == .active)
+        #expect(manager.currentPhase == .warmupWalk)
+    }
+
+    @Test func fixedIntervalsProgressWithoutZoneData() async {
+        let manager = makeManager()
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        manager.receiveZone(nil) // no zone → graceful fixed-interval path (N6)
+
+        tick(manager, seconds: 2)            // warmup (2s) elapses
+        #expect(manager.currentPhase == .run)
+
+        tick(manager, seconds: 5)            // run (5s) elapses
+        #expect(manager.currentPhase == .walk)
+    }
+
+    @Test func completesAndBuildsSummaryFromBackendTotals() async {
+        let manager = makeManager()
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        manager.receiveZone(nil)
+
+        // Drive well past the planned duration to guarantee completion.
+        tick(manager, seconds: 40)
+        await waitUntilComplete(manager)
+
+        #expect(manager.sessionState == .complete)
+        let summary = try? #require(manager.summary)
+        // Totals come from the backend read-back (the simulated backend reports these).
+        #expect(manager.summary?.totalDistance == 2400)
+        #expect(manager.summary?.averageHeartRate == 138)
+        #expect((manager.summary?.intervalsCompleted ?? 0) >= 2)
+        _ = summary
+    }
+
+    // MARK: - Adaptation through the shell
+
+    @Test func sustainedHotZoneShortensRunAndShowsBanner() async {
+        let manager = makeManager()
+        let adaptation = AdaptationConfig(backOffWindow: 3, minRunDuration: 2)
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test", adaptationConfig: adaptation)
+
+        tick(manager, seconds: 2)            // finish warmup → into run
+        #expect(manager.currentPhase == .run)
+
+        manager.receiveZone(4)               // running hot (above target zone 2)
+        tick(manager, seconds: 3)            // sustained hot ≥ backOffWindow
+
+        // Run was cut short → now walking, an adaptation was applied, banner is showing.
+        #expect(manager.currentPhase == .walk)
+        #expect(manager.adaptationMessage != nil)
+    }
+
+    @Test func heartRateReachesDisplayState() async {
+        let manager = makeManager()
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        manager.receiveHeartRate(142)
+        #expect(manager.currentHeartRate == 142)
+    }
+
+    // MARK: - Reset
+
+    @Test func resetReturnsToIdle() async {
+        let manager = makeManager()
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        manager.receiveZone(nil)
+        tick(manager, seconds: 40)
+        await waitUntilComplete(manager)
+        #expect(manager.sessionState == .complete)
+
+        manager.reset()
+        #expect(manager.sessionState == .idle)
+        #expect(manager.summary == nil)
+        #expect(manager.currentPhase == nil)
+    }
+}

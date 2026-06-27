@@ -1,0 +1,93 @@
+import Foundation
+import Testing
+@testable import AdaptiveCore
+
+@MainActor
+struct RoutineStoreTests {
+
+    /// A store backed by a unique temp file, cleaned up by the OS temp dir.
+    private func makeStore(onChange: (@MainActor ([Routine]) -> Void)? = nil) -> RoutineStore {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("routines-\(UUID().uuidString).json")
+        return RoutineStore(fileURL: url, onChange: onChange)
+    }
+
+    private func run(_ name: String = "Run", at time: ScheduleTime? = nil, days: Set<DayOfWeek> = [.monday]) -> Routine {
+        Routine(name: name, type: .adaptiveRun, repeatDays: days, scheduleTime: time)
+    }
+
+    @Test func addPersistsAcrossInstances() {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("routines-\(UUID().uuidString).json")
+        let store = RoutineStore(fileURL: url)
+        let routine = run("Morning Run")
+        store.add(routine)
+
+        // A fresh store reading the same file sees the persisted routine.
+        let reloaded = RoutineStore(fileURL: url)
+        #expect(reloaded.routines == [routine])
+    }
+
+    @Test func updateReplacesMatchingRoutine() {
+        let store = makeStore()
+        var routine = run("Run")
+        store.add(routine)
+        routine.name = "Renamed"
+        store.update(routine)
+        #expect(store.routines.count == 1)
+        #expect(store.routines.first?.name == "Renamed")
+    }
+
+    @Test func removeDeletesById() {
+        let store = makeStore()
+        let routine = run()
+        store.add(routine)
+        store.remove(id: routine.id)
+        #expect(store.routines.isEmpty)
+    }
+
+    @Test func localMutationsBroadcast() {
+        var broadcasts = 0
+        let store = makeStore { _ in broadcasts += 1 }
+        store.add(run())
+        store.update(store.routines[0])
+        store.remove(id: store.routines.isEmpty ? UUID() : store.routines[0].id)
+        #expect(broadcasts == 3)
+    }
+
+    @Test func syncDoesNotBroadcast() {
+        var broadcasts = 0
+        let store = makeStore { _ in broadcasts += 1 }
+        store.replaceFromSync([run("A"), run("B")])
+        #expect(broadcasts == 0)
+        #expect(store.routines.count == 2)
+    }
+
+    @Test func routinesOnDaySortedByTime() {
+        let store = makeStore()
+        store.add(run("Evening", at: ScheduleTime(hour: 18, minute: 0), days: [.monday]))
+        store.add(run("Morning", at: ScheduleTime(hour: 7, minute: 0), days: [.monday]))
+        let monday = store.routines(on: .monday)
+        #expect(monday.map(\.name) == ["Morning", "Evening"])
+    }
+
+    @Test func nextRoutineFindsLaterToday() {
+        let store = makeStore()
+        store.add(run("Later", at: ScheduleTime(hour: 18, minute: 0), days: [.monday]))
+        let next = store.nextRoutine(fromWeekday: .monday, hour: 9, minute: 0)
+        #expect(next?.name == "Later")
+    }
+
+    @Test func nextRoutineWrapsToFutureDay() {
+        let store = makeStore()
+        store.add(run("Wednesday", at: ScheduleTime(hour: 7, minute: 0), days: [.wednesday]))
+        // It's Monday evening; the only routine is Wednesday morning.
+        let next = store.nextRoutine(fromWeekday: .monday, hour: 20, minute: 0)
+        #expect(next?.name == "Wednesday")
+    }
+
+    @Test func nextRoutineNilWhenEmpty() {
+        let store = makeStore()
+        #expect(store.nextRoutine(fromWeekday: .monday, hour: 9, minute: 0) == nil)
+    }
+}

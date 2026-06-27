@@ -1,0 +1,54 @@
+import Foundation
+import WatchConnectivity
+import AdaptiveCore
+
+/// Sends the user's routines from the phone to the watch.
+///
+/// P0 connectivity is one-directional: the phone owns the routine set and pushes the latest
+/// state to the watch with `updateApplicationContext`, which delivers only the most recent
+/// payload, survives the counterpart being unreachable, and is queued by the OS until the
+/// watch is available. That matches "watch-first, phone-optional" (N4) — the watch always
+/// has the last-known routines without the phone needing to be present at workout time.
+@MainActor
+final class PhoneConnectivityManager: NSObject {
+    static let shared = PhoneConnectivityManager()
+
+    private var session: WCSession { .default }
+
+    func activate() {
+        guard WCSession.isSupported() else { return }
+        session.delegate = self
+        session.activate()
+    }
+
+    /// Push the full routine set to the watch. Safe to call on every routine change.
+    func sync(routines: [Routine]) {
+        guard WCSession.isSupported() else { return }
+        guard session.activationState == .activated else { return }
+        do {
+            let context = try WCMessageCodec.encode(routines: routines)
+            try session.updateApplicationContext(context)
+        } catch {
+            // Non-fatal: the watch keeps its last-known routines. Next change retries.
+            #if DEBUG
+            print("PhoneConnectivity sync failed: \(error)")
+            #endif
+        }
+    }
+}
+
+extension PhoneConnectivityManager: WCSessionDelegate {
+    nonisolated func session(
+        _ session: WCSession,
+        activationDidCompleteWith activationState: WCSessionActivationState,
+        error: Error?
+    ) {}
+
+    // Required on iOS so the session can re-activate after switching watches.
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+
+    nonisolated func sessionDidDeactivate(_ session: WCSession) {
+        // Reactivate for the newly-paired watch.
+        WCSession.default.activate()
+    }
+}

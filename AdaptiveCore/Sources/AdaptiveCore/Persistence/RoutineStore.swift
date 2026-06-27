@@ -1,0 +1,107 @@
+import Foundation
+import Observation
+
+/// The single source of truth for the user's routines, shared by phone and watch.
+///
+/// Persists `[Routine]` as JSON to a file and exposes it as observable state for SwiftUI.
+/// Mutations on the phone fire `onChange` so the connectivity layer can push the latest set
+/// to the watch — `RoutineStore` itself imports no WatchConnectivity, keeping it pure and
+/// testable. The watch constructs a store with no `onChange` (it receives, never broadcasts).
+@MainActor
+@Observable
+public final class RoutineStore {
+    public private(set) var routines: [Routine]
+
+    private let fileURL: URL
+    private let onChange: (@MainActor ([Routine]) -> Void)?
+
+    /// - Parameters:
+    ///   - fileURL: where to persist. Defaults to `routines.json` in the documents directory.
+    ///   - onChange: called after any local mutation with the new full set (phone → watch sync).
+    public init(
+        fileURL: URL? = nil,
+        onChange: (@MainActor ([Routine]) -> Void)? = nil
+    ) {
+        self.fileURL = fileURL ?? Self.defaultFileURL()
+        self.onChange = onChange
+        self.routines = Self.loadRoutines(from: self.fileURL)
+    }
+
+    public static func defaultFileURL() -> URL {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return dir.appendingPathComponent("routines.json")
+    }
+
+    private static func loadRoutines(from url: URL) -> [Routine] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        return (try? JSONDecoder().decode([Routine].self, from: data)) ?? []
+    }
+
+    /// Persist to disk and notify the sync hook. Called after every mutation.
+    private func save(broadcast: Bool) {
+        if let data = try? JSONEncoder().encode(routines) {
+            try? data.write(to: fileURL, options: [.atomic])
+        }
+        if broadcast { onChange?(routines) }
+    }
+
+    // MARK: - Mutations (local, broadcast to watch)
+
+    public func add(_ routine: Routine) {
+        routines.append(routine)
+        save(broadcast: true)
+    }
+
+    public func update(_ routine: Routine) {
+        guard let index = routines.firstIndex(where: { $0.id == routine.id }) else {
+            add(routine)
+            return
+        }
+        routines[index] = routine
+        save(broadcast: true)
+    }
+
+    public func remove(id: Routine.ID) {
+        routines.removeAll { $0.id == id }
+        save(broadcast: true)
+    }
+
+    // MARK: - Sync (incoming from the other device, persisted but not re-broadcast)
+
+    /// Replace the whole set from a received sync. Persists without firing `onChange`, so a
+    /// received update never echoes back to the sender.
+    public func replaceFromSync(_ incoming: [Routine]) {
+        routines = incoming
+        save(broadcast: false)
+    }
+
+    // MARK: - Queries
+
+    /// Routines that repeat on `day`, ordered by their scheduled time then name.
+    public func routines(on day: DayOfWeek) -> [Routine] {
+        routines
+            .filter { $0.repeatDays.contains(day) }
+            .sorted { lhs, rhs in
+                let l = lhs.scheduleTime.map { $0.hour * 60 + $0.minute } ?? Int.max
+                let r = rhs.scheduleTime.map { $0.hour * 60 + $0.minute } ?? Int.max
+                return l == r ? lhs.name < rhs.name : l < r
+            }
+    }
+
+    /// The next routine to run on or after a given weekday/time, scanning the week forward.
+    /// Used by the watch launch screen to show "up next". Returns nil if no routines exist.
+    public func nextRoutine(fromWeekday weekday: DayOfWeek, hour: Int, minute: Int) -> Routine? {
+        guard !routines.isEmpty else { return nil }
+        let nowMinutes = hour * 60 + minute
+        // Search today (later than now) then each following day, wrapping around the week.
+        for offset in 0..<7 {
+            let day = DayOfWeek(rawValue: (weekday.rawValue - 1 + offset) % 7 + 1)!
+            let candidates = routines(on: day).filter { routine in
+                guard offset == 0, let t = routine.scheduleTime else { return true }
+                return (t.hour * 60 + t.minute) >= nowMinutes
+            }
+            if let first = candidates.first { return first }
+        }
+        return routines(on: weekday).first
+    }
+}

@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		34704E322FECD82000C28688 /* Adaptive Fitness Coach Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 34704E312FECD82000C28688 /* Adaptive Fitness Coach Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		34704E832FECDA6200C28688 /* WorkoutKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34704E822FECDA6200C28688 /* WorkoutKit.framework */; };
+		FACE000000000000000000C1 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B1 /* AdaptiveCore */; };
+		FACE000000000000000000C2 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B2 /* AdaptiveCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +72,7 @@
 		34704E312FECD82000C28688 /* Adaptive Fitness Coach Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Adaptive Fitness Coach Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E402FECD82100C28688 /* Adaptive Fitness Coach Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Adaptive Fitness Coach Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E4A2FECD82100C28688 /* Adaptive Fitness Coach Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Adaptive Fitness Coach Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		34704E822FECDA6200C28688 /* WorkoutKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WorkoutKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.5.sdk/System/Library/Frameworks/WorkoutKit.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -109,6 +113,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FACE000000000000000000C1 /* AdaptiveCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -130,6 +135,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				34704E832FECDA6200C28688 /* WorkoutKit.framework in Frameworks */,
+				FACE000000000000000000C2 /* AdaptiveCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -159,6 +166,7 @@
 				34704E352FECD82000C28688 /* Adaptive Fitness Coach Watch App */,
 				34704E432FECD82100C28688 /* Adaptive Fitness Coach Watch AppTests */,
 				34704E4D2FECD82100C28688 /* Adaptive Fitness Coach Watch AppUITests */,
+				34704E812FECDA6200C28688 /* Frameworks */,
 				34704E0F2FECD81F00C28688 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -174,6 +182,14 @@
 				34704E4A2FECD82100C28688 /* Adaptive Fitness Coach Watch AppUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		34704E812FECDA6200C28688 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				34704E822FECDA6200C28688 /* WorkoutKit.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -198,6 +214,7 @@
 			);
 			name = "Adaptive Fitness Coach";
 			packageProductDependencies = (
+				FACE000000000000000000B1 /* AdaptiveCore */,
 			);
 			productName = "Adaptive Fitness Coach";
 			productReference = 34704E0E2FECD81F00C28688 /* Adaptive Fitness Coach.app */;
@@ -266,6 +283,7 @@
 			);
 			name = "Adaptive Fitness Coach Watch App";
 			packageProductDependencies = (
+				FACE000000000000000000B2 /* AdaptiveCore */,
 			);
 			productName = "Adaptive Fitness Coach Watch App";
 			productReference = 34704E312FECD82000C28688 /* Adaptive Fitness Coach Watch App.app */;
@@ -360,6 +378,9 @@
 			);
 			mainGroup = 34704E052FECD81F00C28688;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				FACE000000000000000000A1 /* XCLocalSwiftPackageReference "AdaptiveCore" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 34704E0F2FECD81F00C28688 /* Products */;
 			projectDirPath = "";
@@ -613,7 +634,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Adaptive Fitness Coach Watch App/Adaptive Fitness Coach Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Adaptive Fitness Coach saves each session to Apple Health as a native workout.";
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -636,7 +660,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
 			};
 			name = Debug;
 		};
@@ -645,7 +669,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Adaptive Fitness Coach Watch App/Adaptive Fitness Coach Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Adaptive Fitness Coach saves each session to Apple Health as a native workout.";
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -669,7 +696,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				VALIDATE_PRODUCT = YES;
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
 			};
 			name = Release;
 		};
@@ -678,6 +705,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Adaptive Fitness Coach/Adaptive Fitness Coach.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -712,6 +740,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "Adaptive Fitness Coach/Adaptive Fitness Coach.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -848,7 +877,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Adaptive Fitness Coach Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Adaptive Fitness Coach Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
 			};
 			name = Debug;
 		};
@@ -871,7 +900,7 @@
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Adaptive Fitness Coach Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Adaptive Fitness Coach Watch App";
 				VALIDATE_PRODUCT = YES;
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
 			};
 			name = Release;
 		};
@@ -892,7 +921,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_TARGET_NAME = "Adaptive Fitness Coach Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
 			};
 			name = Debug;
 		};
@@ -914,7 +943,7 @@
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_TARGET_NAME = "Adaptive Fitness Coach Watch App";
 				VALIDATE_PRODUCT = YES;
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 27.0;
 			};
 			name = Release;
 		};
@@ -985,6 +1014,24 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		FACE000000000000000000A1 /* XCLocalSwiftPackageReference "AdaptiveCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = AdaptiveCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		FACE000000000000000000B1 /* AdaptiveCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AdaptiveCore;
+		};
+		FACE000000000000000000B2 /* AdaptiveCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AdaptiveCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 34704E062FECD81F00C28688 /* Project object */;
 }

@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;background:#f4f3ef;}
+  .stripe-ph{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,0.06) 0 6px,rgba(255,255,255,0) 6px 12px);}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#f4f3ef;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#1a1a1c;-webkit-font-smoothing:antialiased;padding:56px 40px 120px;">
+<div style="max-width:1140px;margin:0 auto;">
+
+  <!-- ============ HEADER ============ -->
+  <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#8a8a90;margin-bottom:14px;">Developer Handoff · watchOS · for build</div>
+  <h1 style="font-size:46px;line-height:1.04;letter-spacing:-0.02em;margin:0 0 16px;font-weight:700;">Adaptive Fitness Coach<span style="color:#9a9a9f;font-weight:400;">  /  Watch</span></h1>
+  <p style="font-size:17px;line-height:1.55;color:#55555b;max-width:680px;margin:0 0 8px;">The watch is the whole product in-workout. Every screen below is a real Apple workout session (WorkoutKit/HealthKit) with a guidance layer on top. The OS is the system of record — the app records nothing and the user logs nothing.</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:12px;color:#6b6b70;margin-top:20px;">
+    <span style="background:#fff;border:1px solid #e2e0da;border-radius:999px;padding:7px 13px;">Spec v1.0</span>
+    <span style="background:#fff;border:1px solid #e2e0da;border-radius:999px;padding:7px 13px;">Scope: P0 + P1 watch screens</span>
+    <span style="background:#fff;border:1px solid #e2e0da;border-radius:999px;padding:7px 13px;">Pair file: Phone Handoff</span>
+  </div>
+
+  <!-- ============ LEGEND ============ -->
+  <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:20px;margin-top:40px;">
+    <div style="background:#fff;border:1px solid #e7e5e0;border-radius:18px;padding:26px 28px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:16px;">Non-negotiables in play</div>
+      <div style="display:flex;flex-direction:column;gap:11px;font-size:14px;line-height:1.4;">
+        <div style="display:flex;gap:12px;"><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#2f5fdb;min-width:26px;">N1</span><span><b>Logging is invisible.</b> No screen ever asks the user to record what they did.</span></div>
+        <div style="display:flex;gap:12px;"><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#2f5fdb;min-width:26px;">N2</span><span><b>Real Apple workouts.</b> Start/stop a native session; never push synthetic HR/calorie data.</span></div>
+        <div style="display:flex;gap:12px;"><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#2f5fdb;min-width:26px;">N3</span><span><b>Auto effort band.</b> Live HR governs intervals; performance governs load.</span></div>
+        <div style="display:flex;gap:12px;"><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#2f5fdb;min-width:26px;">N4</span><span><b>Watch-first.</b> Every workout fully runnable with the phone left behind.</span></div>
+        <div style="display:flex;gap:12px;"><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#2f5fdb;min-width:26px;">N5</span><span><b>Ambient guidance.</b> Haptic-first; following a session never requires reading or listening.</span></div>
+        <div style="display:flex;gap:12px;"><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:#2f5fdb;min-width:26px;">N6</span><span><b>Graceful degradation.</b> Fall back to set-outcome; never fabricate a signal.</span></div>
+      </div>
+    </div>
+    <div style="background:#fff;border:1px solid #e7e5e0;border-radius:18px;padding:26px 28px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:16px;">Phase tags</div>
+      <div style="display:flex;flex-direction:column;gap:11px;font-size:14px;line-height:1.4;">
+        <div style="display:flex;gap:12px;align-items:flex-start;"><span style="display:inline-flex;align-items:center;gap:7px;background:#e8f6ec;color:#1b7f3a;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;white-space:nowrap;"><span style="width:7px;height:7px;border-radius:50%;background:#30b357;"></span>P0</span><span>Adaptive run/walk, end to end. <b>No ML.</b></span></div>
+        <div style="display:flex;gap:12px;align-items:flex-start;"><span style="display:inline-flex;align-items:center;gap:7px;background:#e9f0fe;color:#1d4ed8;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;white-space:nowrap;"><span style="width:7px;height:7px;border-radius:50%;background:#2f5fdb;"></span>P1</span><span>Strength sequencing. Static cards, no adaptation yet.</span></div>
+        <div style="display:flex;gap:12px;align-items:flex-start;"><span style="display:inline-flex;align-items:center;gap:7px;background:#fdf0e3;color:#b56b14;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;white-space:nowrap;"><span style="width:7px;height:7px;border-radius:50%;background:#e08a1e;"></span>P2</span><span>Deterministic strength adaptation (preview note only).</span></div>
+      </div>
+      <div style="border-top:1px solid #efede8;margin-top:18px;padding-top:16px;font-size:13px;line-height:1.5;color:#6b6b70;">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9a9a9f;">Reading the cards →</span> each screen shows the rendered UI, then <b>Behavior</b>, <b>Data / API</b>, <b>Haptics</b>, and the non-negotiables it satisfies.
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SECTION DIVIDER ============ -->
+  <div style="display:flex;align-items:center;gap:16px;margin:56px 0 8px;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#1a1a1c;font-weight:600;">Flow A · Adaptive Run / Walk</div>
+    <div style="flex:1;height:1px;background:#dedcd6;"></div>
+    <span style="display:inline-flex;align-items:center;gap:7px;background:#e8f6ec;color:#1b7f3a;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;"><span style="width:7px;height:7px;border-radius:50%;background:#30b357;"></span>P0</span>
+  </div>
+
+  <!-- ====== SCREEN A1: LAUNCH ====== -->
+  <div style="background:#fff;border:1px solid #e7e5e0;border-radius:20px;padding:30px 32px;margin-top:20px;">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#bcbcc2;font-weight:600;">A1</span>
+      <h3 style="font-size:21px;margin:0;letter-spacing:-0.01em;">Launch — scheduled session</h3>
+    </div>
+    <p style="margin:0 0 24px;color:#6b6b70;font-size:14px;">The reminder fired; the user raises the wrist or presses the Action Button to begin. Phone stays home.</p>
+    <div style="display:grid;grid-template-columns:230px 1fr;gap:38px;align-items:start;">
+      <!-- WATCH FRAME -->
+      <div style="display:flex;justify-content:center;">
+        <div style="position:relative;width:200px;height:244px;background:#0c0c0e;border-radius:54px;padding:13px;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5),inset 0 0 0 2px #2a2a2e;">
+          <div style="position:absolute;right:-3px;top:78px;width:5px;height:42px;background:#3a3a3e;border-radius:3px;"></div>
+          <div style="width:100%;height:100%;background:#000;border-radius:42px;overflow:hidden;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;color:#fff;padding:14px 16px;display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;color:#8e8e93;font-weight:600;"><span style="color:#30d158;">Today</span><span>7:02</span></div>
+            <div style="margin-top:auto;">
+              <div style="font-size:12px;color:#8e8e93;font-weight:600;letter-spacing:0.02em;">UP NEXT</div>
+              <div style="font-size:26px;font-weight:700;line-height:1.05;margin-top:3px;">Adaptive<br>Run</div>
+              <div style="font-size:13px;color:#aeaeb2;margin-top:5px;">Run / Walk · ~28 min</div>
+            </div>
+            <button style="margin-top:14px;width:100%;border:none;background:#30d158;color:#04210e;font-size:16px;font-weight:700;padding:13px;border-radius:26px;font-family:inherit;">Start</button>
+            <div style="font-size:10.5px;color:#6c6c70;text-align:center;margin-top:7px;font-family:'JetBrains Mono',monospace;">or press Action Button</div>
+          </div>
+        </div>
+      </div>
+      <!-- SPEC -->
+      <div style="display:flex;flex-direction:column;gap:18px;padding-top:4px;">
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Behavior</div>
+          <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6;color:#3a3a3e;">
+            <li>Shows only the <b>next scheduled session</b> — no library, no browse. Schedule is synced from the phone.</li>
+            <li><b>Start</b> begins the session immediately; no warm-up config, no parameters to confirm.</li>
+            <li>If the user has an Apple Watch Ultra, the Action Button is bound to launch this same session.</li>
+          </ul>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Data / API</div>
+            <ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.55;color:#3a3a3e;">
+              <li>Schedule via <b>WatchConnectivity</b></li>
+              <li>Launch creates <b>HKWorkoutSession</b> (outdoor run)</li>
+              <li>Action Button intent (Ultra)</li>
+            </ul>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Haptics</div>
+            <ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.55;color:#3a3a3e;">
+              <li>None — pre-session screen.</li>
+            </ul>
+          </div>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid #efede8;padding-top:16px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9a9a9f;align-self:center;margin-right:4px;">Maps to</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N4 watch-first</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">Action Button dep</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== SCREEN A2 + A3: RUN / WALK states ====== -->
+  <div style="background:#fff;border:1px solid #e7e5e0;border-radius:20px;padding:30px 32px;margin-top:20px;">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#bcbcc2;font-weight:600;">A2 · A3</span>
+      <h3 style="font-size:21px;margin:0;letter-spacing:-0.01em;">In-workout — the two interval states</h3>
+    </div>
+    <p style="margin:0 0 24px;color:#6b6b70;font-size:14px;">The core loop. The user follows the buzz: run when it says run, walk when it says walk. These screens are <b>confirmation, not instruction</b> — they should be readable in a glance but never required.</p>
+    <div style="display:grid;grid-template-columns:230px 1fr;gap:38px;align-items:start;">
+      <!-- TWO WATCH FRAMES STACKED -->
+      <div style="display:flex;flex-direction:column;gap:22px;align-items:center;">
+        <!-- RUN -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:9px;">
+          <div style="position:relative;width:200px;height:244px;background:#0c0c0e;border-radius:54px;padding:13px;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5),inset 0 0 0 2px #2a2a2e;">
+            <div style="width:100%;height:100%;background:#04140a;border-radius:42px;overflow:hidden;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;color:#fff;padding:14px 16px;display:flex;flex-direction:column;">
+              <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;"><span style="color:#30d158;">♥ 142</span><span style="color:#8e8e93;">7:14</span></div>
+              <div style="margin:auto 0;text-align:center;">
+                <div style="font-size:15px;color:#30d158;font-weight:700;">▲</div>
+                <div style="font-size:46px;font-weight:800;letter-spacing:-0.02em;color:#30d158;line-height:1;">RUN</div>
+                <div style="font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:6px;">0:48</div>
+              </div>
+              <div>
+                <div style="display:flex;gap:4px;margin-bottom:6px;"><span style="flex:1;height:5px;border-radius:3px;background:#1f3a28;"></span><span style="flex:2;height:5px;border-radius:3px;background:#30d158;"></span><span style="flex:1;height:5px;border-radius:3px;background:#1f3a28;"></span></div>
+                <div style="font-size:10.5px;color:#7bbf94;text-align:center;font-family:'JetBrains Mono',monospace;">in zone · hold pace</div>
+              </div>
+            </div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8a8a90;">A2 — run interval</div>
+        </div>
+        <!-- WALK -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:9px;">
+          <div style="position:relative;width:200px;height:244px;background:#0c0c0e;border-radius:54px;padding:13px;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5),inset 0 0 0 2px #2a2a2e;">
+            <div style="width:100%;height:100%;background:#16100a;border-radius:42px;overflow:hidden;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;color:#fff;padding:14px 16px;display:flex;flex-direction:column;">
+              <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;"><span style="color:#ff9f0a;">♥ 128 ↓</span><span style="color:#8e8e93;">7:15</span></div>
+              <div style="margin:auto 0;text-align:center;">
+                <div style="font-size:15px;color:#ff9f0a;font-weight:700;">▼</div>
+                <div style="font-size:42px;font-weight:800;letter-spacing:-0.02em;color:#ff9f0a;line-height:1;">WALK</div>
+                <div style="font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:6px;">1:30</div>
+              </div>
+              <div>
+                <div style="font-size:10.5px;color:#caa06a;text-align:center;font-family:'JetBrains Mono',monospace;">recover · HR falling</div>
+              </div>
+            </div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8a8a90;">A3 — walk interval</div>
+        </div>
+      </div>
+      <!-- SPEC -->
+      <div style="display:flex;flex-direction:column;gap:18px;padding-top:4px;">
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Behavior</div>
+          <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6;color:#3a3a3e;">
+            <li>One state fills the screen: a verb (<b>RUN</b> / <b>WALK</b>), a direction glyph, and the current interval's elapsed timer.</li>
+            <li>Interval length is <b>not fixed</b> — it is recomputed live from heart rate (see A4). The timer counts the live interval, it is not a script playing out.</li>
+            <li>Color is semantic and consistent everywhere: <b>green = work</b>, <b>amber = recover</b>. Carry these into haptics and notifications too.</li>
+            <li>HR + zone bar are ambient reassurance. Nothing here is tappable mid-run; the user is moving.</li>
+          </ul>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Data / API</div>
+            <ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.55;color:#3a3a3e;">
+              <li>Live HR from the active <b>HKWorkoutSession</b></li>
+              <li>Zone computed <b>app-side</b> from raw HR + user max HR (do not depend on the OS exposing a live zone — Q3)</li>
+              <li>Pace/route captured natively; app reads, never writes</li>
+            </ul>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Haptics</div>
+            <ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.55;color:#3a3a3e;">
+              <li><b>→ Run:</b> distinct double tap, sharp.</li>
+              <li><b>→ Walk:</b> single long, soft.</li>
+              <li>Must be feelable mid-stride without looking (N5).</li>
+            </ul>
+          </div>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid #efede8;padding-top:16px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9a9a9f;align-self:center;margin-right:4px;">Maps to</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N3 auto band</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N5 ambient</span>
+          <span style="background:#fbf3f2;color:#c0392b;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">Q3 spike first</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== SCREEN A4: ADAPTATION MOMENT ====== -->
+  <div style="background:#fff;border:1px solid #e7e5e0;border-radius:20px;padding:30px 32px;margin-top:20px;">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#bcbcc2;font-weight:600;">A4</span>
+      <h3 style="font-size:21px;margin:0;letter-spacing:-0.01em;">Adaptation moment — HR runs hot</h3>
+    </div>
+    <p style="margin:0 0 24px;color:#6b6b70;font-size:14px;">The product's thesis made visible: the plan bends to the body, silently. Sustained high HR → the app shortens the run and lengthens the next walk. How much it announces this is the open dial (Q5) — default is one calm line, no nagging.</p>
+    <div style="display:grid;grid-template-columns:230px 1fr;gap:38px;align-items:start;">
+      <div style="display:flex;justify-content:center;">
+        <div style="position:relative;width:200px;height:244px;background:#0c0c0e;border-radius:54px;padding:13px;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5),inset 0 0 0 2px #2a2a2e;">
+          <div style="width:100%;height:100%;background:#16100a;border-radius:42px;overflow:hidden;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;color:#fff;padding:14px 16px;display:flex;flex-direction:column;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;"><span style="color:#ff453a;">♥ 171 ↑</span><span style="color:#8e8e93;">7:21</span></div>
+            <div style="margin:auto 0;text-align:center;">
+              <div style="font-size:42px;font-weight:800;letter-spacing:-0.02em;color:#ff9f0a;line-height:1;">WALK</div>
+              <div style="font-size:14px;color:#ffd6a0;font-weight:600;margin-top:12px;line-height:1.25;">Easing off —<br>longer recovery</div>
+            </div>
+            <div style="font-size:10.5px;color:#caa06a;text-align:center;font-family:'JetBrains Mono',monospace;">HR high · auto-adjusted</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:18px;padding-top:4px;">
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Control logic (binding on engineering)</div>
+          <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6;color:#3a3a3e;">
+            <li>Act on <b>smoothed / sustained</b> HR over a window, never a single spot reading — HR lags effort by 30–60s+, more for a deconditioned user.</li>
+            <li><b>Bias toward backing off.</b> "End the run early / lengthen the walk" needs a shorter confirming window than "extend the run," which is the higher-risk action and requires a longer one.</li>
+            <li>If HR is not recovering during the walk, <b>lengthen the walk</b> rather than start the next run.</li>
+            <li>Adaptation works <b>interval-to-interval</b> within the session; mid-interval throttling is a later refinement, not required for P0.</li>
+          </ul>
+        </div>
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Surfacing (Q5 — design dial)</div>
+          <ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.55;color:#3a3a3e;">
+            <li>Default: <b>one calm line</b> + the normal switch haptic. No alert, no modal, no "why".</li>
+            <li>The change must feel like the session breathing with the user — not the app correcting an error.</li>
+          </ul>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid #efede8;padding-top:16px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9a9a9f;align-self:center;margin-right:4px;">Maps to</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N3 auto band</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N6 no fabricated signal</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N7 seeds self-correct</span>
+          <span style="background:#fbf3f2;color:#c0392b;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">Q5 open</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ====== SCREEN A5: COMPLETE ====== -->
+  <div style="background:#fff;border:1px solid #e7e5e0;border-radius:20px;padding:30px 32px;margin-top:20px;">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#bcbcc2;font-weight:600;">A5</span>
+      <h3 style="font-size:21px;margin:0;letter-spacing:-0.01em;">Complete — saved to Health</h3>
+    </div>
+    <p style="margin:0 0 24px;color:#6b6b70;font-size:14px;">The session ends as a native Apple workout already in Health. Summary is a brief acknowledgement, not a logging step. There is nothing to confirm, rate, or save.</p>
+    <div style="display:grid;grid-template-columns:230px 1fr;gap:38px;align-items:start;">
+      <div style="display:flex;justify-content:center;">
+        <div style="position:relative;width:200px;height:244px;background:#0c0c0e;border-radius:54px;padding:13px;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5),inset 0 0 0 2px #2a2a2e;">
+          <div style="width:100%;height:100%;background:#000;border-radius:42px;overflow:hidden;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;color:#fff;padding:16px;display:flex;flex-direction:column;">
+            <div style="text-align:center;margin-top:6px;">
+              <div style="width:46px;height:46px;border-radius:50%;background:#30d158;color:#04210e;font-size:26px;font-weight:800;display:flex;align-items:center;justify-content:center;margin:0 auto;">✓</div>
+              <div style="font-size:19px;font-weight:700;margin-top:10px;">Done</div>
+              <div style="font-size:12px;color:#30d158;font-family:'JetBrains Mono',monospace;margin-top:3px;">Saved to Health</div>
+            </div>
+            <div style="margin-top:auto;display:flex;flex-direction:column;gap:7px;">
+              <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:#8e8e93;">Distance</span><span style="font-weight:600;">2.4 km</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:#8e8e93;">Time</span><span style="font-weight:600;">28:10</span></div>
+              <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:#8e8e93;">Avg HR</span><span style="font-weight:600;">138 bpm</span></div>
+            </div>
+            <div style="font-size:10.5px;color:#6c6c70;text-align:center;font-family:'JetBrains Mono',monospace;margin-top:11px;">Nothing to log</div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:18px;padding-top:4px;">
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Behavior</div>
+          <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6;color:#3a3a3e;">
+            <li>End calls <b>endWorkout()</b> on the session; the OS writes the HKWorkout. The app adds <b>no</b> samples of its own.</li>
+            <li>Stats shown are <b>read back from the saved workout</b>, not the app's own tally.</li>
+            <li>This screen kicks off the next-session adaptation calc in the background — invisible to the user.</li>
+          </ul>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Data / API</div>
+            <ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.55;color:#3a3a3e;">
+              <li>HKWorkout written by OS</li>
+              <li>App reads totals back for display</li>
+            </ul>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Haptics</div>
+            <ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.55;color:#3a3a3e;">
+              <li>Success notification haptic on save.</li>
+            </ul>
+          </div>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid #efede8;padding-top:16px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9a9a9f;align-self:center;margin-right:4px;">Maps to</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N1 invisible log</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N2 real workout</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SECTION DIVIDER ============ -->
+  <div style="display:flex;align-items:center;gap:16px;margin:56px 0 8px;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#1a1a1c;font-weight:600;">Flow B · Strength Sequence</div>
+    <div style="flex:1;height:1px;background:#dedcd6;"></div>
+    <span style="display:inline-flex;align-items:center;gap:7px;background:#e9f0fe;color:#1d4ed8;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;"><span style="width:7px;height:7px;border-radius:50%;background:#2f5fdb;"></span>P1</span>
+  </div>
+
+  <!-- ====== SCREEN B1 + B2: STRENGTH CARD states ====== -->
+  <div style="background:#fff;border:1px solid #e7e5e0;border-radius:20px;padding:30px 32px;margin-top:20px;">
+    <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;color:#bcbcc2;font-weight:600;">B1 · B2</span>
+      <h3 style="font-size:21px;margin:0;letter-spacing:-0.01em;">Exercise card — first time vs learned</h3>
+    </div>
+    <p style="margin:0 0 24px;color:#6b6b70;font-size:14px;">A strength day is an ordered sequence of cards. Early on, each card carries a brief form demo; once the user knows the movement, the demo collapses and the card gets compact. The app proposes a weight — a forward-looking seed, never a log.</p>
+    <div style="display:grid;grid-template-columns:230px 1fr;gap:38px;align-items:start;">
+      <div style="display:flex;flex-direction:column;gap:22px;align-items:center;">
+        <!-- B1 with demo -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:9px;">
+          <div style="position:relative;width:200px;height:244px;background:#0c0c0e;border-radius:54px;padding:13px;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5),inset 0 0 0 2px #2a2a2e;">
+            <div style="width:100%;height:100%;background:#000;border-radius:42px;overflow:hidden;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;color:#fff;padding:13px 14px;display:flex;flex-direction:column;">
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:#8e8e93;font-weight:600;"><span style="color:#0a84ff;">2 of 4</span><span>♥ 96</span></div>
+              <div style="font-size:18px;font-weight:700;margin-top:6px;line-height:1.1;">Goblet Squat</div>
+              <div class="stripe-ph" style="height:74px;background:#1b1b1f;border-radius:11px;margin-top:8px;display:flex;align-items:center;justify-content:center;">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:#7a7a80;text-align:center;line-height:1.3;">form demo<br>loop</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-top:9px;">
+                <div><div style="font-size:10px;color:#8e8e93;">SUGGESTED</div><div style="font-size:19px;font-weight:700;">25 lb</div></div>
+                <div style="display:flex;gap:7px;"><span style="width:26px;height:26px;border-radius:50%;background:#1c1c20;display:flex;align-items:center;justify-content:center;font-size:15px;">−</span><span style="width:26px;height:26px;border-radius:50%;background:#1c1c20;display:flex;align-items:center;justify-content:center;font-size:15px;">+</span></div>
+              </div>
+            </div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8a8a90;">B1 — first sessions (demo shown)</div>
+        </div>
+        <!-- B2 learned -->
+        <div style="display:flex;flex-direction:column;align-items:center;gap:9px;">
+          <div style="position:relative;width:200px;height:244px;background:#0c0c0e;border-radius:54px;padding:13px;box-shadow:0 18px 40px -16px rgba(0,0,0,0.5),inset 0 0 0 2px #2a2a2e;">
+            <div style="width:100%;height:100%;background:#000;border-radius:42px;overflow:hidden;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif;color:#fff;padding:14px 16px;display:flex;flex-direction:column;">
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:#8e8e93;font-weight:600;"><span style="color:#0a84ff;">2 of 4</span><span>♥ 96</span></div>
+              <div style="margin:auto 0;">
+                <div style="font-size:23px;font-weight:700;line-height:1.1;">Goblet<br>Squat</div>
+                <div style="font-size:14px;color:#aeaeb2;margin-top:10px;">10 reps · <span style="color:#fff;font-weight:600;">25 lb</span></div>
+              </div>
+              <div style="display:flex;gap:5px;">
+                <span style="flex:1;height:5px;border-radius:3px;background:#0a84ff;"></span><span style="flex:1;height:5px;border-radius:3px;background:#0a84ff;"></span><span style="flex:1;height:5px;border-radius:3px;background:#2a2a2e;"></span>
+              </div>
+            </div>
+          </div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#8a8a90;">B2 — learned (demo hidden)</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:18px;padding-top:4px;">
+        <div>
+          <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Behavior</div>
+          <ul style="margin:0;padding-left:18px;font-size:14px;line-height:1.6;color:#3a3a3e;">
+            <li>Cards advance in sequence; progress dots show position in the session.</li>
+            <li><b>Form demo</b> is shown by default for the first N exposures of a movement, then auto-collapses to the compact card. User can re-show it anytime.</li>
+            <li><b>Suggested weight</b> is an app-proposed conservative default within the user's dumbbell range, adjustable with ± . This is a <b>seed</b>, not a log — adjusting it does not "record" anything (N1/N7).</li>
+            <li>P1 is <b>static</b>: no session-to-session progression yet. The weight is the same conservative default each session until P2 turns on adaptation.</li>
+          </ul>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Data / API</div>
+            <ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.55;color:#3a3a3e;">
+              <li><b>HKWorkoutSession</b> (traditional strength training)</li>
+              <li>Sequence + demos synced from phone routine</li>
+              <li>Live HR shown ambiently; not used to adapt in P1</li>
+            </ul>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#9a9a9f;margin-bottom:8px;">Haptics</div>
+            <ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.55;color:#3a3a3e;">
+              <li>Soft tick on advancing to the next exercise.</li>
+            </ul>
+          </div>
+        </div>
+        <div style="display:flex;gap:7px;flex-wrap:wrap;border-top:1px solid #efede8;padding-top:16px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#9a9a9f;align-self:center;margin-right:4px;">Maps to</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N1 invisible log</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N4 watch-first</span>
+          <span style="background:#f2f4fb;color:#2f5fdb;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">N7 seed</span>
+          <span style="background:#fdf3e8;color:#b56b14;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:4px 9px;border-radius:6px;">P2 adds progression</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FOOTER NOTE ============ -->
+  <div style="margin-top:48px;background:#1a1a1c;color:#e8e8ea;border-radius:20px;padding:32px 34px;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#8a8a90;margin-bottom:14px;">Build order for the watch app</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:18px;">
+      <div style="border-left:2px solid #30d158;padding-left:14px;"><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#30d158;margin-bottom:6px;">1 · Q3 spike</div><div style="font-size:13px;line-height:1.5;color:#bcbcc2;">Confirm what live HR WorkoutKit exposes. App ships either way (fallback: app-computed zones).</div></div>
+      <div style="border-left:2px solid #30d158;padding-left:14px;"><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#30d158;margin-bottom:6px;">2 · Session lifecycle</div><div style="font-size:13px;line-height:1.5;color:#bcbcc2;">Start→run→save a real outdoor workout, phone left behind. A1 + A5.</div></div>
+      <div style="border-left:2px solid #30d158;padding-left:14px;"><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#30d158;margin-bottom:6px;">3 · Adaptive loop</div><div style="font-size:13px;line-height:1.5;color:#bcbcc2;">Smoothed-HR interval logic + semantic haptics. A2–A4.</div></div>
+      <div style="border-left:2px solid #2f5fdb;padding-left:14px;"><div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#5a8dff;margin-bottom:6px;">4 · Strength cards</div><div style="font-size:13px;line-height:1.5;color:#bcbcc2;">Static sequence + form demos + seed weight. B1–B2 (P1).</div></div>
+    </div>
+  </div>
+
+</div>
+</div>
+</x-dc>
+</body>
+</html>
