@@ -10,7 +10,7 @@ struct WeekStrip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(DayOfWeek.weekOrder, id: \.self) { day in
+            ForEach(DayOfWeek.localeWeekOrder, id: \.self) { day in
                 let types = scheduledTypes(on: day)
                 VStack(spacing: 6) {
                     Text(day.letter)

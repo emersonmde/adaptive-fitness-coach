@@ -8,7 +8,6 @@ import AdaptiveCore
 struct UpNextCard: View {
     let routine: Routine
     let date: Date
-    let estimatedDuration: TimeInterval
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -33,11 +32,9 @@ struct UpNextCard: View {
 
                 HStack(spacing: 10) {
                     StateDot(color: tint, label: routine.type.displayName)
-                    if estimatedDuration > 0 {
-                        Text("~\(Int((estimatedDuration / 60).rounded())) min")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(Theme.textSecondary)
-                    }
+                    Text("~\(routine.durationMinutes) min")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.top, 8)
 

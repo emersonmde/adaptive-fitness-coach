@@ -10,7 +10,7 @@ struct DayBadges: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(DayOfWeek.weekOrder.filter(days.contains), id: \.self) { day in
+            ForEach(DayOfWeek.localeWeekOrder.filter(days.contains), id: \.self) { day in
                 Text(day.shortName)
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(tint)

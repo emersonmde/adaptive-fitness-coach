@@ -60,7 +60,7 @@ final class RoutineFlowUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
 
-        // The schedule screen shows the Reminders toggle.
-        XCTAssertTrue(app.switches["Reminders"].waitForExistence(timeout: 5))
+        // The schedule screen shows the Add to Calendar toggle.
+        XCTAssertTrue(app.switches["Add to Calendar"].waitForExistence(timeout: 5))
     }
 }

@@ -14,6 +14,7 @@ struct NewRoutineView: View {
     @State private var name = ""
     @State private var selectedDays: Set<DayOfWeek> = []
     @State private var type: RoutineType = .adaptiveRun
+    @State private var durationMinutes = 30
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty && !selectedDays.isEmpty
@@ -33,6 +34,10 @@ struct NewRoutineView: View {
 
                         FieldSection(title: "REPEAT DAYS") {
                             DayPicker(selection: $selectedDays)
+                        }
+
+                        FieldSection(title: "DURATION") {
+                            DurationStepper(minutes: $durationMinutes)
                         }
 
                         FieldSection(title: "TYPE") {
@@ -67,7 +72,8 @@ struct NewRoutineView: View {
         store.add(Routine(
             name: name.trimmingCharacters(in: .whitespaces),
             type: type,
-            repeatDays: selectedDays
+            repeatDays: selectedDays,
+            durationMinutes: durationMinutes
         ))
         dismiss()
     }

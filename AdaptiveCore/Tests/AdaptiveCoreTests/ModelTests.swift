@@ -52,10 +52,18 @@ struct ModelTests {
         #expect(shuffled.sorted() == [.sunday, .monday, .wednesday, .friday])
     }
 
-    @Test func weekOrderStartsMonday() {
-        #expect(DayOfWeek.weekOrder.first == .monday)
-        #expect(DayOfWeek.weekOrder.last == .sunday)
-        #expect(DayOfWeek.weekOrder.count == 7)
+    @Test func orderedWeekRespectsFirstWeekday() {
+        // US locale (Sunday-first, firstWeekday == 1) — like the Alarm/Calendar apps.
+        let sundayFirst = DayOfWeek.orderedWeek(firstWeekday: 1)
+        #expect(sundayFirst == [.sunday, .monday, .tuesday, .wednesday, .thursday, .friday, .saturday])
+        // Monday-first locales (firstWeekday == 2).
+        let mondayFirst = DayOfWeek.orderedWeek(firstWeekday: 2)
+        #expect(mondayFirst.first == .monday)
+        #expect(mondayFirst.last == .sunday)
+        #expect(mondayFirst.count == 7)
+        // Wraps correctly from any start (Saturday-first, firstWeekday == 7).
+        #expect(DayOfWeek.orderedWeek(firstWeekday: 7).first == .saturday)
+        #expect(DayOfWeek.orderedWeek(firstWeekday: 7) == [.saturday, .sunday, .monday, .tuesday, .wednesday, .thursday, .friday])
     }
 
     // MARK: - Codable round-trips
@@ -78,6 +86,34 @@ struct ModelTests {
         let data = try JSONEncoder().encode(plan)
         let decoded = try JSONDecoder().decode(IntervalPlan.self, from: data)
         #expect(decoded == plan)
+    }
+
+    @Test func durationRoundTripsAndDefaultsForLegacyData() throws {
+        // Present value survives a round-trip.
+        let routine = Routine(name: "Tempo", type: .adaptiveRun, durationMinutes: 45)
+        let decoded = try JSONDecoder().decode(Routine.self, from: JSONEncoder().encode(routine))
+        #expect(decoded.durationMinutes == 45)
+
+        // A routine persisted before `durationMinutes` existed (build 2) decodes with the default,
+        // not a failure. Simulate by stripping the key from otherwise-valid JSON.
+        var dict = try JSONSerialization.jsonObject(with: JSONEncoder().encode(routine)) as! [String: Any]
+        dict.removeValue(forKey: "durationMinutes")
+        let legacy = try JSONSerialization.data(withJSONObject: dict)
+        let legacyDecoded = try JSONDecoder().decode(Routine.self, from: legacy)
+        #expect(legacyDecoded.durationMinutes == 30)
+    }
+
+    @Test func scaledPlanTracksTargetDuration() {
+        for minutes in [10, 20, 30, 45, 60] {
+            let total = TimeInterval(minutes * 60)
+            let plan = IntervalPlan.beginnerRunWalk(totalDuration: total)
+            #expect(plan.runIntervalCount >= 1)                 // never a runless run
+            // Lands within one run/walk cycle (150s) of the requested length — it's a seed.
+            #expect(abs(plan.plannedDuration - total) <= 150)
+            // Warmup & cooldown are capped at 5 minutes.
+            #expect(plan.segments.first!.targetDuration <= 300)
+            #expect(plan.segments.last!.targetDuration <= 300)
+        }
     }
 
     // MARK: - AdaptationEvent copy

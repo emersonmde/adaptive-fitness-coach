@@ -13,8 +13,6 @@ struct Adaptive_Fitness_CoachApp: App {
     /// The single routine store, wired so every local change pushes to the watch.
     @State private var store: RoutineStore
 
-    private let uiTesting = ProcessInfo.processInfo.arguments.contains("-uiTesting")
-
     init() {
         // Activate the watch link first so the store's onChange has somewhere to send.
         PhoneConnectivityManager.shared.activate()
@@ -46,16 +44,11 @@ struct Adaptive_Fitness_CoachApp: App {
                 .preferredColorScheme(.dark) // dark/neon brand: force dark regardless of system
                 .tint(Theme.accent)
                 .task {
-                    // Push current routines to the watch and (re)register reminders on launch.
+                    // Push current routines to the watch on launch.
                     PhoneConnectivityManager.shared.sync(routines: store.routines)
-                    // Install the notification delegate + category so reminders present in the
-                    // foreground and taps route. (Harmless under UI test; only the prompt is skipped.)
-                    NotificationManager.shared.configure()
-                    // Skip the system notification prompt under UI test / demo so it can't block the UI.
-                    if !uiTesting && !ProcessInfo.processInfo.arguments.contains("-seedDemo") {
-                        await NotificationManager.shared.requestAuthorization()
-                        NotificationManager.shared.rescheduleAll(store.routines)
-                    }
+                    // Re-sync calendar events for any scheduled routines. Never prompts: it only
+                    // touches events if full access was already granted (so UI tests stay clean).
+                    await CalendarService.shared.syncAll(store.routines)
                 }
         }
     }

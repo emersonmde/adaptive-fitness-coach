@@ -49,8 +49,13 @@ struct SessionContainerView: View {
         }
     }
 
-    /// Planned length of the P0 session, shown as an estimate on the launch screen.
-    private var plannedDuration: TimeInterval { IntervalPlan.beginnerRunWalk().plannedDuration }
+    /// Planned length of the session, scaled to the next routine's chosen duration (default 30).
+    private var plannedDuration: TimeInterval { sessionPlan.plannedDuration }
+
+    /// The seed plan for the next routine, scaled to its user-chosen `durationMinutes` (N7).
+    private var sessionPlan: IntervalPlan {
+        IntervalPlan.beginnerRunWalk(totalDuration: TimeInterval((nextRoutine?.durationMinutes ?? 30) * 60))
+    }
 
     /// The next adaptive-run routine to surface on the launch screen, based on the current
     /// weekday/time. Falls back to any adaptive run if none is scheduled later today.
@@ -83,8 +88,8 @@ struct SessionContainerView: View {
             )
             manager.start(config: SessionConfig(plan: plan), routineName: name, adaptationConfig: adaptation)
         } else {
-            // P0: every adaptive run uses the beginner run/walk seed plan; it self-corrects to HR.
-            manager.start(config: SessionConfig(plan: .beginnerRunWalk()), routineName: name)
+            // The seed plan is scaled to the routine's chosen duration; it self-corrects to HR (N7).
+            manager.start(config: SessionConfig(plan: sessionPlan), routineName: name)
         }
     }
 }

@@ -11,6 +11,10 @@ public struct Routine: Codable, Sendable, Identifiable, Hashable {
     public var type: RoutineType
     public var repeatDays: Set<DayOfWeek>
     public var scheduleTime: ScheduleTime?
+    /// User-chosen target session length in minutes — a *seed* the interval engine fills with
+    /// run/walk cycles and then adapts (N7). Defaults to 30.
+    public var durationMinutes: Int
+    /// When true, the routine's schedule is mirrored to the user's Calendar as a recurring event.
     public var reminderEnabled: Bool
     public let createdAt: Date
 
@@ -20,6 +24,7 @@ public struct Routine: Codable, Sendable, Identifiable, Hashable {
         type: RoutineType,
         repeatDays: Set<DayOfWeek> = [],
         scheduleTime: ScheduleTime? = nil,
+        durationMinutes: Int = 30,
         reminderEnabled: Bool = false,
         createdAt: Date = Date()
     ) {
@@ -28,8 +33,27 @@ public struct Routine: Codable, Sendable, Identifiable, Hashable {
         self.type = type
         self.repeatDays = repeatDays
         self.scheduleTime = scheduleTime
+        self.durationMinutes = durationMinutes
         self.reminderEnabled = reminderEnabled
         self.createdAt = createdAt
+    }
+
+    // Explicit Codable so routines persisted before `durationMinutes` existed (build 2) still
+    // decode — the field is read with a default rather than failing the whole decode.
+    private enum CodingKeys: String, CodingKey {
+        case id, name, type, repeatDays, scheduleTime, durationMinutes, reminderEnabled, createdAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        type = try c.decode(RoutineType.self, forKey: .type)
+        repeatDays = try c.decode(Set<DayOfWeek>.self, forKey: .repeatDays)
+        scheduleTime = try c.decodeIfPresent(ScheduleTime.self, forKey: .scheduleTime)
+        durationMinutes = try c.decodeIfPresent(Int.self, forKey: .durationMinutes) ?? 30
+        reminderEnabled = try c.decode(Bool.self, forKey: .reminderEnabled)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
     }
 }
 
@@ -112,9 +136,16 @@ public enum DayOfWeek: Int, Codable, Sendable, CaseIterable, Comparable, Hashabl
         }
     }
 
-    /// Days in week order starting Monday — the order shown in day pickers.
-    public static var weekOrder: [DayOfWeek] {
-        [.monday, .tuesday, .wednesday, .thursday, .friday, .saturday, .sunday]
+    /// The seven days in week order beginning at `firstWeekday` (1 = Sunday … 7 = Saturday,
+    /// matching `Calendar.firstWeekday`). Parameterised so it's deterministic in tests.
+    public static func orderedWeek(firstWeekday: Int) -> [DayOfWeek] {
+        (0..<7).map { DayOfWeek(rawValue: (firstWeekday - 1 + $0) % 7 + 1)! }
+    }
+
+    /// Days in the user's locale order (e.g. Sunday-first in the US, like the Alarm/Calendar
+    /// apps) — the order shown in the week strip and day pickers.
+    public static var localeWeekOrder: [DayOfWeek] {
+        orderedWeek(firstWeekday: Calendar.current.firstWeekday)
     }
 }
 

@@ -1,9 +1,9 @@
 import SwiftUI
 import AdaptiveCore
 
-/// Detail + schedule (P5) for one routine, dark/neon. Edit days, set the time, toggle reminders,
-/// delete. Edits write straight back to the store, which syncs to the watch and reschedules
-/// reminders.
+/// Detail + schedule (P5) for one routine, dark/neon. Edit days, duration, time, toggle the
+/// Calendar event, delete. Edits write straight back to the store, which syncs to the watch and
+/// updates the routine's recurring Calendar event.
 struct RoutineDetailView: View {
     let store: RoutineStore
     let routineID: Routine.ID
@@ -57,19 +57,26 @@ struct RoutineDetailView: View {
                     ))
                 }
 
+                FieldSection(title: "DURATION") {
+                    DurationStepper(minutes: Binding(
+                        get: { draft?.durationMinutes ?? 30 },
+                        set: { setDuration($0) }
+                    ))
+                }
+
                 FieldSection(title: "SCHEDULE") {
                     VStack(spacing: 4) {
                         DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
                             .foregroundStyle(Theme.textPrimary)
                         Divider().overlay(Theme.hairline)
-                        Toggle("Reminders", isOn: Binding(
+                        Toggle("Add to Calendar", isOn: Binding(
                             get: { draft?.reminderEnabled ?? false },
                             set: { setReminders($0) }
                         ))
                         .tint(Theme.accent)
                         .foregroundStyle(Theme.textPrimary)
                         if routine.reminderEnabled {
-                            Text("A reminder launches the session on your watch — leave your phone behind.")
+                            Text("Adds a repeating event to your calendar at this time on the days above, with an alert when it's time to run.")
                                 .font(.caption)
                                 .foregroundStyle(Theme.textSecondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -114,26 +121,29 @@ struct RoutineDetailView: View {
         )
     }
 
-    private func commit(_ mutate: (inout Routine) -> Void) {
+    /// Apply an edit, persist it, and reflect it in the Calendar. `promptCalendar` requests
+    /// access (only when the user just turned the calendar toggle on).
+    private func commit(promptCalendar: Bool = false, _ mutate: (inout Routine) -> Void) {
         guard var routine = draft else { return }
         mutate(&routine)
         draft = routine
         store.update(routine)
-        NotificationManager.shared.reschedule(for: routine)
+        Task { await CalendarService.shared.sync(for: routine, prompt: promptCalendar) }
     }
 
     private func setDays(_ days: Set<DayOfWeek>) { commit { $0.repeatDays = days } }
     private func setTime(_ time: ScheduleTime) { commit { $0.scheduleTime = time } }
+    private func setDuration(_ minutes: Int) { commit { $0.durationMinutes = minutes } }
 
     private func setReminders(_ on: Bool) {
-        commit {
+        commit(promptCalendar: on) {
             $0.reminderEnabled = on
             if on, $0.scheduleTime == nil { $0.scheduleTime = Self.defaultTime }
         }
     }
 
     private func delete() {
-        NotificationManager.shared.cancel(routineID: routineID)
+        CalendarService.shared.remove(routineID: routineID)
         store.remove(id: routineID)
         dismiss()
     }

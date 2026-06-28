@@ -2,18 +2,18 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated: end of P0 + senior-review fixes + dark/neon redesign._
+_Last updated: P0 + dark/neon redesign + TestFlight (build 2 live) + scheduling/duration/UX pass._
 
 ---
 
 ## Snapshot — what works today
 
 **P0 is complete, reviewed, and visually redesigned.** End to end:
-- **Phone (iOS, setup-only):** build run routines, schedule them with reminders, sync to the watch. Dark/neon "Your Week" hub (Up-Next hero, week-at-a-glance strip, one-row-per-routine).
+- **Phone (iOS, setup-only):** build run routines, pick repeat days (locale order — Sunday-first in the US) and a target **duration**, schedule them as recurring **Calendar events** (EventKit), sync to the watch. Dark/neon "Your Week" hub (Up-Next hero, week-at-a-glance strip, one-row-per-routine).
 - **Watch (watchOS, the in-workout product):** a real Apple `HKWorkoutSession` outdoor run/walk that adapts run/walk intervals in real time to the user's **Apple-native HR zone**, haptic-first, ending as a native workout in Apple Health. The app records nothing of its own.
 - **Engine:** all adaptation logic is in the pure `AdaptiveCore` Swift package (no HealthKit/SwiftUI), consumed identically by both apps.
 
-**Tests: 73 green** — 62 `AdaptiveCore` (logic), 9 watch integration (`WorkoutFlowTests`), 2 phone UI (`RoutineFlowUITests`).
+**Tests: 75 green** — 64 `AdaptiveCore` (logic), 9 watch integration (`WorkoutFlowTests`), 2 phone UI (`RoutineFlowUITests`).
 
 ---
 
@@ -78,7 +78,7 @@ Adaptive Fitness Coach/            phone setup app (iOS)
 ## Design system (dark/neon — diverges from the original light-mode handoffs)
 
 The implemented visual language is **dark + neon**, decided with the user (the `docs/design/*.html` handoffs define screen FLOWS but predate this and were light-mode). Two-tier color:
-- **Brand accent = Electric Lime `#C6FF3D`**, phone identity only (CTAs, selected states, today-ring, hero glow). The primary CTA is a **dark glowing-outline capsule**, deliberately not a flat neon fill.
+- **Brand accent = emerald `#34E27A`** (was Electric Lime `#C6FF3D`; user preferred the truer green and to collapse the two greens into one), phone identity only (CTAs, selected states, today-ring, hero glow, app icon). Intentionally the **same hex as the `run` semantic**. The primary CTA is a **dark glowing-outline capsule**, deliberately not a flat neon fill.
 - **Workout-state semantics** (green=run `#34E27A`, amber=walk `#FFB23E`, blue=strength `#4C8DFF`, hot=`#FF5A4D`) are a separate language, tied to the watch's haptics and learned mid-run (N5). The watch never uses the brand accent.
 - Tokens in `Theme.swift` (one per target). Modern SwiftUI used selectively: `MeshGradient` (hero depth), `glassEffect` (hero chip + adaptation cue only), `symbolEffect`, `scrollTransition`. Reduce-Motion paths everywhere.
 
@@ -109,11 +109,12 @@ Fatigue/effort model on a HAR-encoder backbone, trained overnight on the phone f
 
 ## Open items / TODOs (carried forward)
 
-- **Device-only verification:** real HR→zone→adapt loop, haptics feel, Action Button auto-start, workout appearing in Apple Health, notification→watch launch handoff. The sim can't cover these.
+- **Device-only verification:** real HR→zone→adapt loop, haptics feel, Action Button auto-start, workout appearing in Apple Health, and the **Calendar event flow** (`CalendarService` needs full calendar access — the sim can't grant it reliably). The sim can't cover these.
+- **TestFlight:** build **1.0 (2)** uploaded and processing (see below). This branch's scheduling/duration/UX changes are **build 3, not yet shipped** — archive/export/upload when ready. Pipeline: `DEVELOPMENT_TEAM=7542Q96HNF`, Admin App Store Connect API key, `ExportOptions.plist`. App record exists (`com.memerson.Adaptive-Fitness-Coach`).
 - **`StartRunIntent`** opens the app to A1 but does not auto-start the session (documented stub) — finish the Action Button flow on device.
 - **HealthKit end sequence** uses `session.end()` → `endCollection` → `finishWorkout` in sequence (common pattern); consider driving finalize off the `.ended` state on device.
 - **Phone UI tests are parallel-flaky** — pin `-parallel-testing-enabled NO` (or a test plan) for CI.
-- **Signing:** no development team set (simulator-only builds work; device/TestFlight needs a team).
+- **Duration → plan:** `IntervalPlan.beginnerRunWalk(totalDuration:)` scales the seed to the routine's `durationMinutes`; lands within one cycle of target (it's a seed, adapts). Watch reads `nextRoutine.durationMinutes`.
 - The `docs/design/*.html` handoffs are light-mode and predate the dark/neon redesign — treat them as flow/spec references, not visual truth.
 
 ---

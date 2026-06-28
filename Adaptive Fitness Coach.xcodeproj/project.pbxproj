@@ -75,6 +75,16 @@
 		34704E822FECDA6200C28688 /* WorkoutKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WorkoutKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.5.sdk/System/Library/Frameworks/WorkoutKit.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FACE000000000000000000E1 /* Exceptions for "Adaptive Fitness Coach Watch App" folder in "Adaptive Fitness Coach Watch App" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 34704E302FECD82000C28688 /* Adaptive Fitness Coach Watch App */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		34704E102FECD81F00C28688 /* Adaptive Fitness Coach */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -94,7 +104,7 @@
 		34704E352FECD82000C28688 /* Adaptive Fitness Coach Watch App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				FACE000000000000000000E1 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+				FACE000000000000000000E1 /* Exceptions for "Adaptive Fitness Coach Watch App" folder in "Adaptive Fitness Coach Watch App" target */,
 			);
 			path = "Adaptive Fitness Coach Watch App";
 			sourceTree = "<group>";
@@ -110,16 +120,6 @@
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
-
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		FACE000000000000000000E1 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 34704E302FECD82000C28688 /* Adaptive Fitness Coach Watch App */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		34704E0B2FECD81F00C28688 /* Frameworks */ = {
@@ -563,10 +563,10 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 7542Q96HNF;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				DEVELOPMENT_TEAM = 7542Q96HNF;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -625,10 +625,10 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 7542Q96HNF;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				DEVELOPMENT_TEAM = 7542Q96HNF;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -651,13 +651,13 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Adaptive Fitness Coach Watch App/Adaptive Fitness Coach Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				INFOPLIST_FILE = "Adaptive Fitness Coach Watch App/Info.plist";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Adaptive Fitness Coach saves each session to Apple Health as a native workout.";
 				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Adaptive Fitness Coach Watch App/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Adaptive Fitness Coach saves each session to Apple Health as a native workout.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "com.memerson.Adaptive-Fitness-Coach";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -687,13 +687,13 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "Adaptive Fitness Coach Watch App/Adaptive Fitness Coach Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				INFOPLIST_FILE = "Adaptive Fitness Coach Watch App/Info.plist";
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
-				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Adaptive Fitness Coach saves each session to Apple Health as a native workout.";
 				CURRENT_PROJECT_VERSION = 2;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Adaptive Fitness Coach Watch App/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
+				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Adaptive Fitness Coach saves each session to Apple Health as a native workout.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = "com.memerson.Adaptive-Fitness-Coach";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -725,6 +725,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Adaptive Fitness Coach/Adaptive Fitness Coach.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
@@ -760,6 +761,7 @@
 				CODE_SIGN_ENTITLEMENTS = "Adaptive Fitness Coach/Adaptive Fitness Coach.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";

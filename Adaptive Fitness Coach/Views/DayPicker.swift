@@ -9,7 +9,7 @@ struct DayPicker: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(DayOfWeek.weekOrder, id: \.self) { day in
+            ForEach(DayOfWeek.localeWeekOrder, id: \.self) { day in
                 let isOn = selection.contains(day)
                 Button {
                     if isOn { selection.remove(day) } else { selection.insert(day) }

@@ -8,9 +8,6 @@ struct WeekView: View {
     let store: RoutineStore
     @State private var showingNewRoutine = false
 
-    /// Planned length used by the hero estimate (the P0 session is the beginner run/walk seed).
-    private var sessionDuration: TimeInterval { IntervalPlan.beginnerRunWalk().plannedDuration }
-
     var body: some View {
         NavigationStack {
             ZStack {
@@ -46,7 +43,7 @@ struct WeekView: View {
             VStack(spacing: 18) {
                 if let next = store.nextOccurrence() {
                     NavigationLink(value: next.routine) {
-                        UpNextCard(routine: next.routine, date: next.date, estimatedDuration: sessionDuration)
+                        UpNextCard(routine: next.routine, date: next.date)
                     }
                     .buttonStyle(.plain)
                 }

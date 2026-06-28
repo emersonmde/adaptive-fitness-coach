@@ -79,4 +79,29 @@ public extension IntervalPlan {
         segments.append(IntervalSegment(phase: .cooldownWalk, targetDuration: cooldown))
         return IntervalPlan(segments: segments)
     }
+
+    /// A beginner run/walk plan scaled to a target total length (the user-chosen
+    /// `Routine.durationMinutes`). Warmup and cooldown take ~1/6 of the session each, capped at
+    /// 5 minutes; the remaining time is filled with 60s-run / 90s-walk cycles. The result lands
+    /// near `totalDuration` (within one cycle) — exactness doesn't matter because the engine
+    /// adapts every segment in real time (N7).
+    static func beginnerRunWalk(
+        totalDuration: TimeInterval,
+        runDuration: TimeInterval = 60,
+        walkDuration: TimeInterval = 90
+    ) -> IntervalPlan {
+        let cap = 300.0
+        let warmup = min(cap, totalDuration / 6)
+        let cooldown = min(cap, totalDuration / 6)
+        let cycleLength = runDuration + walkDuration
+        let middle = max(cycleLength, totalDuration - warmup - cooldown)
+        let cycles = max(1, Int((middle / cycleLength).rounded()))
+        return beginnerRunWalk(
+            warmup: warmup,
+            runDuration: runDuration,
+            walkDuration: walkDuration,
+            cycles: cycles,
+            cooldown: cooldown
+        )
+    }
 }
