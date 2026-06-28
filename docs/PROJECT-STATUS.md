@@ -2,18 +2,18 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated: P0 + dark/neon redesign + TestFlight (build 2 live) + scheduling/duration/UX pass._
+_Last updated: P0 + dark/neon redesign + TestFlight (build 2 live) + scheduling/duration/UX pass + **P1 strength sequencing (sim-verified, device pending)**._
 
 ---
 
 ## Snapshot — what works today
 
-**P0 is complete, reviewed, and visually redesigned.** End to end:
-- **Phone (iOS, setup-only):** build run routines, pick repeat days (locale order — Sunday-first in the US) and a target **duration**, schedule them as recurring **Calendar events** (EventKit), sync to the watch. Dark/neon "Your Week" hub (Up-Next hero, week-at-a-glance strip, one-row-per-routine).
-- **Watch (watchOS, the in-workout product):** a real Apple `HKWorkoutSession` outdoor run/walk that adapts run/walk intervals in real time to the user's **Apple-native HR zone**, haptic-first, ending as a native workout in Apple Health. The app records nothing of its own.
-- **Engine:** all adaptation logic is in the pure `AdaptiveCore` Swift package (no HealthKit/SwiftUI), consumed identically by both apps.
+**P0 is complete and P1 (strength sequencing) is implemented end-to-end** (sim-verified; real strength `HKWorkoutSession` on device is the one open check). End to end:
+- **Phone (iOS, setup-only):** build **adaptive-run** routines (repeat days in locale order, target duration) **and now strength routines** — pick exercises from a curated library and **arrange them as reorderable cards** (sets/reps/seed-weight per card). Schedule either as recurring **Calendar events** (EventKit), sync to the watch. Dark/neon "Your Week" hub.
+- **Watch (watchOS, the in-workout product):** a real Apple `HKWorkoutSession` — an outdoor run/walk that adapts intervals to the user's **Apple-native HR zone**, **or** (P1) a Traditional Strength Training session that walks the user **card by card** through the exercise sequence with a form diagram, a proposed weight (± adjust), and per-set/hold progression. Haptic-first, ending as a native workout in Apple Health. The app records nothing of its own.
+- **Engine:** all logic is in the pure `AdaptiveCore` Swift package (no HealthKit/SwiftUI), consumed identically by both apps. P1 adds the `Exercise`/`ExerciseLibrary`/`StrengthPlan` model; **strength has no real-time adaptation yet (P2)** — it's a static authored sequence with seed weights.
 
-**Tests: 75 green** — 64 `AdaptiveCore` (logic), 9 watch integration (`WorkoutFlowTests`), 2 phone UI (`RoutineFlowUITests`).
+**Tests: 109 green** — 84 `AdaptiveCore` (logic, incl. strength models/library/codec), 22 watch integration (9 `WorkoutFlowTests` + 13 `StrengthFlowTests`), 3 phone UI (`RoutineFlowUITests`, incl. strength create).
 
 ---
 
@@ -23,7 +23,7 @@ The watch target's minimum is **watchOS 27**, because it uses Apple's native Hea
 
 ```bash
 # Pure logic (default toolchain, no simulator) — fastest feedback loop
-cd AdaptiveCore && swift test            # 62 tests
+cd AdaptiveCore && swift test            # 84 tests
 
 # Watch / iOS (need the beta; target a watchOS 27 sim by UDID, name collides with 26.5)
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
@@ -49,24 +49,35 @@ Real HR/zone adaptation only runs on a **physical Apple Watch** (verified by con
 ## Architecture & key files
 
 ```
-AdaptiveCore/                      local Swift package — pure logic, 62 tests, no HealthKit/SwiftUI
-  Models/                          Routine, IntervalPlan, SessionConfig, SessionSummary, AdaptationEvent
-  Engine/IntervalStateMachine      tick(deltaTime, currentZone:Int?) -> transitions/adaptations
+AdaptiveCore/                      local Swift package — pure logic, 84 tests, no HealthKit/SwiftUI
+  Models/                          Routine (now carries `exercises`), IntervalPlan, SessionConfig,
+                                   SessionSummary, AdaptationEvent
+  Models/ (P1 strength)            Exercise + ExerciseKind, ExerciseLibrary (curated catalog),
+                                   StrengthPlan + StrengthExerciseItem, MovementArchetype (P2 IMU key),
+                                   FormDemo (asset abstraction), Weight (lb-canonical value type)
+  Engine/IntervalStateMachine      tick(deltaTime, currentZone:Int?) -> transitions/adaptations  (run only)
   Engine/AdaptationPolicy          zone-based, bidirectional, hysteresis, asymmetric bias windows
-  Connectivity/WCMessageCodec      routine <-> [String:Any] for WatchConnectivity
+  Connectivity/WCMessageCodec      routine <-> [String:Any] for WatchConnectivity (v2: + exercises)
   Persistence/RoutineStore         @Observable store + nextOccurrence() (drives the phone hero)
 
 Adaptive Fitness Coach Watch App/  the in-workout product (watchOS 27)
-  Services/WorkoutBackend          protocol seam: HealthKitWorkoutBackend (real) | SimulatedWorkoutBackend
-  Services/WorkoutSessionManager   @Observable device shell: HK lifecycle + tick loop + state for the UI
+  Services/WorkoutBackend          run seam: HealthKitWorkoutBackend (real) | SimulatedWorkoutBackend
+  Services/WorkoutSessionManager   run shell: HK lifecycle + tick loop + state for the UI
+  Services/StrengthWorkoutBackend  strength seam: HealthKitStrengthBackend | SimulatedStrengthBackend
+  Services/StrengthSessionManager  strength shell: user-driven card progression (no tick), summary
   Services/HealthKitAuthorization, HapticManager, WatchConnectivityManager, StartRunIntent
-  Views/                           SessionContainerView, LaunchView (A1), WorkoutActiveView (A2/A3),
-                                   WorkoutControlsView (swipe End), AdaptationCue (A4), WorkoutCompleteView (A5),
-                                   WatchComponents (ZoneBarView, HeartRateView), Theme.swift
+  Views/  (run)                    SessionContainerView (router by type), RunSessionContainerView,
+                                   LaunchView (A1), WorkoutActiveView (A2/A3), WorkoutControlsView,
+                                   AdaptationBannerView (A4), WorkoutCompleteView (A5), WatchComponents
+  Views/  (strength)               StrengthSessionContainerView + StrengthLaunchView (B0),
+                                   StrengthActiveView (B1/B2 card + pager + hold timer),
+                                   StrengthCompleteView, FormDemoView
 
 Adaptive Fitness Coach/            phone setup app (iOS)
-  Services/PhoneConnectivityManager, NotificationManager, RoutineStore (shared via AdaptiveCore)
-  Views/                           WeekView (hub), NewRoutineView, RoutineDetailView,
+  Services/PhoneConnectivityManager, CalendarService, RoutineStore (shared via AdaptiveCore)
+  Views/                           WeekView (hub), NewRoutineView (branches run/strength),
+                                   RoutineDetailView (strength: exercises section), RoutineDetailView,
+                                   ExerciseLibraryView (P3 picker), RoutineBuilderView (P4 arrange),
                                    Components/{Theme, Card, PrimaryButton, FieldSection, DayBadges,
                                    UpNextCard, WeekStrip, RoutineCard}
 ```
@@ -91,13 +102,13 @@ Watch in-workout screen is pure glance: HR · progress · clock / verb + timer /
 ### P0 — Adaptive run/walk ✅ DONE
 Shipped, reviewed, redesigned. See snapshot above.
 
-### P1 — Strength sequencing (NEXT) — static, no adaptation
-Bring the user's full routine in as guided card sequences. From the PRD §5 / design handoff (phone P3/P4, watch B1/B2):
-- **Phone:** a curated **exercise library** (id, name, muscle/pattern tags, looping form-animation asset, "good for" line, default sets/reps, dumbbell-range default, and a **biomechanical archetype tag** — press/OHP/row/curl/isometric/stationary — that P2's IMU heuristics will key off). An **arrange-as-cards** builder (reorderable list of `{exerciseId, sets, reps, seedWeight}`; iOS 27 **reorderable containers** are the natural fit). App-proposed conservative **seed weights** (a forward-looking seed per N1/N7, not a log).
-- **Watch:** strength `HKWorkoutSession`; a **card sequence** per strength day (B1 with form demo, B2 compact once learned); proposed weight with ± adjust.
-- **Data model:** extend `Routine` for strength (currently `RoutineType.strength` exists but is disabled in the picker). Add `Exercise`, the library, and the ordered card list to `AdaptiveCore`.
-- **No** session-to-session progression or IMU yet.
-- Where to start: the `AdaptiveCore` model for exercises + library, then the phone library/arrange screens, then the watch card sequence.
+### P1 — Strength sequencing ✅ IMPLEMENTED (sim-verified; device pending) — static, no adaptation
+Brings the user's full routine in as guided card sequences. Shipped this milestone (PRD §5 / handoff phone P3/P4, watch B1/B2):
+- **AdaptiveCore:** `Exercise` (+ `ExerciseKind` rep-vs-hold), curated `ExerciseLibrary` (~11 dumbbell/bodyweight movements with conservative seed weights), `StrengthPlan`/`StrengthExerciseItem`, `MovementArchetype` (press/OHP/row/curl/isometric/stationary — the **P2 IMU key, ships unused**), `FormDemo` (asset abstraction, `.symbol` placeholders for now), `Weight` (lb-canonical value type). `Routine` gained `exercises` (backward-compat decode → `[]`); `WCMessageCodec` → v2.
+- **Phone:** `RoutineType.strength` is now selectable. `NewRoutineView` branches: strength → **arrange-as-cards** builder (`RoutineBuilderView`, reorderable List + per-card sets/reps/seed-weight steppers) fed by the **exercise library** picker (`ExerciseLibraryView`). `RoutineDetailView` shows/edits the sequence and hides duration for strength.
+- **Watch:** `SessionContainerView` routes by `RoutineType`. Strength runs a real `.traditionalStrengthTraining` `HKWorkoutSession` (`HealthKitStrengthBackend`), walking the user **card by card** (`StrengthActiveView` B1/B2: form diagram, ± weight, rep set or **hold timer** for isometrics) via the user-driven `StrengthSessionManager`. Demoable in the sim with **`-simulateStrength`**.
+- **No** session-to-session progression or IMU yet (P2). Seed weights are fixed conservative defaults (no equipment profile); form demos are SF Symbol placeholders (`FormDemo` swaps to real assets with no model change).
+- **Open for P1:** real strength `HKWorkoutSession` recording to Apple Health, observed on device (sim can't); real form-demo assets.
 
 ### P2 — Deterministic strength adaptation — no trained model
 Session-to-session progression from **set outcome** (toward ~1–3 RIR) + deterministic **IMU heuristics** grouped by archetype (velocity-loss for wrist-tracks-load; stability-envelope for isometric/plank), set-outcome-only fallback where the wrist has no clean read (N6). Self-labeling, no surveys.
@@ -109,7 +120,8 @@ Fatigue/effort model on a HAR-encoder backbone, trained overnight on the phone f
 
 ## Open items / TODOs (carried forward)
 
-- **Device-only verification:** real HR→zone→adapt loop, haptics feel, Action Button auto-start, workout appearing in Apple Health, and the **Calendar event flow** (`CalendarService` needs full calendar access — the sim can't grant it reliably). The sim can't cover these.
+- **Device-only verification:** real HR→zone→adapt loop, haptics feel, Action Button auto-start, run **and now the strength `HKWorkoutSession`** appearing in Apple Health (Traditional Strength Training), and the **Calendar event flow** (`CalendarService` needs full calendar access — the sim can't grant it reliably). The sim can't cover these.
+- **Strength form demos** are SF Symbol placeholders (`FormDemo.symbol`). Replace with real static diagrams / tap-to-play animations later — purely a data + render swap, no model change (`FormDemo` already has `.diagram`/`.animation` cases).
 - **TestFlight:** build **1.0 (2)** uploaded and processing (see below). This branch's scheduling/duration/UX changes are **build 3, not yet shipped** — archive/export/upload when ready. Pipeline: `DEVELOPMENT_TEAM=7542Q96HNF`, Admin App Store Connect API key, `ExportOptions.plist`. App record exists (`com.memerson.Adaptive-Fitness-Coach`).
 - **`StartRunIntent`** opens the app to A1 but does not auto-start the session (documented stub) — finish the Action Button flow on device.
 - **HealthKit end sequence** uses `session.end()` → `endCollection` → `finishWorkout` in sequence (common pattern); consider driving finalize off the `.ended` state on device.
@@ -121,6 +133,6 @@ Fatigue/effort model on a HAR-encoder backbone, trained overnight on the phone f
 
 ## Resuming in a fresh session
 1. Read this file, then the PRD (`docs/adaptive-fitness-coach-spec.md`) and design handoffs (`docs/design/`).
-2. Confirm Xcode 27 beta is installed; build the watch scheme with `DEVELOPER_DIR=…Xcode-beta…` against a watchOS 27 sim.
-3. `cd AdaptiveCore && swift test` should be 62 green instantly.
-4. Pick up at **P1** (strength sequencing) — start with the `AdaptiveCore` exercise/library model.
+2. Confirm Xcode 27 beta is installed; build the watch scheme with `DEVELOPER_DIR=…Xcode-beta…` against a watchOS 27 sim. Demo strength with `-simulateStrength`, runs with `-simulateWorkout`.
+3. `cd AdaptiveCore && swift test` should be 84 green instantly.
+4. Pick up at **P2** (deterministic strength adaptation: set-outcome progression + IMU heuristics by `MovementArchetype`), or finish P1's device-only checks (real strength workout in Health, real form assets).

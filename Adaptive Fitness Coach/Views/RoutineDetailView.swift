@@ -15,6 +15,7 @@ struct RoutineDetailView: View {
     /// Local editable copy; committed to the store on each change. Loaded reactively by id.
     @State private var draft: Routine?
     @State private var confirmingDelete = false
+    @State private var editingExercises = false
 
     var body: some View {
         ZStack {
@@ -32,6 +33,60 @@ struct RoutineDetailView: View {
         .task(id: routineID) {
             draft = store.routines.first { $0.id == routineID }
         }
+        .navigationDestination(isPresented: $editingExercises) {
+            RoutineBuilderView(initialItems: draft?.exercises ?? []) { items in
+                commit { $0.exercises = items }
+                editingExercises = false
+            }
+        }
+    }
+
+    /// A read-only summary of the strength sequence with an Edit button into the arrange screen.
+    private func exerciseSummary(for routine: Routine) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if routine.exercises.isEmpty {
+                Text("No exercises yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
+            } else {
+                ForEach(Array(routine.exercises.enumerated()), id: \.element.id) { index, item in
+                    HStack(spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(.caption.weight(.bold).monospacedDigit())
+                            .foregroundStyle(Theme.textTertiary)
+                            .frame(width: 18)
+                        Text(ExerciseLibrary.exercise(id: item.exerciseId)?.name ?? item.exerciseId)
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.textPrimary)
+                        Spacer(minLength: 0)
+                        Text(itemSummary(item))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    if item.id != routine.exercises.last?.id {
+                        Divider().overlay(Theme.hairline)
+                    }
+                }
+            }
+
+            Button {
+                editingExercises = true
+            } label: {
+                Label(routine.exercises.isEmpty ? "Add Exercises" : "Edit Sequence", systemImage: "slider.horizontal.3")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+        }
+    }
+
+    private func itemSummary(_ item: StrengthExerciseItem) -> String {
+        if item.isHold {
+            return "\(item.sets) × \(Int(item.holdSeconds ?? 0))s"
+        }
+        let load = item.seedWeight.map { " · \($0.displayString())" } ?? ""
+        return "\(item.sets) × \(item.reps ?? 0)\(load)"
     }
 
     private func form(for routine: Routine) -> some View {
@@ -57,11 +112,17 @@ struct RoutineDetailView: View {
                     ))
                 }
 
-                FieldSection(title: "DURATION") {
-                    DurationStepper(minutes: Binding(
-                        get: { draft?.durationMinutes ?? 30 },
-                        set: { setDuration($0) }
-                    ))
+                if routine.type == .adaptiveRun {
+                    FieldSection(title: "DURATION") {
+                        DurationStepper(minutes: Binding(
+                            get: { draft?.durationMinutes ?? 30 },
+                            set: { setDuration($0) }
+                        ))
+                    }
+                } else {
+                    FieldSection(title: "EXERCISES") {
+                        exerciseSummary(for: routine)
+                    }
                 }
 
                 FieldSection(title: "SCHEDULE") {

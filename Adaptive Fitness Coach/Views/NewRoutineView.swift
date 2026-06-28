@@ -1,12 +1,10 @@
 import SwiftUI
 import AdaptiveCore
 
-/// P2 — create a routine: name it, pick repeat days, choose a type. In P0 only Adaptive Run
-/// is functional; the type picker still shows Strength (disabled) so the model is visible.
-///
-/// The design's type-branch (Strength → workout library, Adaptive Run → straight to scheduling)
-/// is deferred: with only Adaptive Run selectable, "Next" saves and returns to the week list,
-/// where the routine is opened to schedule it. The library branch lands with P1.
+/// P2 — create a routine: name it, pick repeat days, choose a type. The type branches the flow
+/// (the design's type-branch): **Adaptive Run** → "Next" saves and returns to the week to be
+/// scheduled; **Strength** → "Next" pushes the arrange-as-cards builder, where the exercise
+/// sequence is assembled before the routine is created.
 struct NewRoutineView: View {
     let store: RoutineStore
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +17,8 @@ struct NewRoutineView: View {
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty && !selectedDays.isEmpty
     }
+
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
 
     var body: some View {
         NavigationStack {
@@ -36,16 +36,18 @@ struct NewRoutineView: View {
                             DayPicker(selection: $selectedDays)
                         }
 
-                        FieldSection(title: "DURATION") {
-                            DurationStepper(minutes: $durationMinutes)
+                        if type == .adaptiveRun {
+                            FieldSection(title: "DURATION") {
+                                DurationStepper(minutes: $durationMinutes)
+                            }
                         }
 
                         FieldSection(title: "TYPE") {
                             VStack(alignment: .leading, spacing: 12) {
                                 TypeSelector(selection: $type)
-                                Text(type.isAvailable
+                                Text(type == .adaptiveRun
                                      ? "Adaptive runs build themselves from your heart rate — no exercises to add."
-                                     : "Strength routines arrive in a later update. Pick Adaptive Run for now.")
+                                     : "Next, you'll pick exercises and arrange them into a sequence.")
                                     .font(.caption)
                                     .foregroundStyle(Theme.textSecondary)
                             }
@@ -56,31 +58,51 @@ struct NewRoutineView: View {
             }
             .navigationTitle("New Routine")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showingBuilder) {
+                RoutineBuilderView { items in
+                    store.add(Routine(
+                        name: trimmedName,
+                        type: .strength,
+                        repeatDays: selectedDays,
+                        exercises: items
+                    ))
+                    dismiss()
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Next") { save() }
-                        .disabled(!canSave || !type.isAvailable)
+                    Button("Next") { next() }
+                        .disabled(!canSave)
                 }
             }
         }
     }
 
-    private func save() {
-        store.add(Routine(
-            name: name.trimmingCharacters(in: .whitespaces),
-            type: type,
-            repeatDays: selectedDays,
-            durationMinutes: durationMinutes
-        ))
-        dismiss()
+    @State private var showingBuilder = false
+
+    /// Adaptive run saves immediately; strength advances to the exercise builder, which creates
+    /// the routine once its sequence is assembled.
+    private func next() {
+        switch type {
+        case .adaptiveRun:
+            store.add(Routine(
+                name: trimmedName,
+                type: .adaptiveRun,
+                repeatDays: selectedDays,
+                durationMinutes: durationMinutes
+            ))
+            dismiss()
+        case .strength:
+            showingBuilder = true
+        }
     }
 }
 
 /// Two-option type selector that shows each type's semantic dot — teaching the watch's color
-/// language (green run / blue strength) before the user ever runs. Strength is disabled in P0.
+/// language (green run / blue strength) before the user ever runs. Both types are selectable in P1.
 struct TypeSelector: View {
     @Binding var selection: RoutineType
 

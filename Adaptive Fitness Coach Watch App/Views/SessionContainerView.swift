@@ -1,19 +1,57 @@
 import SwiftUI
 import AdaptiveCore
 
-/// Coordinates the in-workout flow: A1 launch → A2/A3 active (+ A4 overlay) → A5 complete.
-/// State lives in the `WorkoutSessionManager`; this view just maps it to a screen.
+/// Top-level router for the in-workout experience. Picks the next routine and hands off to the
+/// run flow or the strength flow by `RoutineType`. The two flows are deliberately separate:
+/// running is a clock/HR-driven adaptive loop, strength is a user-advanced card sequence.
+///
+/// Simulator flags force a flow with a scripted backend (no HealthKit, no prompt):
+/// `-simulateWorkout` → a short adaptive run; `-simulateStrength` → a short strength session.
 struct SessionContainerView: View {
     let store: RoutineStore
-    @State private var manager: WorkoutSessionManager
 
-    /// When launched with `-simulateWorkout`, drive a short scripted run (no HealthKit, no
-    /// prompt) for end-to-end testing and demos in the Simulator.
-    private let simulate: Bool
+    private let simulateRun: Bool
+    private let simulateStrength: Bool
 
     init(store: RoutineStore) {
         self.store = store
-        let simulate = ProcessInfo.processInfo.arguments.contains("-simulateWorkout")
+        let args = ProcessInfo.processInfo.arguments
+        self.simulateRun = args.contains("-simulateWorkout")
+        self.simulateStrength = args.contains("-simulateStrength")
+    }
+
+    var body: some View {
+        if simulateStrength {
+            StrengthSessionContainerView(store: store, simulate: true)
+        } else if simulateRun {
+            RunSessionContainerView(store: store, simulate: true)
+        } else if nextRoutine?.type == .strength {
+            StrengthSessionContainerView(store: store, simulate: false)
+        } else {
+            RunSessionContainerView(store: store, simulate: false)
+        }
+    }
+
+    /// The next scheduled routine of any type, used only to choose the flow.
+    private var nextRoutine: Routine? {
+        let calendar = Calendar.current
+        let now = Date()
+        let weekday = DayOfWeek(rawValue: calendar.component(.weekday, from: now)) ?? .monday
+        let hour = calendar.component(.hour, from: now)
+        let minute = calendar.component(.minute, from: now)
+        return store.nextRoutine(fromWeekday: weekday, hour: hour, minute: minute)
+    }
+}
+
+/// The run flow: A1 launch → A2/A3 active (+ A4 overlay) → A5 complete. State lives in the
+/// `WorkoutSessionManager`; this view maps it to a screen. (Previously `SessionContainerView`.)
+struct RunSessionContainerView: View {
+    let store: RoutineStore
+    @State private var manager: WorkoutSessionManager
+    private let simulate: Bool
+
+    init(store: RoutineStore, simulate: Bool) {
+        self.store = store
         self.simulate = simulate
         _manager = State(initialValue: simulate
             ? WorkoutSessionManager(backend: SimulatedWorkoutBackend())
@@ -44,15 +82,12 @@ struct SessionContainerView: View {
             }
         }
         .task {
-            // Auto-start the scripted session so the whole flow runs unattended in the sim.
             if simulate, manager.sessionState == .idle { start() }
         }
     }
 
-    /// Planned length of the session, scaled to the next routine's chosen duration (default 30).
     private var plannedDuration: TimeInterval { sessionPlan.plannedDuration }
 
-    /// The seed plan for the next routine, scaled to its user-chosen `durationMinutes` (N7).
     private var sessionPlan: IntervalPlan {
         IntervalPlan.beginnerRunWalk(totalDuration: TimeInterval((nextRoutine?.durationMinutes ?? 30) * 60))
     }
@@ -88,7 +123,6 @@ struct SessionContainerView: View {
             )
             manager.start(config: SessionConfig(plan: plan), routineName: name, adaptationConfig: adaptation)
         } else {
-            // The seed plan is scaled to the routine's chosen duration; it self-corrects to HR (N7).
             manager.start(config: SessionConfig(plan: sessionPlan), routineName: name)
         }
     }

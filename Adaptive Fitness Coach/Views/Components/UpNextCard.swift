@@ -13,6 +13,17 @@ struct UpNextCard: View {
 
     private var tint: Color { RoutineTheme.tint(for: routine.type) }
 
+    /// Run shows its target duration; strength shows its exercise count (duration is derived).
+    private var detailText: String {
+        switch routine.type {
+        case .adaptiveRun:
+            return "~\(routine.durationMinutes) min"
+        case .strength:
+            let n = routine.exercises.count
+            return "\(n) exercise\(n == 1 ? "" : "s")"
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             meshBackground
@@ -32,7 +43,7 @@ struct UpNextCard: View {
 
                 HStack(spacing: 10) {
                     StateDot(color: tint, label: routine.type.displayName)
-                    Text("~\(routine.durationMinutes) min")
+                    Text(detailText)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(Theme.textSecondary)
                 }

@@ -54,4 +54,30 @@ struct WCMessageCodecTests {
             try WCMessageCodec.decodeRoutines(from: message)
         }
     }
+
+    // MARK: - P1 (v2): strength routines
+
+    @Test func roundTripsStrengthRoutineWithExercises() throws {
+        let routines = [
+            Routine(name: "Push Day", type: .strength, repeatDays: [.monday],
+                    exercises: [
+                        StrengthExerciseItem(exerciseId: "db_bench_press", sets: 3, reps: 10, seedWeight: .lb(15)),
+                        StrengthExerciseItem(exerciseId: "plank", sets: 3, holdSeconds: 30),
+                    ]),
+        ]
+        let message = try WCMessageCodec.encode(routines: routines)
+        let decoded = try WCMessageCodec.decodeRoutines(from: message)
+        #expect(decoded == routines)
+        #expect(decoded.first?.exercises.count == 2)
+    }
+
+    /// A v1 payload from a not-yet-updated counterpart is rejected outright (the receiver keeps
+    /// its last-known-good routines) rather than silently dropping the strength field.
+    @Test func rejectsV1Payload() throws {
+        let data = try JSONEncoder().encode(sampleRoutines())
+        let message: [String: Any] = [WCMessageCodec.Key.routines: data, WCMessageCodec.Key.version: 1]
+        #expect(throws: WCMessageCodec.CodecError.unsupportedVersion(1)) {
+            try WCMessageCodec.decodeRoutines(from: message)
+        }
+    }
 }

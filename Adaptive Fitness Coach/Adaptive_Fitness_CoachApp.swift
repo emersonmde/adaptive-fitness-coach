@@ -33,7 +33,10 @@ struct Adaptive_Fitness_CoachApp: App {
                               repeatDays: [.tuesday, .friday], scheduleTime: ScheduleTime(hour: 7, minute: 0),
                               reminderEnabled: true))
             store.add(Routine(name: "Strength Circuit", type: .strength,
-                              repeatDays: [.monday, .wednesday], scheduleTime: ScheduleTime(hour: 18, minute: 30)))
+                              repeatDays: [.monday, .wednesday], scheduleTime: ScheduleTime(hour: 18, minute: 30),
+                              exercises: ["goblet_squat", "db_bench_press", "one_arm_row", "plank"]
+                                .compactMap { ExerciseLibrary.exercise(id: $0) }
+                                .map { StrengthExerciseItem(from: $0) }))
         }
         _store = State(initialValue: store)
     }

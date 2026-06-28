@@ -43,6 +43,39 @@ final class RoutineFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Morning Run"].waitForExistence(timeout: 5))
     }
 
+    func testCreateStrengthRoutineViaLibraryAppearsInWeek() throws {
+        let app = launchApp()
+
+        app.buttons["newRoutineEmptyState"].tap()
+
+        let nameField = app.textFields.firstMatch
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.tap()
+        nameField.typeText("Push Day")
+        app.buttons["Monday"].firstMatch.tap()
+
+        // Switch the type to Strength → "Next" now pushes the exercise builder.
+        app.buttons["Strength"].firstMatch.tap()
+        app.buttons["Next"].firstMatch.tap()
+
+        // Builder empty state → open the library and add an exercise.
+        let addExercises = app.buttons["Add Exercises"].firstMatch
+        XCTAssertTrue(addExercises.waitForExistence(timeout: 5))
+        addExercises.tap()
+
+        let benchRow = app.buttons["exercise_db_bench_press"]
+        XCTAssertTrue(benchRow.waitForExistence(timeout: 5))
+        benchRow.tap()
+        app.buttons["Add (1)"].firstMatch.tap()
+
+        // Back in the builder, the card is present → Save creates the routine.
+        XCTAssertTrue(app.staticTexts["Dumbbell Bench Press"].waitForExistence(timeout: 5))
+        app.buttons["Save"].firstMatch.tap()
+
+        // The strength routine is now on the week screen.
+        XCTAssertTrue(app.staticTexts["Push Day"].waitForExistence(timeout: 5))
+    }
+
     func testCreatedRoutineOpensDetail() throws {
         let app = launchApp()
 
