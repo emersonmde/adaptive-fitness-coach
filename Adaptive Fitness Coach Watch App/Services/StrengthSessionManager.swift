@@ -33,11 +33,15 @@ final class StrengthSessionManager {
     private(set) var currentIndex = 0
     private(set) var currentSet = 1
 
+    /// Latest heart rate (bpm), 0 until the first sample. Ambient, not a load signal (N3).
+    private(set) var currentHeartRate: Double = 0
+    /// When the session went active — drives the live session clock (the view ticks it).
+    private(set) var sessionStartDate: Date?
+
     private(set) var summary: StrengthSummary?
 
     private let injectedBackend: StrengthWorkoutBackend?
     private var backend: StrengthWorkoutBackend?
-    private var startDate: Date?
     /// Time source; injectable so tests advance the clock deterministically.
     private let now: () -> Date
     private var isFinishing = false
@@ -100,6 +104,7 @@ final class StrengthSessionManager {
 
         let backend = injectedBackend ?? HealthKitStrengthBackend()
         self.backend = backend
+        backend.onHeartRate = { [weak self] hr in self?.currentHeartRate = hr }
         backend.onFailure = { [weak self] in self?.handleFailure() }
 
         do {
@@ -111,7 +116,7 @@ final class StrengthSessionManager {
             return
         }
 
-        startDate = now()
+        sessionStartDate = now()
         sessionState = .active
     }
 
@@ -169,7 +174,7 @@ final class StrengthSessionManager {
 
     private func end() async {
         let totals = await backend?.end() ?? WorkoutTotals()
-        let duration = startDate.map { now().timeIntervalSince($0) } ?? 0
+        let duration = sessionStartDate.map { now().timeIntervalSince($0) } ?? 0
         // A natural finish credits the whole plan; a manual early End counts only what was passed
         // (the cursor sits on the in-progress set, whose completed sets `setsCompleted` already has).
         let exercisesDone = finishedNaturally ? items.count : currentIndex
@@ -193,8 +198,9 @@ final class StrengthSessionManager {
         items = []
         currentIndex = 0
         currentSet = 1
+        currentHeartRate = 0
         summary = nil
-        startDate = nil
+        sessionStartDate = nil
         sessionState = .idle
     }
 }

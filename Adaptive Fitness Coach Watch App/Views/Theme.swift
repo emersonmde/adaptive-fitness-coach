@@ -28,6 +28,8 @@ enum WatchTheme {
     /// before the word is read.
     static let runField = Color(hex: 0x06180C)
     static let walkField = Color(hex: 0x1A1206)
+    /// Strength's colored ground — a deep blue lift of true black, matching `strength`.
+    static let strengthField = Color(hex: 0x070E1C)
 
     static let textSecondary = Color(hex: 0x9DA3AE)
 }

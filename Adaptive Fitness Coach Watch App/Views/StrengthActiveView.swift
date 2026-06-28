@@ -42,9 +42,11 @@ struct StrengthControlsView: View {
     }
 }
 
-/// B1/B2 — the current exercise card: form diagram, prescription, proposed weight (± adjust),
-/// "set N of M", and the Done-set action. The form diagram (an SF Symbol placeholder for now)
-/// can be collapsed once the movement is learned (B2 compact). Strength's color is blue.
+/// B1/B2 — the current exercise card. Built to read like the run screen: a deep-blue field
+/// grounds the glance, a top status row carries HR · exercise progress · session clock, and one
+/// dominant number (reps, or a hold ring) is the hero. Set progress shows as a segmented pip row
+/// — the strength analogue of the run's zone bar. The form diagram (B1) collapses once learned
+/// (B2). Strength is blue throughout; the watch never uses the phone's brand accent.
 struct ExerciseCardView: View {
     let manager: StrengthSessionManager
     @State private var showDemo = true
@@ -54,65 +56,93 @@ struct ExerciseCardView: View {
     private var item: StrengthExerciseItem? { manager.currentItem }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                header
+        ZStack {
+            // Colored ground: the blue telegraphs "strength" before any word is read.
+            WatchTheme.strengthField.ignoresSafeArea()
 
-                if let exercise, let item {
-                    if showDemo {
-                        FormDemoView(formDemo: exercise.formDemo)
-                            .frame(height: 64)
-                            .transition(.opacity)
+            VStack(spacing: 5) {
+                statusRow
+
+                ScrollView {
+                    VStack(spacing: 6) {
+                        if let exercise, let item {
+                            if showDemo {
+                                FormDemoView(formDemo: exercise.formDemo)
+                                    .frame(height: 46)
+                                    .transition(.opacity.combined(with: .scale))
+                            }
+
+                            Text(exercise.name)
+                                .font(.headline)
+                                .multilineTextAlignment(.center)
+                                .foregroundStyle(.white)
+
+                            if item.isHold {
+                                HoldRingView(seconds: item.holdSeconds ?? 30) { manager.completeSet() }
+                                    .padding(.vertical, 2)
+                            } else {
+                                RepHero(item: item, manager: manager)
+                            }
+
+                            SetPipsView(total: manager.setsInCurrentExercise, currentSet: manager.currentSet)
+                                .padding(.top, 1)
+
+                            if !item.isHold {
+                                DoneSetButton { manager.completeSet() }
+                            }
+
+                            demoToggle
+                        } else {
+                            ProgressView().tint(WatchTheme.strength)
+                        }
                     }
-
-                    Text(exercise.name)
-                        .font(.headline)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.white)
-
-                    if item.isHold {
-                        HoldCardBody(seconds: item.holdSeconds ?? 30) { manager.completeSet() }
-                    } else {
-                        RepCardBody(item: item, manager: manager)
-                    }
-
-                    demoToggle
-                } else {
-                    ProgressView()
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 4)
                 }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 4)
             .padding(.top, 2)
         }
+        .animation(.easeInOut(duration: 0.25), value: manager.currentIndex)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: manager.currentSet)
         .onAppear { showDemo = !hideDemosByDefault }
     }
 
-    private var header: some View {
+    /// Top row, mirroring the run screen: live HR · "n of N" exercise progress · session clock.
+    private var statusRow: some View {
         HStack {
-            Text("\(manager.currentIndex + 1) of \(manager.exercises.count)")
+            HeartRateView(bpm: manager.currentHeartRate)
             Spacer()
-            Text("Set \(manager.currentSet)/\(manager.setsInCurrentExercise)")
-                .foregroundStyle(WatchTheme.strength)
+            Text("\(manager.currentIndex + 1) of \(manager.exercises.count)")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(WatchTheme.textSecondary)
+            Spacer()
+            SessionClock(start: manager.sessionStartDate)
         }
-        .font(.caption2)
-        .foregroundStyle(WatchTheme.textSecondary)
+        .padding(.horizontal, 2)
     }
 
     private var demoToggle: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) { showDemo.toggle() }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showDemo.toggle()
+                // Remember the choice: once the movement is learned and the demo hidden, the card
+                // stays compact (everything visible at a glance) on every later exercise (B2).
+                hideDemosByDefault = !showDemo
+            }
         } label: {
-            Text(showDemo ? "Hide demo" : "Show demo")
+            Label(showDemo ? "Hide demo" : "Show demo", systemImage: showDemo ? "chevron.up" : "figure.strengthtraining.traditional")
                 .font(.caption2)
                 .foregroundStyle(WatchTheme.textSecondary)
         }
         .buttonStyle(.plain)
-        .padding(.top, 2)
+        .padding(.top, 1)
     }
 }
 
-/// Rep-based card body: the set/rep/weight prescription, ± weight adjust, and Done set.
-private struct RepCardBody: View {
+/// The rep prescription as one dominant number (the run timer's analogue): a big rounded rep
+/// count with a quiet label, and the load as a refined ± chip beneath it.
+private struct RepHero: View {
     let item: StrengthExerciseItem
     let manager: StrengthSessionManager
 
@@ -120,35 +150,47 @@ private struct RepCardBody: View {
     private let step = 5.0
 
     var body: some View {
-        VStack(spacing: 8) {
-            Text("\(item.reps ?? 0) reps")
-                .font(.title3.bold())
-                .foregroundStyle(.white)
-
-            if let weight = item.seedWeight {
-                HStack(spacing: 14) {
-                    weightButton(systemName: "minus") { manager.adjustWeight(byPounds: -step) }
-                    Text(weight.displayString())
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(WatchTheme.strength)
-                        .frame(minWidth: 70)
-                    weightButton(systemName: "plus") { manager.adjustWeight(byPounds: step) }
-                }
-            } else {
-                Text("Bodyweight")
-                    .font(.subheadline)
+        VStack(spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("\(item.reps ?? 0)")
+                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                Text("REPS")
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.5)
                     .foregroundStyle(WatchTheme.textSecondary)
             }
 
-            DoneSetButton { manager.completeSet() }
+            if let weight = item.seedWeight {
+                HStack(spacing: 10) {
+                    weightButton("minus") { adjust(-step) }
+                    Text(weight.displayString())
+                        .font(.system(.title3, design: .rounded, weight: .semibold))
+                        .foregroundStyle(WatchTheme.strength)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .frame(minWidth: 64)
+                    weightButton("plus") { adjust(step) }
+                }
+            } else {
+                Text("Bodyweight")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(WatchTheme.textSecondary)
+            }
         }
     }
 
-    private func weightButton(systemName: String, action: @escaping () -> Void) -> some View {
+    private func adjust(_ delta: Double) {
+        withAnimation(.snappy) { manager.adjustWeight(byPounds: delta) }
+    }
+
+    private func weightButton(_ systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.body.weight(.bold))
-                .frame(width: 34, height: 34)
+                .frame(width: 32, height: 32)
         }
         .buttonStyle(.bordered)
         .tint(WatchTheme.strength)
@@ -156,15 +198,64 @@ private struct RepCardBody: View {
     }
 }
 
-/// Isometric card body: a hold timer. Tap to run the countdown; it completes the set on its own
-/// at zero (haptic), or the user can finish early. Progression is identical to a rep set.
-private struct HoldCardBody: View {
+/// Segmented set-progress — the strength analogue of the run's zone bar. One capsule per set:
+/// completed sets are filled and dim, the current set dominates (full color, taller, soft glow),
+/// upcoming sets recede. Reading "where am I in this exercise" at a glance, no number needed.
+struct SetPipsView: View {
+    let total: Int
+    /// 1-based current set.
+    let currentSet: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<max(1, total), id: \.self) { slot in
+                let isDone = slot < currentSet - 1
+                let isCurrent = slot == currentSet - 1
+                Capsule()
+                    .fill(WatchTheme.strength.opacity(isCurrent ? 1.0 : (isDone ? 0.55 : 0.18)))
+                    .frame(width: isCurrent ? 22 : 14, height: isCurrent ? 6 : 5)
+                    .shadow(color: isCurrent ? WatchTheme.strength.opacity(0.6) : .clear, radius: 4)
+            }
+        }
+        .frame(height: 10)
+        .accessibilityElement()
+        .accessibilityLabel("Set")
+        .accessibilityValue("\(currentSet) of \(total)")
+    }
+}
+
+/// A live session clock that ticks from the session start. Uses `TimelineView` so the manager
+/// doesn't need a tick loop just to drive the seconds (the strength session is user-advanced).
+private struct SessionClock: View {
+    let start: Date?
+
+    var body: some View {
+        Group {
+            if let start {
+                TimelineView(.periodic(from: start, by: 1)) { context in
+                    Text(context.date.timeIntervalSince(start).clockString)
+                }
+            } else {
+                Text("0:00")
+            }
+        }
+        .font(.caption2)
+        .foregroundStyle(WatchTheme.textSecondary)
+        .monospacedDigit()
+    }
+}
+
+/// Isometric hold as a premium countdown ring: tap to run it, the ring drains as time elapses,
+/// and it completes the set on its own at zero (or the user can finish early). The ring is the
+/// hero — the strength counterpart to the rep number.
+struct HoldRingView: View {
     let seconds: TimeInterval
     let onComplete: () -> Void
 
     @State private var remaining: TimeInterval
     @State private var running = false
     @State private var ticker: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(seconds: TimeInterval, onComplete: @escaping () -> Void) {
         self.seconds = seconds
@@ -172,12 +263,25 @@ private struct HoldCardBody: View {
         _remaining = State(initialValue: seconds)
     }
 
+    private var progress: Double { seconds > 0 ? remaining / seconds : 0 }
+
     var body: some View {
         VStack(spacing: 8) {
-            Text(remaining.clockString)
-                .font(.system(size: 34, weight: .bold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(running ? WatchTheme.strength : .white)
+            ZStack {
+                Circle()
+                    .stroke(WatchTheme.strength.opacity(0.18), lineWidth: 7)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(WatchTheme.strength, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .shadow(color: WatchTheme.strength.opacity(running ? 0.5 : 0), radius: 5)
+                    .animation(.linear(duration: reduceMotion ? 0 : 1), value: remaining)
+                Text(remaining.clockString)
+                    .font(.system(size: 30, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 96, height: 96)
 
             if running {
                 Button("Done early") { complete() }
@@ -234,7 +338,8 @@ private struct DoneSetButton: View {
 }
 
 /// Renders a `FormDemo`. P1 only carries `.symbol`; a tap gives a small bounce — a cheap nod to
-/// the eventual tap-to-play animation. `.diagram`/`.animation` are reserved for real assets.
+/// the eventual tap-to-play animation. The symbol sits on a faint blue disc so it reads as a
+/// deliberate diagram, not a stray glyph. `.diagram`/`.animation` are reserved for real assets.
 struct FormDemoView: View {
     let formDemo: FormDemo
     @State private var bounce = 0
@@ -244,16 +349,22 @@ struct FormDemoView: View {
             switch formDemo {
             case let .symbol(name):
                 Image(systemName: name)
-                    .font(.system(size: 44))
+                    .font(.system(size: 30))
                     .symbolEffect(.bounce, value: bounce)
+                    .foregroundStyle(WatchTheme.strength)
+                    .frame(width: 60, height: 60)
+                    .background(
+                        Circle().fill(WatchTheme.strength.opacity(0.12))
+                            .overlay(Circle().strokeBorder(WatchTheme.strength.opacity(0.25), lineWidth: 1))
+                    )
             case let .diagram(name), let .animation(name):
                 // Future assets; until they ship, fall back to a neutral figure placeholder.
                 Image(name)
                     .resizable()
                     .scaledToFit()
+                    .foregroundStyle(WatchTheme.strength)
             }
         }
-        .foregroundStyle(WatchTheme.strength)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .onTapGesture { bounce += 1 }

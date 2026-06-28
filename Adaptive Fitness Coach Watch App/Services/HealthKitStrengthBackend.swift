@@ -7,6 +7,7 @@ import HealthKit
 /// the summary. No live signal is surfaced mid-session; the card sequence is the guidance.
 @MainActor
 final class HealthKitStrengthBackend: NSObject, StrengthWorkoutBackend {
+    var onHeartRate: ((Double) -> Void)?
     var onFailure: (() -> Void)?
 
     private let healthStore = HealthKitAuthorization.healthStore
@@ -24,6 +25,7 @@ final class HealthKitStrengthBackend: NSObject, StrengthWorkoutBackend {
         let builder = session.associatedWorkoutBuilder()
         builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
         session.delegate = self
+        builder.delegate = self
         self.session = session
         self.builder = builder
 
@@ -61,4 +63,23 @@ extension HealthKitStrengthBackend: HKWorkoutSessionDelegate {
         // The session died after starting — stop rather than keep a dead session on screen (N6).
         Task { @MainActor in self.onFailure?() }
     }
+}
+
+// MARK: - HKLiveWorkoutBuilderDelegate (live heart rate)
+
+extension HealthKitStrengthBackend: HKLiveWorkoutBuilderDelegate {
+    nonisolated func workoutBuilder(
+        _ workoutBuilder: HKLiveWorkoutBuilder,
+        didCollectDataOf collectedTypes: Set<HKSampleType>
+    ) {
+        guard collectedTypes.contains(HKQuantityType(.heartRate)) else { return }
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        let hr = workoutBuilder.statistics(for: HKQuantityType(.heartRate))?
+            .mostRecentQuantity()?.doubleValue(for: unit)
+        Task { @MainActor in
+            if let hr { self.onHeartRate?(hr) }
+        }
+    }
+
+    nonisolated func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
 }

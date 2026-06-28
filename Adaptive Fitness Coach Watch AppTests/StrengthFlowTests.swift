@@ -9,6 +9,7 @@ import AdaptiveCore
 /// without HealthKit or a clock.
 @MainActor
 private final class FailingStrengthBackend: StrengthWorkoutBackend {
+    var onHeartRate: ((Double) -> Void)?
     var onFailure: (() -> Void)?
     let failOnStart: Bool
     init(failOnStart: Bool = true) { self.failOnStart = failOnStart }

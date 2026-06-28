@@ -89,9 +89,19 @@ struct StrengthLaunchView: View {
     let onStart: () -> Void
 
     var body: some View {
+        ZStack {
+            if exerciseCount > 0 { WatchTheme.strengthField.ignoresSafeArea() }
+            content
+        }
+    }
+
+    @ViewBuilder private var content: some View {
         VStack(spacing: 10) {
             if exerciseCount > 0 {
                 Spacer(minLength: 0)
+                Image(systemName: "dumbbell.fill")
+                    .font(.title3)
+                    .foregroundStyle(WatchTheme.strength)
                 VStack(spacing: 3) {
                     Text("UP NEXT")
                         .font(.caption2)

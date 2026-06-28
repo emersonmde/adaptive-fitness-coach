@@ -8,7 +8,9 @@ struct StrengthCompleteView: View {
     let onDone: () -> Void
 
     var body: some View {
-        ScrollView {
+        ZStack {
+            WatchTheme.strengthField.ignoresSafeArea()
+            ScrollView {
             VStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 40))
@@ -39,6 +41,7 @@ struct StrengthCompleteView: View {
                     .padding(.top, 4)
             }
             .padding(.horizontal, 6)
+            }
         }
     }
 
