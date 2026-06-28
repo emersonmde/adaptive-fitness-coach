@@ -2,7 +2,9 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated: P0 + dark/neon redesign + TestFlight (build 2 live) + scheduling/duration/UX pass + **P1 strength sequencing (sim-verified, device pending)**._
+_Last updated: P0 + dark/neon redesign + TestFlight (build 2 live) + P1 strength sequencing + **generic card-based routines (run/exercise/rest cards, rounds; run+strength unified)**. Sim-verified; device pending._
+
+> **Routines are now a generic card stack.** A `Routine` is `cards: [WorkoutCard]` (`.run` / `.exercise` / `.rest`) plus a `rounds` count that repeats the whole list (= sets; a trailing rest card becomes rest between rounds). The phone builds it from a typed card list; the watch walks it and starts/stops the right Apple workout per card type automatically (`workoutBlocks()`), reusing the existing run and strength screens. The old `type`/`durationMinutes`/`exercises` fields are gone (migrated on decode). WC payload is **v3**. This supersedes the type-branched descriptions below — treat them as history.
 
 ---
 
@@ -13,7 +15,7 @@ _Last updated: P0 + dark/neon redesign + TestFlight (build 2 live) + scheduling/
 - **Watch (watchOS, the in-workout product):** a real Apple `HKWorkoutSession` — an outdoor run/walk that adapts intervals to the user's **Apple-native HR zone**, **or** (P1) a Traditional Strength Training session that walks the user **card by card** through the exercise sequence with a form diagram, a proposed weight (± adjust), and per-set/hold progression. Haptic-first, ending as a native workout in Apple Health. The app records nothing of its own.
 - **Engine:** all logic is in the pure `AdaptiveCore` Swift package (no HealthKit/SwiftUI), consumed identically by both apps. P1 adds the `Exercise`/`ExerciseLibrary`/`StrengthPlan` model; **strength has no real-time adaptation yet (P2)** — it's a static authored sequence with seed weights.
 
-**Tests: 109 green** — 84 `AdaptiveCore` (logic, incl. strength models/library/codec), 22 watch integration (9 `WorkoutFlowTests` + 13 `StrengthFlowTests`), 3 phone UI (`RoutineFlowUITests`, incl. strength create).
+**Tests green** — 87 `AdaptiveCore` (logic, incl. card model / workout-block grouping / migration), watch integration (`WorkoutFlowTests` + `StrengthFlowTests` walking a card block), 3 phone UI (`RoutineFlowUITests`, create run + strength from cards).
 
 ---
 
