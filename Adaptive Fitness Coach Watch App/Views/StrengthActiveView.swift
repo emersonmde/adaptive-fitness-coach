@@ -73,11 +73,11 @@ struct StrengthGlanceView: View {
 
                 if let exercise, let item {
                     Text(exercise.name)
-                        .font(.headline)
+                        .font(.title3.weight(.bold))
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                        .minimumScaleFactor(0.6)
 
                     if item.isHold {
                         HoldRingView(seconds: item.holdSeconds ?? 30) { manager.completeSet() }
@@ -250,21 +250,24 @@ struct ExerciseDetailView: View {
     }
 }
 
-/// Segmented set-progress — the strength analogue of the run's zone bar. One capsule per set:
-/// completed sets are filled and dim, the current set dominates (full color, taller, soft glow),
-/// upcoming sets recede. Reading "where am I in this exercise" at a glance, no number needed.
+/// Segmented set-progress — the strength analogue of the run's zone bar, the one piece of
+/// "where am I" that changes as you work. A precise "SET n / N" label (like the run's interval
+/// count) over a capsule row: completed sets filled and dim, the current set dominant (full
+/// color, taller, soft glow), upcoming sets receding.
 struct SetPipsView: View {
     let total: Int
     /// 1-based current set.
     let currentSet: Int
 
+    private var clampedTotal: Int { max(1, total) }
+
     var body: some View {
         HStack(spacing: 4) {
-            ForEach(0..<max(1, total), id: \.self) { slot in
+            ForEach(0..<clampedTotal, id: \.self) { slot in
                 let isDone = slot < currentSet - 1
                 let isCurrent = slot == currentSet - 1
                 Capsule()
-                    .fill(WatchTheme.strength.opacity(isCurrent ? 1.0 : (isDone ? 0.55 : 0.18)))
+                    .fill(WatchTheme.strength.opacity(isCurrent ? 1.0 : (isDone ? 0.6 : 0.22)))
                     .frame(width: isCurrent ? 22 : 14, height: isCurrent ? 6 : 5)
                     .shadow(color: isCurrent ? WatchTheme.strength.opacity(0.6) : .clear, radius: 4)
             }
@@ -272,7 +275,7 @@ struct SetPipsView: View {
         .frame(height: 10)
         .accessibilityElement()
         .accessibilityLabel("Set")
-        .accessibilityValue("\(currentSet) of \(total)")
+        .accessibilityValue("\(currentSet) of \(clampedTotal)")
     }
 }
 
