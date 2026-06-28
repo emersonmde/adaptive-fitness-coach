@@ -15,10 +15,12 @@ extension Color {
 
 /// The app's dark/neon design tokens.
 ///
-/// Two-tier color model: `accent` (Electric Lime) is the **brand identity** — used only for
-/// app chrome, CTAs, and selected states. The workout-state semantics (`run`/`walk`/`strength`/
-/// `hot`) are a separate language tied to the watch's haptics and learned mid-run (N5); they are
-/// never replaced by the brand accent.
+/// Two-tier color model: `accent` is the **brand identity** — used only for app chrome, CTAs,
+/// and selected states. It is deliberately set to the same emerald as the `run` semantic so the
+/// phone reads as one coherent green (per the user's preference over the prior Electric Lime).
+/// The workout-state semantics (`run`/`walk`/`strength`/`hot`) remain a separate language tied to
+/// the watch's haptics and learned mid-run (N5); `walk`/`strength`/`hot` are never replaced by the
+/// brand accent.
 enum Theme {
     // Neutrals
     static let bg = Color(hex: 0x08090B)        // near-black (avoids OLED banding/halation with neon)
@@ -31,8 +33,8 @@ enum Theme {
     static let textTertiary = Color(hex: 0x6A6F7A)  // sparingly, >= 13pt only
 
     // Brand accent (phone identity only)
-    static let accent = Color(hex: 0xC6FF3D)        // Electric Lime
-    static let accentGlow = Color(hex: 0xA8E000)
+    static let accent = Color(hex: 0x34E27A)        // Emerald (matches the run semantic — one coherent green)
+    static let accentGlow = Color(hex: 0x1FB85E)    // deeper emerald for glow/outline gradients
 
     // Workout-state semantics (shared language with the watch)
     static let run = Color(hex: 0x34E27A)       // run / work
