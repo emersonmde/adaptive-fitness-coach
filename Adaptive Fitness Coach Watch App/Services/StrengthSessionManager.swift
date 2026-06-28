@@ -6,48 +6,40 @@ import AdaptiveCore
 struct StrengthSummary: Sendable, Hashable {
     var totalDuration: TimeInterval
     var exercisesCompleted: Int
-    var setsCompleted: Int
     var averageHeartRate: Double?
 }
 
-/// Drives an on-watch strength session over a `StrengthWorkoutBackend`. Unlike the run manager
-/// this is **user-driven, not clock-ticked**: there is no real-time adaptation in P1 (that's P2),
-/// so the user advances set by set (`completeSet`) and the manager tracks position, the
-/// adjustable proposed weight, and session timing. It reuses the run side's `SessionState` and
-/// `WorkoutTotals`.
+/// Drives one **strength block** — a flat run of exercise and rest cards (already expanded by the
+/// routine's rounds) — over a `StrengthWorkoutBackend`. User-driven, not ticked: the user does
+/// each exercise bout and taps "Done set" to advance; rest cards show a countdown the view drives.
+/// Reuses the run side's `SessionState` and `WorkoutTotals`.
 ///
-/// Testability mirrors `WorkoutSessionManager`: inject a backend and call `begin` then
-/// `completeSet()`/`adjustWeight` directly — no clock, no HealthKit.
+/// Testability mirrors `WorkoutSessionManager`: inject a backend, call `begin`, then drive
+/// `advance()` directly — no clock, no HealthKit.
 @MainActor
 @Observable
 final class StrengthSessionManager {
+    /// What the current card is — drives which screen the view shows.
+    enum Activity: Equatable { case exercise, rest }
+
     private(set) var sessionState: SessionState = .idle
     private(set) var routineName: String = "Strength"
-
-    /// The resolved exercise/form metadata for each card, fixed for the session.
-    private(set) var exercises: [Exercise] = []
-    /// Working prescriptions (weight is adjustable in place); parallel to `exercises`.
-    private(set) var items: [StrengthExerciseItem] = []
-
-    /// Index of the card on screen and the 1-based set within it.
-    private(set) var currentIndex = 0
-    private(set) var currentSet = 1
-
     /// Latest heart rate (bpm), 0 until the first sample. Ambient, not a load signal (N3).
     private(set) var currentHeartRate: Double = 0
-    /// When the session went active — drives the live session clock (the view ticks it).
     private(set) var sessionStartDate: Date?
-
     private(set) var summary: StrengthSummary?
+
+    /// The block's cards (exercise/rest), with unknown-id exercise cards dropped (N6).
+    private(set) var cards: [WorkoutCard] = []
+    private var exerciseMeta: [Int: Exercise] = [:]   // resolved library entry per exercise card
+    private(set) var currentIndex = 0
+    /// Weight adjustments keyed by exercise id, so a change applies to every round of that move.
+    private var weightOverrides: [String: Weight] = [:]
 
     private let injectedBackend: StrengthWorkoutBackend?
     private var backend: StrengthWorkoutBackend?
-    /// Time source; injectable so tests advance the clock deterministically.
     private let now: () -> Date
     private var isFinishing = false
-    /// True when the session ends by completing the final set (vs. a manual early End) — lets the
-    /// summary credit the whole plan rather than recomputing from the half-advanced cursor.
-    private var finishedNaturally = false
 
     private let haptics = HapticManager()
 
@@ -56,51 +48,74 @@ final class StrengthSessionManager {
         self.now = now
     }
 
-    // MARK: - Derived state
+    // MARK: - Derived state (the view reads these)
 
-    /// Total sets across the whole session — the denominator for progress.
-    var totalSets: Int { items.reduce(0) { $0 + max(0, $1.sets) } }
+    var currentCard: WorkoutCard? { cards.indices.contains(currentIndex) ? cards[currentIndex] : nil }
 
-    /// Sets fully completed before the current card + sets done within it.
-    var setsCompleted: Int {
-        let priorSets = items.prefix(currentIndex).reduce(0) { $0 + max(0, $1.sets) }
-        return priorSets + (currentSet - 1)
+    var activity: Activity {
+        if case .rest = currentCard { return .rest }
+        return .exercise
     }
 
+    var currentExercise: Exercise? { exerciseMeta[currentIndex] }
+
+    /// The current exercise card's prescription, with any weight override applied.
     var currentItem: StrengthExerciseItem? {
-        items.indices.contains(currentIndex) ? items[currentIndex] : nil
+        guard case let .exercise(item) = currentCard else { return nil }
+        guard let override = weightOverrides[item.exerciseId] else { return item }
+        var adjusted = item
+        adjusted.seedWeight = override
+        return adjusted
     }
 
-    var currentExercise: Exercise? {
-        exercises.indices.contains(currentIndex) ? exercises[currentIndex] : nil
+    var currentRestSeconds: TimeInterval? {
+        if case let .rest(c) = currentCard { return c.seconds }
+        return nil
     }
 
-    var setsInCurrentExercise: Int { currentItem.map { max(1, $0.sets) } ?? 0 }
+    /// 1-based position among **exercise** cards, and the total — the glance's "n of N".
+    var exercisePosition: (current: Int, total: Int) {
+        let total = cards.reduce(0) { $0 + ($1.exercise != nil ? 1 : 0) }
+        let done = cards.prefix(currentIndex).reduce(0) { $0 + ($1.exercise != nil ? 1 : 0) }
+        // While on an exercise card, count it as the current one.
+        let current = min(done + (activity == .exercise ? 1 : 0), total)
+        return (max(1, current), max(1, total))
+    }
 
     // MARK: - Start
 
-    /// Production entry: kick off the session asynchronously.
-    func start(plan: StrengthPlan, routineName: String) {
+    func start(cards: [WorkoutCard], routineName: String) {
         guard sessionState == .idle else { return }
-        Task { await begin(plan: plan, routineName: routineName) }
+        Task { await begin(cards: cards, routineName: routineName) }
     }
 
-    /// Set up the backend and resolved sequence and go active. Awaitable so tests can drive
-    /// `completeSet()` after. A plan that resolves to no coachable exercises (every id unknown,
-    /// or empty) fails rather than starting an empty workout (N6) — nothing is saved.
-    func begin(plan: StrengthPlan, routineName: String) async {
+    /// Resolve the block, start the backend, go active. A block with no coachable exercise fails
+    /// rather than starting an empty workout (N6).
+    func begin(cards: [WorkoutCard], routineName: String) async {
         guard sessionState == .idle else { return }
         self.routineName = routineName
 
-        let resolved = plan.resolved()
-        guard !resolved.isEmpty else {
+        var resolved: [WorkoutCard] = []
+        var meta: [Int: Exercise] = [:]
+        for card in cards {
+            switch card {
+            case let .exercise(item):
+                guard let ex = ExerciseLibrary.exercise(id: item.exerciseId) else { continue } // drop unknown (N6)
+                meta[resolved.count] = ex
+                resolved.append(card)
+            case .rest:
+                resolved.append(card)
+            case .run:
+                continue // a run never appears in a strength block
+            }
+        }
+        guard meta.values.contains(where: { _ in true }) else {
             sessionState = .failed
             return
         }
-        exercises = resolved.map(\.exercise)
-        items = resolved.map(\.item)
+        self.cards = resolved
+        self.exerciseMeta = meta
         currentIndex = 0
-        currentSet = 1
 
         let backend = injectedBackend ?? HealthKitStrengthBackend()
         self.backend = backend
@@ -110,12 +125,13 @@ final class StrengthSessionManager {
         do {
             try await backend.start()
         } catch {
-            // Couldn't start the workout — surface failure, save nothing (N2/N6).
             self.backend = nil
             sessionState = .failed
             return
         }
 
+        // Skip any leading rest cards — a block shouldn't open on a rest.
+        while case .rest = currentCard { currentIndex += 1 }
         sessionStartDate = now()
         sessionState = .active
     }
@@ -126,44 +142,33 @@ final class StrengthSessionManager {
         sessionState = .failed
     }
 
-    // MARK: - Progression (the test seams)
+    // MARK: - Progression (test seams)
 
     /// Adjust the current exercise's proposed weight by a delta in pounds (clamped at zero). A
-    /// no-op for bodyweight or hold cards, which carry no load. Applies to every set of the
-    /// exercise — it's a seed for the movement, not a per-set log (N7).
+    /// no-op on bodyweight/hold/rest cards. Applies to every round of the exercise (N7 seed).
     func adjustWeight(byPounds delta: Double) {
-        guard sessionState == .active, items.indices.contains(currentIndex),
-              let weight = items[currentIndex].seedWeight else { return }
-        items[currentIndex].seedWeight = weight.adjusted(byPounds: delta)
+        guard sessionState == .active, case let .exercise(item) = currentCard,
+              let weight = currentItem?.seedWeight ?? item.seedWeight else { return }
+        weightOverrides[item.exerciseId] = weight.adjusted(byPounds: delta)
     }
 
-    /// Mark the current set done and advance: next set, then next exercise, then finish. Rep and
-    /// hold cards advance identically — the hold timer is the view's concern; progression is not.
-    func completeSet() {
-        guard sessionState == .active, let item = currentItem else { return }
-
-        if currentSet < max(1, item.sets) {
-            currentSet += 1
-            haptics.playSetComplete()
+    /// Advance to the next card. Used by "Done set" (exercise) and by the rest countdown finishing
+    /// or being skipped. Plays a haptic for the kind of thing coming next.
+    func advance() {
+        guard sessionState == .active else { return }
+        currentIndex += 1
+        if currentIndex >= cards.count {
+            finish()
             return
         }
-
-        // Last set of this exercise → move on.
-        if currentIndex < items.count - 1 {
-            currentIndex += 1
-            currentSet = 1
-            haptics.playExerciseChange()
-        } else {
-            // Final set of the final exercise — the whole plan is done.
-            finishedNaturally = true
-            finish()
+        switch currentCard {
+        case .rest: haptics.playSetComplete()
+        default: haptics.playExerciseChange()
         }
     }
 
     // MARK: - End
 
-    /// End the session (natural completion or user-initiated). Guarded so a tap racing the final
-    /// set can't double-finalize.
     func finish() {
         guard sessionState == .active, !isFinishing else { return }
         isFinishing = true
@@ -175,32 +180,33 @@ final class StrengthSessionManager {
     private func end() async {
         let totals = await backend?.end() ?? WorkoutTotals()
         let duration = sessionStartDate.map { now().timeIntervalSince($0) } ?? 0
-        // A natural finish credits the whole plan; a manual early End counts only what was passed
-        // (the cursor sits on the in-progress set, whose completed sets `setsCompleted` already has).
-        let exercisesDone = finishedNaturally ? items.count : currentIndex
-        let setsDone = finishedNaturally ? totalSets : setsCompleted
+        let exercisesDone = min(currentIndex, cards.count).reduceExerciseCount(in: cards)
         summary = StrengthSummary(
             totalDuration: duration,
-            exercisesCompleted: max(exercisesDone, 0),
-            setsCompleted: setsDone,
+            exercisesCompleted: exercisesDone,
             averageHeartRate: totals.averageHeartRate
         )
         sessionState = .complete
         haptics.playComplete()
     }
 
-    /// Reset to idle so a new session can start (e.g. after dismissing the summary).
     func reset() {
         isFinishing = false
-        finishedNaturally = false
         backend = nil
-        exercises = []
-        items = []
+        cards = []
+        exerciseMeta = [:]
+        weightOverrides = [:]
         currentIndex = 0
-        currentSet = 1
         currentHeartRate = 0
         summary = nil
         sessionStartDate = nil
         sessionState = .idle
+    }
+}
+
+private extension Int {
+    /// Count exercise cards in the first `self` cards — exercises completed at end.
+    func reduceExerciseCount(in cards: [WorkoutCard]) -> Int {
+        cards.prefix(self).reduce(0) { $0 + ($1.exercise != nil ? 1 : 0) }
     }
 }

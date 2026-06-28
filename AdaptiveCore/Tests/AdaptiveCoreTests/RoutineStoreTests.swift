@@ -13,7 +13,7 @@ struct RoutineStoreTests {
     }
 
     private func run(_ name: String = "Run", at time: ScheduleTime? = nil, days: Set<DayOfWeek> = [.monday]) -> Routine {
-        Routine(name: name, type: .adaptiveRun, repeatDays: days, scheduleTime: time)
+        Routine(name: name, repeatDays: days, scheduleTime: time, cards: [.run(RunCard())])
     }
 
     @Test func addPersistsAcrossInstances() {

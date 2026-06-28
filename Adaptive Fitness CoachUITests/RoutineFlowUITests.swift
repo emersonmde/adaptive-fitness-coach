@@ -1,8 +1,8 @@
 import XCTest
 
-/// Drives the phone's core flow through the real UI: create a routine and confirm it lands on
-/// the week screen, then open it. Runs against a throwaway store (`-uiTesting`) so each run
-/// starts empty and no system prompts block interaction.
+/// Drives the phone's core flow through the real UI: create routines from cards and confirm they
+/// land on the week screen. Runs against a throwaway store (`-uiTesting`) so each run starts empty
+/// and no system prompts block interaction.
 final class RoutineFlowUITests: XCTestCase {
 
     override func setUpWithError() throws {
@@ -16,79 +16,61 @@ final class RoutineFlowUITests: XCTestCase {
         return app
     }
 
-    func testCreateRoutineAppearsInWeek() throws {
-        let app = launchApp()
-
-        // Empty state first.
-        XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 5))
-
-        // Open the create flow via the unambiguous empty-state button.
+    /// Fill name + a day on the "New Routine" screen, then continue to the builder.
+    private func startNewRoutine(_ app: XCUIApplication, name: String, day: String) {
         let newRoutineButton = app.buttons["newRoutineEmptyState"]
         XCTAssertTrue(newRoutineButton.waitForExistence(timeout: 5))
         newRoutineButton.tap()
 
-        // Name it.
         let nameField = app.textFields.firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
         nameField.tap()
-        nameField.typeText("Morning Run")
-
-        // Pick a day (Monday pill is labeled with its full name for accessibility).
-        app.buttons["Monday"].firstMatch.tap()
-
-        // Save.
+        nameField.typeText(name)
+        app.buttons[day].firstMatch.tap()
         app.buttons["Next"].firstMatch.tap()
+    }
 
-        // Back on the week screen, the routine is listed.
+    private func addCard(_ app: XCUIApplication, _ kind: String) {
+        app.buttons["Add card"].firstMatch.tap()
+        app.buttons[kind].firstMatch.tap()
+    }
+
+    func testCreateRunRoutineAppearsInWeek() throws {
+        let app = launchApp()
+        XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 5))
+
+        startNewRoutine(app, name: "Morning Run", day: "Monday")
+        addCard(app, "Adaptive Run")
+        app.buttons["Save"].firstMatch.tap()
+
         XCTAssertTrue(app.staticTexts["Morning Run"].waitForExistence(timeout: 5))
     }
 
-    func testCreateStrengthRoutineViaLibraryAppearsInWeek() throws {
+    func testCreateStrengthRoutineFromCardsAppearsInWeek() throws {
         let app = launchApp()
 
-        app.buttons["newRoutineEmptyState"].tap()
+        startNewRoutine(app, name: "Push Day", day: "Monday")
 
-        let nameField = app.textFields.firstMatch
-        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
-        nameField.tap()
-        nameField.typeText("Push Day")
-        app.buttons["Monday"].firstMatch.tap()
-
-        // Switch the type to Strength → "Next" now pushes the exercise builder.
-        app.buttons["Strength"].firstMatch.tap()
-        app.buttons["Next"].firstMatch.tap()
-
-        // Builder empty state → open the library and add an exercise.
-        let addExercises = app.buttons["Add Exercises"].firstMatch
-        XCTAssertTrue(addExercises.waitForExistence(timeout: 5))
-        addExercises.tap()
-
+        // Add an exercise card via the library, plus a rest card.
+        addCard(app, "Exercise")
         let benchRow = app.buttons["exercise_db_bench_press"]
         XCTAssertTrue(benchRow.waitForExistence(timeout: 5))
         benchRow.tap()
         app.buttons["Add (1)"].firstMatch.tap()
 
-        // Back in the builder, the card is present → Save creates the routine.
         XCTAssertTrue(app.staticTexts["Dumbbell Bench Press"].waitForExistence(timeout: 5))
-        app.buttons["Save"].firstMatch.tap()
 
-        // The strength routine is now on the week screen.
+        app.buttons["Save"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Push Day"].waitForExistence(timeout: 5))
     }
 
     func testCreatedRoutineOpensDetail() throws {
         let app = launchApp()
 
-        app.buttons["newRoutineEmptyState"].tap()
-        let nameField = app.textFields.firstMatch
-        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
-        nameField.tap()
-        nameField.typeText("Tempo Run")
-        app.buttons["Wednesday"].firstMatch.tap()
-        app.buttons["Next"].firstMatch.tap()
+        startNewRoutine(app, name: "Tempo Run", day: "Wednesday")
+        addCard(app, "Adaptive Run")
+        app.buttons["Save"].firstMatch.tap()
 
-        // Open the routine's detail/schedule. The name now appears in both the Up-Next hero and
-        // its routine row, so target the first match explicitly (both navigate to the same detail).
         let row = app.staticTexts["Tempo Run"].firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()

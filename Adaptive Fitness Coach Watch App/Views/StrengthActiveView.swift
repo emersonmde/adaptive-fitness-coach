@@ -16,13 +16,18 @@ struct StrengthSessionPager: View {
     private enum Page { case controls, glance, exercise }
 
     var body: some View {
-        TabView(selection: $selection) {
-            StrengthControlsView(manager: manager).tag(Page.controls)
-            StrengthGlanceView(manager: manager) { withAnimation { selection = .exercise } }
-                .tag(Page.glance)
-            ExerciseDetailView(manager: manager).tag(Page.exercise)
+        if manager.activity == .rest, let seconds = manager.currentRestSeconds {
+            // A rest card takes over the whole screen — nothing to do but recover.
+            RestView(seconds: seconds) { manager.advance() }
+        } else {
+            TabView(selection: $selection) {
+                StrengthControlsView(manager: manager).tag(Page.controls)
+                StrengthGlanceView(manager: manager) { withAnimation { selection = .exercise } }
+                    .tag(Page.glance)
+                ExerciseDetailView(manager: manager).tag(Page.exercise)
+            }
+            .tabViewStyle(.page)
         }
-        .tabViewStyle(.page)
     }
 }
 
@@ -80,15 +85,11 @@ struct StrengthGlanceView: View {
                         .minimumScaleFactor(0.6)
 
                     if item.isHold {
-                        HoldRingView(seconds: item.holdSeconds ?? 30) { manager.completeSet() }
+                        HoldRingView(seconds: item.holdSeconds ?? 30) { manager.advance() }
                             .padding(.top, 2)
-                        SetPipsView(total: manager.setsInCurrentExercise, currentSet: manager.currentSet)
-                            .padding(.top, 4)
                     } else {
                         repHero(item)
                         weightChip(item)
-                        SetPipsView(total: manager.setsInCurrentExercise, currentSet: manager.currentSet)
-                            .padding(.top, 4)
                     }
                 } else {
                     ProgressView().tint(WatchTheme.strength)
@@ -97,26 +98,26 @@ struct StrengthGlanceView: View {
                 Spacer(minLength: 0)
 
                 if let item, !item.isHold {
-                    DoneSetButton { manager.completeSet() }
+                    DoneSetButton { manager.advance() }
                 }
             }
             .padding(.horizontal, 6)
             .padding(.top, 2)
         }
         .animation(.easeInOut(duration: 0.25), value: manager.currentIndex)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: manager.currentSet)
     }
 
     /// Top row: live HR (pinned left) and "n of N" exercise progress (centered). The top-right
     /// corner is left clear for watchOS's own clock — and there's no session clock here since
     /// strength is rep-governed, not time-governed like a run (total time lands on the summary).
     private var statusRow: some View {
-        ZStack {
+        let pos = manager.exercisePosition
+        return ZStack {
             HStack {
                 HeartRateView(bpm: manager.currentHeartRate)
                 Spacer()
             }
-            Text("\(manager.currentIndex + 1) of \(manager.exercises.count)")
+            Text("\(pos.current) of \(pos.total)")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(WatchTheme.textSecondary)
         }
@@ -243,39 +244,74 @@ struct ExerciseDetailView: View {
     }
 
     private func prescription(_ item: StrengthExerciseItem, exercise: Exercise) -> String {
-        if item.isHold {
-            return "\(item.sets) sets · \(Int(item.holdSeconds ?? 0))s hold"
-        }
-        return "\(item.sets) sets · \(item.reps ?? 0) reps"
+        if item.isHold { return "\(Int(item.holdSeconds ?? 0))s hold" }
+        return "\(item.reps ?? 0) reps"
     }
 }
 
-/// Segmented set-progress — the strength analogue of the run's zone bar, the one piece of
-/// "where am I" that changes as you work. A precise "SET n / N" label (like the run's interval
-/// count) over a capsule row: completed sets filled and dim, the current set dominant (full
-/// color, taller, soft glow), upcoming sets receding.
-struct SetPipsView: View {
-    let total: Int
-    /// 1-based current set.
-    let currentSet: Int
+/// A rest card — a full-screen recovery countdown between exercises (or between rounds). It runs
+/// itself down and advances on its own at zero; the user can skip. The ring matches the hold
+/// ring's premium language, in the calm "recover" amber rather than the work blue.
+struct RestView: View {
+    let seconds: TimeInterval
+    let onDone: () -> Void
 
-    private var clampedTotal: Int { max(1, total) }
+    @State private var remaining: TimeInterval
+    @State private var ticker: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(seconds: TimeInterval, onDone: @escaping () -> Void) {
+        self.seconds = seconds
+        self.onDone = onDone
+        _remaining = State(initialValue: seconds)
+    }
+
+    private var progress: Double { seconds > 0 ? remaining / seconds : 0 }
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<clampedTotal, id: \.self) { slot in
-                let isDone = slot < currentSet - 1
-                let isCurrent = slot == currentSet - 1
-                Capsule()
-                    .fill(WatchTheme.strength.opacity(isCurrent ? 1.0 : (isDone ? 0.6 : 0.22)))
-                    .frame(width: isCurrent ? 22 : 14, height: isCurrent ? 6 : 5)
-                    .shadow(color: isCurrent ? WatchTheme.strength.opacity(0.6) : .clear, radius: 4)
+        ZStack {
+            WatchTheme.strengthField.ignoresSafeArea()
+            VStack(spacing: 12) {
+                Text("REST")
+                    .font(.caption.weight(.semibold))
+                    .tracking(2)
+                    .foregroundStyle(WatchTheme.walk)
+                ZStack {
+                    Circle().stroke(WatchTheme.walk.opacity(0.18), lineWidth: 7)
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(WatchTheme.walk, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                        .animation(.linear(duration: reduceMotion ? 0 : 1), value: remaining)
+                    Text(remaining.clockString)
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 104, height: 104)
+                Button("Skip rest") { finish() }
+                    .buttonStyle(.bordered)
+                    .tint(WatchTheme.walk)
             }
         }
-        .frame(height: 10)
-        .accessibilityElement()
-        .accessibilityLabel("Set")
-        .accessibilityValue("\(currentSet) of \(clampedTotal)")
+        .onAppear(perform: start)
+        .onDisappear { ticker?.cancel() }
+    }
+
+    private func start() {
+        ticker = Task {
+            while remaining > 0 && !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                remaining = max(0, remaining - 1)
+            }
+            if !Task.isCancelled { finish() }
+        }
+    }
+
+    private func finish() {
+        ticker?.cancel()
+        onDone()
     }
 }
 

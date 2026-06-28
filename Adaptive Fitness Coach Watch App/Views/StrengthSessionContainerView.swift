@@ -20,7 +20,7 @@ struct StrengthSessionContainerView: View {
         Group {
             switch manager.sessionState {
             case .idle:
-                StrengthLaunchView(routine: nextRoutine, exerciseCount: sessionPlan.items.count, onStart: start)
+                StrengthLaunchView(routine: nextRoutine, exerciseCount: exerciseCount, onStart: start)
             case .active:
                 StrengthSessionPager(manager: manager)
             case .complete:
@@ -44,12 +44,14 @@ struct StrengthSessionContainerView: View {
         }
     }
 
-    /// The plan the watch will run: the next strength routine's authored cards, or a compact
-    /// demo sequence under `-simulateStrength`.
-    private var sessionPlan: StrengthPlan {
-        if simulate { return Self.demoPlan }
-        return StrengthPlan(items: nextRoutine?.exercises ?? [])
+    /// The cards the watch will run: the next strength routine's cards (round-expanded), or a
+    /// compact demo under `-simulateStrength`. Runs are filtered out by the manager.
+    private var sessionCards: [WorkoutCard] {
+        if simulate { return Self.demoCards }
+        return nextRoutine?.expandedCards ?? []
     }
+
+    private var exerciseCount: Int { sessionCards.reduce(0) { $0 + ($1.exercise != nil ? 1 : 0) } }
 
     /// The next strength routine, by weekday/time, falling back to any strength routine.
     private var nextRoutine: Routine? {
@@ -68,17 +70,19 @@ struct StrengthSessionContainerView: View {
 
     private func start() {
         let name = simulate ? "Strength Demo" : (nextRoutine?.name ?? "Strength")
-        manager.start(plan: sessionPlan, routineName: name)
+        manager.start(cards: sessionCards, routineName: name)
     }
 
-    /// A short scripted strength session for the Simulator: a few exercises and a brief plank so
-    /// the whole flow — cards, weight adjust, hold, summary — plays out quickly.
-    static var demoPlan: StrengthPlan {
-        StrengthPlan(items: [
-            StrengthExerciseItem(exerciseId: "goblet_squat", sets: 2, reps: 10, seedWeight: .lb(20)),
-            StrengthExerciseItem(exerciseId: "db_bench_press", sets: 2, reps: 10, seedWeight: .lb(15)),
-            StrengthExerciseItem(exerciseId: "plank", sets: 1, holdSeconds: 10),
-        ])
+    /// A short scripted strength session for the Simulator: two exercises with a brief rest
+    /// between (to show the rest ring) and a plank, so the whole flow plays out quickly.
+    static var demoCards: [WorkoutCard] {
+        [
+            .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
+            .rest(RestCard(seconds: 8)),
+            .exercise(StrengthExerciseItem(exerciseId: "db_bench_press", reps: 10, seedWeight: .lb(15))),
+            .rest(RestCard(seconds: 8)),
+            .exercise(StrengthExerciseItem(exerciseId: "plank", holdSeconds: 10)),
+        ]
     }
 }
 

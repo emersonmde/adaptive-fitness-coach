@@ -13,15 +13,15 @@ struct UpNextCard: View {
 
     private var tint: Color { RoutineTheme.tint(for: routine.type) }
 
-    /// Run shows its target duration; strength shows its exercise count (duration is derived).
+    /// A run-only routine shows its target minutes; anything with strength shows its exercise
+    /// count and rounds (the more meaningful read).
     private var detailText: String {
-        switch routine.type {
-        case .adaptiveRun:
-            return "~\(routine.durationMinutes) min"
-        case .strength:
-            let n = routine.exercises.count
-            return "\(n) exercise\(n == 1 ? "" : "s")"
+        if routine.hasStrength {
+            let n = routine.exerciseItems.count
+            let base = "\(n) exercise\(n == 1 ? "" : "s")"
+            return routine.rounds > 1 ? "\(base) · \(routine.rounds) rounds" : base
         }
+        return "~\(routine.estimatedMinutes) min"
     }
 
     var body: some View {

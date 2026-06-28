@@ -2,73 +2,135 @@ import Foundation
 
 /// A user-defined training routine: a named workout that repeats on chosen days.
 ///
-/// In P0 the only functional `type` is `.adaptiveRun`. Routines are created on the
-/// phone and synced to the watch via WatchConnectivity. A routine is forward-looking
-/// setup, never a log (N1).
+/// A routine is an ordered list of `WorkoutCard`s (run, exercise, rest), optionally repeated
+/// `rounds` times — repeating the whole list is how "sets" work, so a rest card at the end falls
+/// between rounds. Routines are created on the phone and synced to the watch, which walks the
+/// expanded sequence and starts/stops the right Apple workout per card type. A routine is
+/// forward-looking setup, never a log (N1).
 public struct Routine: Codable, Sendable, Identifiable, Hashable {
     public let id: UUID
     public var name: String
-    public var type: RoutineType
     public var repeatDays: Set<DayOfWeek>
     public var scheduleTime: ScheduleTime?
-    /// User-chosen target session length in minutes — a *seed* the interval engine fills with
-    /// run/walk cycles and then adapts (N7). Defaults to 30.
-    public var durationMinutes: Int
     /// When true, the routine's schedule is mirrored to the user's Calendar as a recurring event.
     public var reminderEnabled: Bool
-    /// The ordered exercise cards for a `.strength` routine. Empty for `.adaptiveRun` (whose
-    /// session is generated from `durationMinutes`, not authored). The watch resolves each card's
-    /// `exerciseId` against the shared `ExerciseLibrary`.
-    public var exercises: [StrengthExerciseItem]
+    /// The ordered cards. The watch walks `expandedCards` (these repeated `rounds` times).
+    public var cards: [WorkoutCard]
+    /// How many times the whole card list repeats — the routine-level "sets" (≥ 1).
+    public var rounds: Int
     public let createdAt: Date
 
     public init(
         id: UUID = UUID(),
         name: String,
-        type: RoutineType,
         repeatDays: Set<DayOfWeek> = [],
         scheduleTime: ScheduleTime? = nil,
-        durationMinutes: Int = 30,
         reminderEnabled: Bool = false,
-        exercises: [StrengthExerciseItem] = [],
+        cards: [WorkoutCard] = [],
+        rounds: Int = 1,
         createdAt: Date = Date()
     ) {
         self.id = id
         self.name = name
-        self.type = type
         self.repeatDays = repeatDays
         self.scheduleTime = scheduleTime
-        self.durationMinutes = durationMinutes
         self.reminderEnabled = reminderEnabled
-        self.exercises = exercises
+        self.cards = cards
+        self.rounds = max(1, rounds)
         self.createdAt = createdAt
     }
 
-    // Explicit Codable so routines persisted before a field existed still decode — each newer
-    // field (`durationMinutes` from build 2, `exercises` from P1) is read with a default rather
-    // than failing the whole decode.
+    // MARK: - Derived display
+
+    /// The card list expanded by `rounds` — the actual ordered sequence the watch performs.
+    public var expandedCards: [WorkoutCard] {
+        guard rounds > 1 else { return cards }
+        return (0..<rounds).flatMap { _ in cards }
+    }
+
+    /// The exercise payloads, in order (excludes run/rest cards). Used for counts and summaries.
+    public var exerciseItems: [StrengthExerciseItem] { cards.compactMap(\.exercise) }
+
+    /// The first run card, if any — drives the run launch/estimate.
+    public var firstRunCard: RunCard? {
+        for case let .run(c) in cards { return c }
+        return nil
+    }
+
+    public var hasStrength: Bool { cards.contains { $0.exercise != nil } }
+    public var hasRun: Bool { cards.contains { if case .run = $0 { return true }; return false } }
+
+    /// A display category derived from the cards: anything with strength reads as strength
+    /// (its blue identity), otherwise run. Replaces the old stored `type`.
+    public var type: RoutineType { hasStrength ? .strength : .adaptiveRun }
+
+    /// A rough total length in minutes (for the calendar event and the "~N min" display). Runs
+    /// count their full duration; an exercise set is estimated at ~45s, a hold at its length; rest
+    /// at its length — all times `rounds`. It's an estimate, not a contract.
+    public var estimatedMinutes: Int {
+        let perCard: (WorkoutCard) -> Double = { card in
+            switch card {
+            case let .run(c): Double(c.durationMinutes)
+            case let .exercise(item): (item.holdSeconds ?? 45) / 60
+            case let .rest(c): c.seconds / 60
+            }
+        }
+        let total = cards.reduce(0) { $0 + perCard($1) } * Double(max(1, rounds))
+        return max(1, Int(total.rounded()))
+    }
+
+    // MARK: - Codable (forward format = cards/rounds; legacy = type/durationMinutes/exercises)
+
     private enum CodingKeys: String, CodingKey {
-        case id, name, type, repeatDays, scheduleTime, durationMinutes, reminderEnabled, exercises, createdAt
+        case id, name, repeatDays, scheduleTime, reminderEnabled, cards, rounds, createdAt
+        // Legacy keys, decoded only when `cards` is absent.
+        case type, durationMinutes, exercises
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(UUID.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
-        type = try c.decode(RoutineType.self, forKey: .type)
         repeatDays = try c.decode(Set<DayOfWeek>.self, forKey: .repeatDays)
         scheduleTime = try c.decodeIfPresent(ScheduleTime.self, forKey: .scheduleTime)
-        durationMinutes = try c.decodeIfPresent(Int.self, forKey: .durationMinutes) ?? 30
         reminderEnabled = try c.decode(Bool.self, forKey: .reminderEnabled)
-        exercises = try c.decodeIfPresent([StrengthExerciseItem].self, forKey: .exercises) ?? []
         createdAt = try c.decode(Date.self, forKey: .createdAt)
+
+        if let cards = try c.decodeIfPresent([WorkoutCard].self, forKey: .cards) {
+            self.cards = cards
+            rounds = max(1, try c.decodeIfPresent(Int.self, forKey: .rounds) ?? 1)
+        } else {
+            // Migrate a pre-card routine: a run becomes one run card; strength becomes its
+            // exercise cards. Legacy per-exercise `sets` is dropped (pre-release data only).
+            let legacyType = try c.decodeIfPresent(RoutineType.self, forKey: .type) ?? .adaptiveRun
+            let duration = try c.decodeIfPresent(Int.self, forKey: .durationMinutes) ?? 30
+            let legacyExercises = try c.decodeIfPresent([StrengthExerciseItem].self, forKey: .exercises) ?? []
+            switch legacyType {
+            case .strength where !legacyExercises.isEmpty:
+                cards = legacyExercises.map(WorkoutCard.exercise)
+            case .strength:
+                cards = []
+            case .adaptiveRun:
+                cards = [.run(RunCard(durationMinutes: duration))]
+            }
+            rounds = 1
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(repeatDays, forKey: .repeatDays)
+        try c.encodeIfPresent(scheduleTime, forKey: .scheduleTime)
+        try c.encode(reminderEnabled, forKey: .reminderEnabled)
+        try c.encode(cards, forKey: .cards)
+        try c.encode(rounds, forKey: .rounds)
+        try c.encode(createdAt, forKey: .createdAt)
     }
 }
 
-/// The kind of workout a routine drives.
-///
-/// P0 ships `.adaptiveRun` only. `.strength` lands in P1 and is declared here so the
-/// data model and UI selectors are forward-compatible, but it is not yet runnable.
+/// A display category for a routine, derived from its cards (green = run, blue = strength).
 public enum RoutineType: String, Codable, Sendable, CaseIterable, Hashable {
     case adaptiveRun
     case strength
@@ -77,14 +139,6 @@ public enum RoutineType: String, Codable, Sendable, CaseIterable, Hashable {
         switch self {
         case .adaptiveRun: "Adaptive Run"
         case .strength: "Strength"
-        }
-    }
-
-    /// Whether this type is functional in the current build. Both run and strength ship in P1.
-    public var isAvailable: Bool {
-        switch self {
-        case .adaptiveRun: true
-        case .strength: true
         }
     }
 }

@@ -2,8 +2,10 @@ import SwiftUI
 import AdaptiveCore
 
 /// Top-level router for the in-workout experience. Picks the next routine and hands off to the
-/// run flow or the strength flow by `RoutineType`. The two flows are deliberately separate:
-/// running is a clock/HR-driven adaptive loop, strength is a user-advanced card sequence.
+/// right flow. A single-block routine (all run, or all strength) uses its dedicated container with
+/// the full launch/summary; a mixed routine (run + strength) walks its blocks in sequence,
+/// switching Apple workouts automatically (`WorkoutWalkerView`). The active screens are the same
+/// ones either way.
 ///
 /// Simulator flags force a flow with a scripted backend (no HealthKit, no prompt):
 /// `-simulateWorkout` → a short adaptive run; `-simulateStrength` → a short strength session.
@@ -25,6 +27,8 @@ struct SessionContainerView: View {
             StrengthSessionContainerView(store: store, simulate: true)
         } else if simulateRun {
             RunSessionContainerView(store: store, simulate: true)
+        } else if blocks.count > 1, let routine = nextRoutine {
+            WorkoutWalkerView(routineName: routine.name, blocks: blocks)
         } else if nextRoutine?.type == .strength {
             StrengthSessionContainerView(store: store, simulate: false)
         } else {
@@ -32,7 +36,7 @@ struct SessionContainerView: View {
         }
     }
 
-    /// The next scheduled routine of any type, used only to choose the flow.
+    /// The next scheduled routine of any type, used to choose the flow.
     private var nextRoutine: Routine? {
         let calendar = Calendar.current
         let now = Date()
@@ -40,6 +44,11 @@ struct SessionContainerView: View {
         let hour = calendar.component(.hour, from: now)
         let minute = calendar.component(.minute, from: now)
         return store.nextRoutine(fromWeekday: weekday, hour: hour, minute: minute)
+    }
+
+    /// The next routine's Apple-workout blocks (run/strength runs of cards). More than one ⇒ mixed.
+    private var blocks: [WorkoutBlock] {
+        (nextRoutine?.expandedCards ?? []).workoutBlocks()
     }
 }
 
@@ -89,7 +98,8 @@ struct RunSessionContainerView: View {
     private var plannedDuration: TimeInterval { sessionPlan.plannedDuration }
 
     private var sessionPlan: IntervalPlan {
-        IntervalPlan.beginnerRunWalk(totalDuration: TimeInterval((nextRoutine?.durationMinutes ?? 30) * 60))
+        let minutes = nextRoutine?.firstRunCard?.durationMinutes ?? 30
+        return IntervalPlan.beginnerRunWalk(totalDuration: TimeInterval(minutes * 60))
     }
 
     /// The next adaptive-run routine to surface on the launch screen, based on the current

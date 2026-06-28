@@ -1,14 +1,14 @@
 import Foundation
 
-/// One card in an authored strength routine: a reference to a library `Exercise` plus the
-/// prescription the user will perform. The prescription is seeded from the library entry's
-/// defaults (`init(from:)`) and may be adjusted in the phone builder; it is never a log of what
-/// happened (N1) — only what to attempt next.
+/// One exercise card in a routine: a reference to a library `Exercise` plus the prescription for
+/// a single bout — the reps and seed load, or a hold duration. Repetition (sets) comes from the
+/// routine repeating as a whole (`Routine.rounds`), not from a per-card count, so there is no
+/// `sets` field here. The prescription is seeded from the library entry's defaults (`init(from:)`)
+/// and may be adjusted; it is never a log of what happened (N1) — only what to attempt next.
 public struct StrengthExerciseItem: Codable, Sendable, Hashable, Identifiable {
     public let id: UUID
     /// References `ExerciseLibrary` by `Exercise.id`.
     public var exerciseId: String
-    public var sets: Int
     /// Target reps for rep-based work; `nil` for an isometric hold.
     public var reps: Int?
     /// Seed load; `nil` for bodyweight or hold work.
@@ -19,14 +19,12 @@ public struct StrengthExerciseItem: Codable, Sendable, Hashable, Identifiable {
     public init(
         id: UUID = UUID(),
         exerciseId: String,
-        sets: Int,
         reps: Int? = nil,
         seedWeight: Weight? = nil,
         holdSeconds: TimeInterval? = nil
     ) {
         self.id = id
         self.exerciseId = exerciseId
-        self.sets = sets
         self.reps = reps
         self.seedWeight = seedWeight
         self.holdSeconds = holdSeconds
@@ -36,7 +34,6 @@ public struct StrengthExerciseItem: Codable, Sendable, Hashable, Identifiable {
     public init(id: UUID = UUID(), from exercise: Exercise) {
         self.id = id
         self.exerciseId = exercise.id
-        self.sets = exercise.defaultSets
         switch exercise.kind {
         case let .reps(defaultReps, seedWeight):
             self.reps = defaultReps
@@ -53,22 +50,7 @@ public struct StrengthExerciseItem: Codable, Sendable, Hashable, Identifiable {
     public var isHold: Bool { holdSeconds != nil }
 }
 
-/// An ordered sequence of strength cards — the watch walks through these in order. Built on the
-/// phone from a `Routine.exercises` list and handed to the watch's strength session.
-public struct StrengthPlan: Codable, Sendable, Hashable {
-    public var items: [StrengthExerciseItem]
-
-    public init(items: [StrengthExerciseItem]) {
-        self.items = items
-    }
-
-    /// Total number of sets across the whole session — the denominator for the progress readout.
-    public var totalSets: Int {
-        items.reduce(0) { $0 + max(0, $1.sets) }
-    }
-}
-
-/// A strength card paired with its resolved library `Exercise` (name, form demo, archetype).
+/// An exercise card paired with its resolved library `Exercise` (name, form demo, archetype).
 public struct ResolvedStrengthItem: Sendable, Hashable, Identifiable {
     public var item: StrengthExerciseItem
     public var exercise: Exercise
@@ -80,15 +62,10 @@ public struct ResolvedStrengthItem: Sendable, Hashable, Identifiable {
     }
 }
 
-public extension StrengthPlan {
-    /// Resolve each card against the shared library, **dropping** any card whose `exerciseId`
-    /// is unknown rather than fabricating a placeholder or crashing (N6 — never present a
-    /// movement the app can't actually coach). With a matched library on both sides this is a
-    /// no-op; it only bites if a routine outlives a library entry.
-    func resolved(using library: [Exercise] = ExerciseLibrary.all) -> [ResolvedStrengthItem] {
-        let byID = Dictionary(uniqueKeysWithValues: library.map { ($0.id, $0) })
-        return items.compactMap { item in
-            byID[item.exerciseId].map { ResolvedStrengthItem(item: item, exercise: $0) }
-        }
+public extension StrengthExerciseItem {
+    /// Resolve this card against the shared library, or `nil` if the id is unknown — the caller
+    /// drops unknowns rather than fabricating a movement the app can't coach (N6).
+    func resolved(using library: [Exercise] = ExerciseLibrary.all) -> ResolvedStrengthItem? {
+        library.first { $0.id == exerciseId }.map { ResolvedStrengthItem(item: self, exercise: $0) }
     }
 }

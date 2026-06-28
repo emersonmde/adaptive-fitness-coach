@@ -15,10 +15,10 @@ public enum WCMessageCodec {
     }
 
     /// Current payload schema version. Bump when the routine encoding changes incompatibly.
-    /// v2 (P1): `Routine` gained `exercises` for strength sequencing. The field rides along in
-    /// the existing JSON blob; the bump makes a stale (v1) watch reject a payload it can't fully
-    /// model rather than silently drop the strength data.
-    public static let currentVersion = 2
+    /// v3: `Routine` moved to a generic `cards` + `rounds` model (run/exercise/rest cards),
+    /// replacing the v2 `type`/`durationMinutes`/`exercises` shape. The bump makes a stale watch
+    /// reject a payload it can't model rather than mis-decode it.
+    public static let currentVersion = 3
 
     public enum CodecError: Error, Equatable {
         case missingRoutines

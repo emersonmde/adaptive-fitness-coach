@@ -11,13 +11,11 @@ struct RoutineCard: View {
 
     /// Shown only when a routine has no repeat days yet — a quick hint of what it is.
     private var subtitle: String {
-        switch routine.type {
-        case .adaptiveRun:
-            return "HR-driven · builds itself"
-        case .strength:
-            let n = routine.exercises.count
+        if routine.hasStrength {
+            let n = routine.exerciseItems.count
             return n == 0 ? "Strength" : "\(n) exercise\(n == 1 ? "" : "s")"
         }
+        return "HR-driven · builds itself"
     }
 
     var body: some View {

@@ -26,7 +26,6 @@ struct StrengthCompleteView: View {
                 VStack(spacing: 6) {
                     stat("Time", summary.totalDuration.clockString)
                     stat("Exercises", "\(summary.exercisesCompleted)")
-                    stat("Sets", "\(summary.setsCompleted)")
                     if let hr = summary.averageHeartRate, hr > 0 { stat("Avg HR", "\(Int(hr)) bpm") }
                 }
                 .padding(.top, 4)

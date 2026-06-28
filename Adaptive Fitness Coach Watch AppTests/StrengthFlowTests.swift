@@ -4,9 +4,9 @@ import AdaptiveCore
 @testable import Adaptive_Fitness_Coach_Watch_App
 
 /// Integration tests for the on-watch strength flow. They drive `StrengthSessionManager` with a
-/// `SimulatedStrengthBackend` and advance set by set — the user-driven analogue of the run
-/// flow's tick loop — so progression, weight adjust, the hold path, and failure are covered
-/// without HealthKit or a clock.
+/// `SimulatedStrengthBackend`, walking a flat card block (exercise/rest) by calling `advance()` —
+/// the user-driven analogue of the run flow's tick loop — so progression, rest, weight adjust,
+/// and failure are covered without HealthKit or a clock.
 @MainActor
 private final class FailingStrengthBackend: StrengthWorkoutBackend {
     var onHeartRate: ((Double) -> Void)?
@@ -25,13 +25,14 @@ struct StrengthFlowTests {
         StrengthSessionManager(backend: SimulatedStrengthBackend())
     }
 
-    /// Two rep exercises (2 sets each) + a plank (1 hold set) — 5 sets, 3 exercises.
-    private func samplePlan() -> StrengthPlan {
-        StrengthPlan(items: [
-            StrengthExerciseItem(exerciseId: "goblet_squat", sets: 2, reps: 10, seedWeight: .lb(20)),
-            StrengthExerciseItem(exerciseId: "db_bench_press", sets: 2, reps: 10, seedWeight: .lb(15)),
-            StrengthExerciseItem(exerciseId: "plank", sets: 1, holdSeconds: 30),
-        ])
+    /// Two exercises with a rest between, then a plank — 3 exercise cards, 1 rest card.
+    private func sampleCards() -> [WorkoutCard] {
+        [
+            .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
+            .rest(RestCard(seconds: 30)),
+            .exercise(StrengthExerciseItem(exerciseId: "db_bench_press", reps: 10, seedWeight: .lb(15))),
+            .exercise(StrengthExerciseItem(exerciseId: "plank", holdSeconds: 30)),
+        ]
     }
 
     private func waitUntilComplete(_ manager: StrengthSessionManager) async {
@@ -43,75 +44,83 @@ struct StrengthFlowTests {
 
     // MARK: - Lifecycle
 
-    @Test func beginActivatesAtFirstCard() async {
+    @Test func beginActivatesAtFirstExercise() async {
         let manager = makeManager()
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
         #expect(manager.sessionState == .active)
-        #expect(manager.currentIndex == 0)
-        #expect(manager.currentSet == 1)
+        #expect(manager.activity == .exercise)
         #expect(manager.currentExercise?.id == "goblet_squat")
-        #expect(manager.totalSets == 5)
+        #expect(manager.exercisePosition.total == 3)
     }
 
-    @Test func emptyPlanFailsWithoutStartingAWorkout() async {
+    @Test func emptyBlockFails() async {
         let manager = makeManager()
-        await manager.begin(plan: StrengthPlan(items: []), routineName: "Empty")
+        await manager.begin(cards: [], routineName: "Empty")
         #expect(manager.sessionState == .failed)
         #expect(manager.summary == nil)
     }
 
-    @Test func planOfOnlyUnknownIdsFails() async {
+    @Test func blockOfOnlyUnknownIdsFails() async {
         let manager = makeManager()
-        let plan = StrengthPlan(items: [StrengthExerciseItem(exerciseId: "ghost", sets: 3, reps: 5)])
-        await manager.begin(plan: plan, routineName: "Ghosts")
+        await manager.begin(cards: [.exercise(StrengthExerciseItem(exerciseId: "ghost", reps: 5))], routineName: "Ghosts")
         #expect(manager.sessionState == .failed)
     }
 
-    // MARK: - Progression
-
-    @Test func completeSetAdvancesThroughSetsAndExercises() async {
+    @Test func leadingRestIsSkipped() async {
         let manager = makeManager()
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
+        await manager.begin(cards: [.rest(RestCard(seconds: 30)),
+                                    .exercise(StrengthExerciseItem(exerciseId: "push_up", reps: 8))],
+                            routineName: "R")
+        #expect(manager.activity == .exercise)
+        #expect(manager.currentExercise?.id == "push_up")
+    }
 
-        // Exercise 1: set 1 → set 2.
-        manager.completeSet()
-        #expect(manager.currentIndex == 0)
-        #expect(manager.currentSet == 2)
+    // MARK: - Progression through exercises and rests
 
-        // Set 2 was the last → advance to exercise 2, set 1.
-        manager.completeSet()
-        #expect(manager.currentIndex == 1)
-        #expect(manager.currentSet == 1)
+    @Test func advanceWalksExercisesAndRests() async {
+        let manager = makeManager()
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
+
+        // Exercise 1 → advance lands on the rest card.
+        manager.advance()
+        #expect(manager.activity == .rest)
+        #expect(manager.currentRestSeconds == 30)
+
+        // Rest done → advance to exercise 2.
+        manager.advance()
+        #expect(manager.activity == .exercise)
         #expect(manager.currentExercise?.id == "db_bench_press")
+
+        // → plank (hold) exercise.
+        manager.advance()
+        #expect(manager.currentExercise?.id == "plank")
+        #expect(manager.currentItem?.isHold == true)
     }
 
-    @Test func setsCompletedTracksProgress() async {
+    @Test func exercisePositionTracks() async {
         let manager = makeManager()
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
-        #expect(manager.setsCompleted == 0)
-        manager.completeSet()                 // 1 set done
-        #expect(manager.setsCompleted == 1)
-        manager.completeSet()                 // 2 sets done, now on exercise 2
-        #expect(manager.setsCompleted == 2)
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
+        #expect(manager.exercisePosition.current == 1)
+        manager.advance() // rest
+        manager.advance() // exercise 2
+        #expect(manager.exercisePosition.current == 2)
     }
 
-    @Test func finishesAfterLastSetOfLastExercise() async {
+    @Test func finishesAfterLastCard() async {
         let manager = makeManager()
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
-        // 5 sets total → 5 completes finishes the session.
-        for _ in 0..<5 { manager.completeSet() }
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
+        for _ in 0..<4 { manager.advance() } // ex, rest, ex, plank → past the end
         await waitUntilComplete(manager)
         #expect(manager.sessionState == .complete)
         #expect(manager.summary?.exercisesCompleted == 3)
-        #expect(manager.summary?.setsCompleted == 5)
-        #expect(manager.summary?.averageHeartRate == 121) // from the simulated backend
+        #expect(manager.summary?.averageHeartRate == 121)
     }
 
-    // MARK: - Weight adjust (N7 seed, clamped)
+    // MARK: - Weight adjust (N7 seed, applies across rounds)
 
     @Test func adjustWeightChangesCurrentExerciseLoad() async {
         let manager = makeManager()
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
         manager.adjustWeight(byPounds: 5)
         #expect(manager.currentItem?.seedWeight == .lb(25))
         manager.adjustWeight(byPounds: -10)
@@ -120,41 +129,34 @@ struct StrengthFlowTests {
 
     @Test func adjustWeightClampsAtZero() async {
         let manager = makeManager()
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
         manager.adjustWeight(byPounds: -1000)
         #expect(manager.currentItem?.seedWeight == .lb(0))
     }
 
-    @Test func adjustWeightIsNoOpForHoldCard() async {
+    /// The same movement appearing again (e.g. a later round) reflects the earlier adjustment.
+    @Test func weightAdjustmentAppliesToLaterRoundsOfSameExercise() async {
         let manager = makeManager()
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
-        // Advance to the plank (last exercise): 4 completes lands on exercise index 2.
-        for _ in 0..<4 { manager.completeSet() }
-        #expect(manager.currentExercise?.id == "plank")
-        #expect(manager.currentItem?.isHold == true)
-        manager.adjustWeight(byPounds: 5) // no load to adjust
-        #expect(manager.currentItem?.seedWeight == nil)
+        let bench = WorkoutCard.exercise(StrengthExerciseItem(exerciseId: "db_bench_press", reps: 10, seedWeight: .lb(15)))
+        await manager.begin(cards: [bench, bench], routineName: "Bench×2")
+        manager.adjustWeight(byPounds: 5)
+        #expect(manager.currentItem?.seedWeight == .lb(20))
+        manager.advance() // second instance of the same exercise
+        #expect(manager.currentItem?.seedWeight == .lb(20))
     }
 
-    // MARK: - Hold path
-
-    @Test func holdCardCompletesLikeARepSet() async {
+    @Test func adjustWeightIsNoOpForHold() async {
         let manager = makeManager()
-        let plan = StrengthPlan(items: [StrengthExerciseItem(exerciseId: "plank", sets: 2, holdSeconds: 30)])
-        await manager.begin(plan: plan, routineName: "Core")
-        #expect(manager.currentItem?.isHold == true)
-        manager.completeSet()
-        #expect(manager.currentSet == 2)
-        manager.completeSet()
-        await waitUntilComplete(manager)
-        #expect(manager.sessionState == .complete)
+        await manager.begin(cards: [.exercise(StrengthExerciseItem(exerciseId: "plank", holdSeconds: 30))], routineName: "Core")
+        manager.adjustWeight(byPounds: 5)
+        #expect(manager.currentItem?.seedWeight == nil)
     }
 
     // MARK: - Failure & manual end
 
     @Test func startFailureSurfacesFailedWithoutFakingCompletion() async {
         let manager = StrengthSessionManager(backend: FailingStrengthBackend())
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
         #expect(manager.sessionState == .failed)
         #expect(manager.summary == nil)
     }
@@ -162,7 +164,7 @@ struct StrengthFlowTests {
     @Test func runtimeFailureStopsTheSession() async {
         let backend = FailingStrengthBackend(failOnStart: false)
         let manager = StrengthSessionManager(backend: backend)
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
         #expect(manager.sessionState == .active)
         backend.onFailure?()
         #expect(manager.sessionState == .failed)
@@ -170,23 +172,21 @@ struct StrengthFlowTests {
 
     @Test func endManuallyCompletesAndBuildsSummary() async {
         let manager = makeManager()
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
         manager.endManually()
         await waitUntilComplete(manager)
         #expect(manager.sessionState == .complete)
         #expect(manager.summary != nil)
     }
 
-    // MARK: - Reset
-
     @Test func resetReturnsToIdle() async {
         let manager = makeManager()
-        await manager.begin(plan: samplePlan(), routineName: "Push Day")
-        for _ in 0..<5 { manager.completeSet() }
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
+        for _ in 0..<4 { manager.advance() }
         await waitUntilComplete(manager)
         manager.reset()
         #expect(manager.sessionState == .idle)
         #expect(manager.summary == nil)
-        #expect(manager.items.isEmpty)
+        #expect(manager.cards.isEmpty)
     }
 }
