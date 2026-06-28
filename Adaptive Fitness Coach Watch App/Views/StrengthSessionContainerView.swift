@@ -76,11 +76,13 @@ struct StrengthSessionContainerView: View {
     /// A short scripted strength session for the Simulator: two exercises with a brief rest
     /// between (to show the rest ring) and a plank, so the whole flow plays out quickly.
     static var demoCards: [WorkoutCard] {
+        // Rests are long enough that a (slow) UITest reliably taps "Skip rest" before they elapse;
+        // the demo is meant to be skipped through, so this doesn't slow a real run-through.
         [
             .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
-            .rest(RestCard(seconds: 8)),
+            .rest(RestCard(seconds: 30)),
             .exercise(StrengthExerciseItem(exerciseId: "db_bench_press", reps: 10, seedWeight: .lb(15))),
-            .rest(RestCard(seconds: 8)),
+            .rest(RestCard(seconds: 30)),
             .exercise(StrengthExerciseItem(exerciseId: "plank", holdSeconds: 10)),
         ]
     }

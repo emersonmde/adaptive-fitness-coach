@@ -14,26 +14,42 @@ struct SessionContainerView: View {
 
     private let simulateRun: Bool
     private let simulateStrength: Bool
+    private let simulateMixed: Bool
 
     init(store: RoutineStore) {
         self.store = store
         let args = ProcessInfo.processInfo.arguments
         self.simulateRun = args.contains("-simulateWorkout")
         self.simulateStrength = args.contains("-simulateStrength")
+        self.simulateMixed = args.contains("-simulateMixed")
     }
 
     var body: some View {
-        if simulateStrength {
+        if simulateMixed {
+            WorkoutSequenceView(routineName: "Mixed Demo", blocks: Self.demoMixedBlocks, simulate: true)
+        } else if simulateStrength {
             StrengthSessionContainerView(store: store, simulate: true)
         } else if simulateRun {
             RunSessionContainerView(store: store, simulate: true)
         } else if blocks.count > 1, let routine = nextRoutine {
-            WorkoutWalkerView(routineName: routine.name, blocks: blocks)
+            WorkoutSequenceView(routineName: routine.name, blocks: blocks)
         } else if nextRoutine?.type == .strength {
             StrengthSessionContainerView(store: store, simulate: false)
         } else {
             RunSessionContainerView(store: store, simulate: false)
         }
+    }
+
+    /// A short scripted mixed routine (a run, then two strength moves) for the Simulator/UITest —
+    /// the only way to exercise the run→strength workout handoff without a device.
+    static var demoMixedBlocks: [WorkoutBlock] {
+        let cards: [WorkoutCard] = [
+            .run(RunCard(durationMinutes: 1)),
+            .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
+            .rest(RestCard(seconds: 30)),
+            .exercise(StrengthExerciseItem(exerciseId: "db_curl", reps: 12, seedWeight: .lb(12.5))),
+        ]
+        return cards.workoutBlocks()
     }
 
     /// The next scheduled routine of any type, used to choose the flow.
@@ -121,10 +137,10 @@ struct RunSessionContainerView: View {
     private func start() {
         let name = nextRoutine?.name ?? "Adaptive Run"
         if simulate {
-            // Compressed plan + small adaptation windows so a full adaptive run plays out in
-            // under a minute for testing/demo.
+            // Compressed plan + small adaptation windows so a full adaptive run plays out quickly
+            // for testing/demo (~25s of plan).
             let plan = IntervalPlan.beginnerRunWalk(
-                warmup: 3, runDuration: 12, walkDuration: 10, cycles: 3, cooldown: 3
+                warmup: 2, runDuration: 6, walkDuration: 5, cycles: 2, cooldown: 2
             )
             let adaptation = AdaptationConfig(
                 backOffWindow: 3, extendWindow: 4, recoverWindow: 3,
