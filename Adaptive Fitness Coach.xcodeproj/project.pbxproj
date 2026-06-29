@@ -654,6 +654,7 @@
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_FILE = "Adaptive Fitness Coach Watch App/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
@@ -690,6 +691,7 @@
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_FILE = "Adaptive Fitness Coach Watch App/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
@@ -727,6 +729,7 @@
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -763,6 +766,7 @@
 				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -797,6 +801,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-CoachTests";
@@ -819,6 +824,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-CoachTests";
@@ -841,6 +847,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-CoachUITests";
@@ -862,6 +869,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-CoachUITests";
@@ -885,6 +893,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-Coach-Watch-AppTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -907,6 +916,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-Coach-Watch-AppTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -929,6 +939,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-Coach-Watch-AppUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -950,6 +961,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-Coach-Watch-AppUITests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
