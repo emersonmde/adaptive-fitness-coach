@@ -33,6 +33,8 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
 
 Adding a new `.swift` file under a target's folder auto-compiles it — the project uses **file-system-synchronized groups** (objectVersion 77), so no `project.pbxproj` edits are needed to add sources. Adding a *non-source* file to a target (e.g. the watch `Info.plist`) requires a `membershipExceptions` entry in the pbxproj.
 
+**Releasing to TestFlight** is fully scripted (headless, via the App Store Connect API key) — see **`docs/TESTFLIGHT.md`**. Credentials live in the git-ignored `.env`; never read or commit the `.p8`. **Only push significant milestones** (a redesign, the end of a phase), not routine commits — and confirm with the user first.
+
 ## Architecture (the parts that span multiple files)
 
 **The brain is a pure Swift package; the apps are thin shells.** All adaptation logic, models, and persistence live in **`AdaptiveCore/`** (Foundation only — no HealthKit, no SwiftUI), imported identically by both apps and exhaustively unit-tested on macOS without a simulator. When changing behavior, change it here and test with `swift test` before touching the device apps.
