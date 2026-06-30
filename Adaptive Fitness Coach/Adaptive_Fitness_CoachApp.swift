@@ -27,6 +27,8 @@ struct Adaptive_Fitness_CoachApp: App {
         let store = RoutineStore(fileURL: url) { routines in
             connectivity.sync(routines: routines)
         }
+        // Let inbound progressions (a weight/rep bump recorded on the watch) apply to the store.
+        connectivity.store = store
         // Dev/QA only: populate a throwaway store with demo routines for screenshots.
         if ProcessInfo.processInfo.arguments.contains("-seedDemo"), store.routines.isEmpty {
             store.add(Routine(name: "Morning Run",

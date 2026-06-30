@@ -2,11 +2,13 @@ import Foundation
 import WatchConnectivity
 import AdaptiveCore
 
-/// Receives the routine set pushed from the phone and writes it into the local store.
+/// Receives the routine set pushed from the phone, and sends recorded progressions back.
 ///
-/// One-directional in P0 (phone → watch). Uses `applicationContext`, so the watch always has
-/// the latest routines even if it was asleep or the phone is now absent — which is what makes
-/// the watch fully usable on its own (N4).
+/// Routines come down one-directionally via `applicationContext`, so the watch always has the
+/// latest set even if it was asleep or the phone is now absent (N4). Progressions go *up* via
+/// `transferUserInfo`: a separate, FIFO-queued, guaranteed-delivery channel so a weight/rep bump
+/// survives the phone being unreachable (every finished session is one queued transfer) — unlike
+/// `applicationContext`, which is latest-wins and would drop earlier sessions' changes.
 @MainActor
 final class WatchConnectivityManager: NSObject {
     private let store: RoutineStore
@@ -20,6 +22,22 @@ final class WatchConnectivityManager: NSObject {
         guard WCSession.isSupported() else { return }
         WCSession.default.delegate = self
         WCSession.default.activate()
+    }
+
+    /// Queue a progression batch for the phone. Guaranteed delivery (queued until reachable).
+    func sendProgression(_ batch: ProgressionBatch) {
+        guard WCSession.isSupported(),
+              let message = try? WCMessageCodec.encode(progression: batch) else { return }
+        WCSession.default.transferUserInfo(message)
+    }
+
+    /// Record progressions from a finished session: apply them to the local store so the next watch
+    /// workout already reflects the new seed, and queue them to the phone (which re-broadcasts the
+    /// corrected routine back). `broadcast: false` locally — the watch never broadcasts (N4), and the
+    /// phone is the sole re-broadcaster, so the round trip converges without ping-pong.
+    func recordProgressions(routineId: UUID, _ updates: [ProgressionUpdate]) {
+        store.applyProgressions(updates, toRoutineId: routineId, broadcast: false)
+        sendProgression(ProgressionBatch(routineId: routineId, updates: updates))
     }
 
     /// Apply a received context if it carries routines. Tolerates malformed payloads by

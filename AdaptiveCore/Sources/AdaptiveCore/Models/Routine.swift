@@ -128,6 +128,30 @@ public struct Routine: Codable, Sendable, Identifiable, Hashable {
         try c.encode(rounds, forKey: .rounds)
         try c.encode(createdAt, forKey: .createdAt)
     }
+
+    // MARK: - Progression (P1: persist the latest seed; extensible to a P2 history)
+
+    /// Return a copy with the latest-value `updates` applied to every matching `.exercise` card.
+    ///
+    /// A progression only moves a seed the card *already has*: a `weight` update is ignored on a
+    /// bodyweight card (`seedWeight == nil`) and a `reps` update is ignored on a hold (`reps == nil`),
+    /// so progression can never turn a bodyweight card into a weighted one or a hold into reps (N6).
+    /// Idempotent — applying the same values again yields an equal routine. If an exercise appears in
+    /// more than one card, all of its cards advance together (one move = one seed).
+    public func applyingProgressions(_ updates: [ProgressionUpdate]) -> Routine {
+        guard !updates.isEmpty else { return self }
+        // Last-write-wins per exerciseId, should a batch somehow carry duplicates.
+        let byExercise = Dictionary(updates.map { ($0.exerciseId, $0) }, uniquingKeysWith: { _, latest in latest })
+        var copy = self
+        copy.cards = cards.map { card in
+            guard case let .exercise(item) = card, let update = byExercise[item.exerciseId] else { return card }
+            var updated = item
+            if let weight = update.weight, item.seedWeight != nil { updated.seedWeight = weight }
+            if let reps = update.reps, item.reps != nil { updated.reps = reps }
+            return .exercise(updated)
+        }
+        return copy
+    }
 }
 
 /// A display category for a routine, derived from its cards (green = run, blue = strength).

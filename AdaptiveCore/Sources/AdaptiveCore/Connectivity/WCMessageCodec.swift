@@ -12,6 +12,9 @@ public enum WCMessageCodec {
     public enum Key {
         public static let routines = "routines"
         public static let version = "version"
+        /// The watch → phone progression channel (a `ProgressionBatch` JSON blob).
+        public static let progression = "progression"
+        public static let progressionVersion = "progressionVersion"
     }
 
     /// Current payload schema version. Bump when the routine encoding changes incompatibly.
@@ -20,8 +23,13 @@ public enum WCMessageCodec {
     /// reject a payload it can't model rather than mis-decode it.
     public static let currentVersion = 3
 
+    /// Version for the independent progression channel. Versioned separately from `currentVersion`
+    /// so a progression-format change never forces stale peers to reject the (unchanged) routines.
+    public static let currentProgressionVersion = 1
+
     public enum CodecError: Error, Equatable {
         case missingRoutines
+        case missingProgression
         case unsupportedVersion(Int)
     }
 
@@ -49,5 +57,30 @@ public enum WCMessageCodec {
             throw CodecError.missingRoutines
         }
         return try JSONDecoder().decode([Routine].self, from: data)
+    }
+
+    // MARK: - Progression channel (watch → phone)
+
+    /// Encode a progression batch for `transferUserInfo`. Travels under its own key + version, so it
+    /// is orthogonal to the routines channel and demultiplexes by which delegate callback delivers it.
+    public static func encode(progression batch: ProgressionBatch) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(batch)
+        return [
+            Key.progression: data,
+            Key.progressionVersion: currentProgressionVersion,
+        ]
+    }
+
+    /// Decode a progression batch. Mirrors `decodeRoutines`: the version must match exactly, and a
+    /// payload without the progression key throws so a mismatched/unrelated message is ignored (N6).
+    public static func decodeProgression(from message: [String: Any]) throws -> ProgressionBatch {
+        let version = message[Key.progressionVersion] as? Int ?? 0
+        guard version == currentProgressionVersion else {
+            throw CodecError.unsupportedVersion(version)
+        }
+        guard let data = message[Key.progression] as? Data else {
+            throw CodecError.missingProgression
+        }
+        return try JSONDecoder().decode(ProgressionBatch.self, from: data)
     }
 }

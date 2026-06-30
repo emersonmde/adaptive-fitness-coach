@@ -5,12 +5,15 @@ import AdaptiveCore
 /// drives a `StrengthSessionManager` (user-advanced, no real-time adaptation in P1).
 struct StrengthSessionContainerView: View {
     let store: RoutineStore
+    var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
     @State private var manager: StrengthSessionManager
     private let simulate: Bool
 
-    init(store: RoutineStore, simulate: Bool) {
+    init(store: RoutineStore, simulate: Bool,
+         recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil) {
         self.store = store
         self.simulate = simulate
+        self.recordProgressions = recordProgressions
         _manager = State(initialValue: simulate
             ? StrengthSessionManager(backend: SimulatedStrengthBackend())
             : StrengthSessionManager())
@@ -40,6 +43,7 @@ struct StrengthSessionContainerView: View {
             }
         }
         .task {
+            manager.onProgressions = recordProgressions
             if simulate, manager.sessionState == .idle { start() }
         }
     }
@@ -70,7 +74,8 @@ struct StrengthSessionContainerView: View {
 
     private func start() {
         let name = simulate ? "Strength Demo" : (nextRoutine?.name ?? "Strength")
-        manager.start(cards: sessionCards, routineName: name)
+        // No routine id under simulate (the demo isn't a saved routine → nothing to persist).
+        manager.start(cards: sessionCards, routineId: simulate ? nil : nextRoutine?.id, routineName: name)
     }
 
     /// A short scripted strength session for the Simulator: two exercises with a brief rest

@@ -152,6 +152,101 @@ struct StrengthFlowTests {
         #expect(manager.currentItem?.seedWeight == nil)
     }
 
+    // MARK: - Rep adjust (mirrors weight: N7 seed, applies across rounds)
+
+    @Test func adjustRepsChangesCurrentExerciseReps() async {
+        let manager = makeManager()
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
+        manager.adjustReps(by: 2)
+        #expect(manager.currentItem?.reps == 12)
+        manager.adjustReps(by: -5)
+        #expect(manager.currentItem?.reps == 7)
+    }
+
+    @Test func adjustRepsClampsAtOne() async {
+        let manager = makeManager()
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
+        manager.adjustReps(by: -100)
+        #expect(manager.currentItem?.reps == 1)
+    }
+
+    @Test func adjustRepsIsNoOpForHold() async {
+        let manager = makeManager()
+        await manager.begin(cards: [.exercise(StrengthExerciseItem(exerciseId: "plank", holdSeconds: 30))], routineName: "Core")
+        manager.adjustReps(by: 5)
+        #expect(manager.currentItem?.reps == nil)
+    }
+
+    @Test func repsAdjustmentAppliesToLaterRoundsOfSameExercise() async {
+        let manager = makeManager()
+        let bench = WorkoutCard.exercise(StrengthExerciseItem(exerciseId: "db_bench_press", reps: 10, seedWeight: .lb(15)))
+        await manager.begin(cards: [bench, bench], routineName: "Bench×2")
+        manager.adjustReps(by: 2)
+        #expect(manager.currentItem?.reps == 12)
+        manager.advance()
+        #expect(manager.currentItem?.reps == 12)
+    }
+
+    // MARK: - Progression recording (emitted on finish for a real routine)
+
+    @Test func pendingProgressionsCarriesBothAdjustedDimensions() async {
+        let manager = makeManager()
+        await manager.begin(cards: sampleCards(), routineId: UUID(), routineName: "Push Day")
+        manager.adjustWeight(byPounds: 5)
+        manager.adjustReps(by: 2)
+        let updates = manager.pendingProgressions(now: Date(timeIntervalSince1970: 0))
+        #expect(updates.count == 1)
+        let update = updates.first
+        #expect(update?.exerciseId == "goblet_squat")
+        #expect(update?.weight == .lb(25))
+        #expect(update?.reps == 12)
+    }
+
+    @Test func onProgressionsFiresOnFinishWithRoutineId() async {
+        let manager = makeManager()
+        let routineId = UUID()
+        var captured: (routineId: UUID, updates: [ProgressionUpdate])?
+        manager.onProgressions = { id, updates in captured = (id, updates) }
+        await manager.begin(cards: sampleCards(), routineId: routineId, routineName: "Push Day")
+        manager.adjustWeight(byPounds: 5)
+        manager.endManually()
+        await waitUntilComplete(manager)
+        #expect(captured?.routineId == routineId)
+        #expect(captured?.updates.first?.exerciseId == "goblet_squat")
+        #expect(captured?.updates.first?.weight == .lb(25))
+    }
+
+    @Test func noProgressionsWithoutRoutineId() async {
+        let manager = makeManager()
+        var fired = false
+        manager.onProgressions = { _, _ in fired = true }
+        await manager.begin(cards: sampleCards(), routineName: "Push Day") // no routineId (e.g. demo)
+        manager.adjustWeight(byPounds: 5)
+        manager.endManually()
+        await waitUntilComplete(manager)
+        #expect(!fired)
+    }
+
+    @Test func noProgressionsWhenNothingAdjusted() async {
+        let manager = makeManager()
+        var fired = false
+        manager.onProgressions = { _, _ in fired = true }
+        await manager.begin(cards: sampleCards(), routineId: UUID(), routineName: "Push Day")
+        manager.endManually()
+        await waitUntilComplete(manager)
+        #expect(!fired)
+    }
+
+    @Test func resetClearsRepOverrides() async {
+        let manager = makeManager()
+        await manager.begin(cards: sampleCards(), routineId: UUID(), routineName: "Push Day")
+        manager.adjustReps(by: 3)
+        manager.reset()
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
+        #expect(manager.currentItem?.reps == 10) // back to the seed
+        #expect(manager.routineId == nil)
+    }
+
     // MARK: - Failure & manual end
 
     @Test func startFailureSurfacesFailedWithoutFakingCompletion() async {

@@ -89,6 +89,25 @@ public final class RoutineStore {
         save(broadcast: false)
     }
 
+    // MARK: - Progression (apply a recorded weight/rep bump to a routine's seeds)
+
+    /// Apply progressions to the routine with `id` and persist. Returns `true` if anything changed.
+    ///
+    /// - `broadcast`: the phone passes `true` so its corrected routine re-syncs to the watch; the
+    ///   watch passes `false` (it never broadcasts). The apply is idempotent latest-value, and a
+    ///   no-op change short-circuits without writing — together these keep a watch→phone→watch round
+    ///   trip from oscillating (it reaches a fixed point in one pass).
+    /// - A missing routine (deleted/never present) is a graceful no-op returning `false` (N6).
+    @discardableResult
+    public func applyProgressions(_ updates: [ProgressionUpdate], toRoutineId id: Routine.ID, broadcast: Bool) -> Bool {
+        guard let index = routines.firstIndex(where: { $0.id == id }) else { return false }
+        let updated = routines[index].applyingProgressions(updates)
+        guard updated != routines[index] else { return false } // already converged → no write, no echo
+        routines[index] = updated
+        save(broadcast: broadcast)
+        return true
+    }
+
     // MARK: - Queries
 
     /// Routines that repeat on `day`, ordered by their scheduled time then name.

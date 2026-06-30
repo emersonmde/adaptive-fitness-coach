@@ -196,22 +196,15 @@ struct ExerciseDetailView: View {
                             .foregroundStyle(.white)
 
                         if let weight = item.seedWeight {
-                            VStack(spacing: 6) {
-                                Text("WEIGHT")
-                                    .font(.caption2.weight(.semibold))
-                                    .tracking(1.5)
-                                    .foregroundStyle(WatchTheme.textSecondary)
-                                HStack(spacing: 12) {
-                                    weightButton("minus") { adjust(-step) }
-                                    Text(weight.displayString())
-                                        .font(.system(.title2, design: .rounded, weight: .bold))
-                                        .foregroundStyle(WatchTheme.strength)
-                                        .monospacedDigit()
-                                        .contentTransition(.numericText())
-                                        .frame(minWidth: 70)
-                                    weightButton("plus") { adjust(step) }
-                                }
-                            }
+                            adjustRow(title: "WEIGHT", value: weight.displayString(),
+                                      onMinus: { adjust(-step) }, onPlus: { adjust(step) })
+                        }
+
+                        // Reps are adjustable for rep-based moves (not holds) — bump them when the
+                        // prescribed count feels easy; it persists as the new seed (N7).
+                        if let reps = item.reps {
+                            adjustRow(title: "REPS", value: "\(reps)",
+                                      onMinus: { adjustReps(-1) }, onPlus: { adjustReps(1) })
                         }
 
                         Text(prescription(item, exercise: exercise))
@@ -232,7 +225,32 @@ struct ExerciseDetailView: View {
         withAnimation(.snappy) { manager.adjustWeight(byPounds: delta) }
     }
 
-    private func weightButton(_ systemName: String, action: @escaping () -> Void) -> some View {
+    private func adjustReps(_ delta: Int) {
+        withAnimation(.snappy) { manager.adjustReps(by: delta) }
+    }
+
+    /// A labelled ± row — the shared layout for the WEIGHT and REPS adjusters.
+    private func adjustRow(title: String, value: String,
+                           onMinus: @escaping () -> Void, onPlus: @escaping () -> Void) -> some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .tracking(1.5)
+                .foregroundStyle(WatchTheme.textSecondary)
+            HStack(spacing: 12) {
+                adjustButton("minus", action: onMinus)
+                Text(value)
+                    .font(.system(.title2, design: .rounded, weight: .bold))
+                    .foregroundStyle(WatchTheme.strength)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .frame(minWidth: 70)
+                adjustButton("plus", action: onPlus)
+            }
+        }
+    }
+
+    private func adjustButton(_ systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.title3.weight(.bold))

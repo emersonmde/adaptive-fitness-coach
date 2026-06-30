@@ -15,6 +15,9 @@ final class PhoneConnectivityManager: NSObject {
 
     private var session: WCSession { .default }
 
+    /// The routine store, set at app launch. Inbound progressions (watch → phone) are applied here.
+    weak var store: RoutineStore?
+
     func activate() {
         guard WCSession.isSupported() else { return }
         session.delegate = self
@@ -52,5 +55,16 @@ extension PhoneConnectivityManager: WCSessionDelegate {
     nonisolated func sessionDidDeactivate(_ session: WCSession) {
         // Reactivate for the newly-paired watch.
         WCSession.default.activate()
+    }
+
+    /// A progression recorded on the watch (a weight/rep bump). Apply it to the matching routine and
+    /// re-broadcast so the corrected routine flows back to the watch. The apply is idempotent
+    /// latest-value and short-circuits once converged, so this round trip reaches a fixed point and
+    /// cannot ping-pong. A malformed/unrelated transfer is ignored (N6).
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+        Task { @MainActor in
+            guard let batch = try? WCMessageCodec.decodeProgression(from: userInfo) else { return }
+            self.store?.applyProgressions(batch.updates, toRoutineId: batch.routineId, broadcast: true)
+        }
     }
 }

@@ -11,13 +11,17 @@ import AdaptiveCore
 /// `-simulateWorkout` → a short adaptive run; `-simulateStrength` → a short strength session.
 struct SessionContainerView: View {
     let store: RoutineStore
+    /// Records a finished session's weight/rep bumps against a routine (local apply + sync to phone).
+    /// `nil` in previews/tests. Threaded to the strength flows; runs don't have a seed to persist.
+    var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
 
     private let simulateRun: Bool
     private let simulateStrength: Bool
     private let simulateMixed: Bool
 
-    init(store: RoutineStore) {
+    init(store: RoutineStore, recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil) {
         self.store = store
+        self.recordProgressions = recordProgressions
         let args = ProcessInfo.processInfo.arguments
         self.simulateRun = args.contains("-simulateWorkout")
         self.simulateStrength = args.contains("-simulateStrength")
@@ -32,9 +36,10 @@ struct SessionContainerView: View {
         } else if simulateRun {
             RunSessionContainerView(store: store, simulate: true)
         } else if blocks.count > 1, let routine = nextRoutine {
-            WorkoutSequenceView(routineName: routine.name, blocks: blocks)
+            WorkoutSequenceView(routineName: routine.name, blocks: blocks,
+                                routineId: routine.id, recordProgressions: recordProgressions)
         } else if nextRoutine?.type == .strength {
-            StrengthSessionContainerView(store: store, simulate: false)
+            StrengthSessionContainerView(store: store, simulate: false, recordProgressions: recordProgressions)
         } else {
             RunSessionContainerView(store: store, simulate: false)
         }

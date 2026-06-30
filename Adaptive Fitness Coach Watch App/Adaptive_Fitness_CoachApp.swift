@@ -22,7 +22,7 @@ struct Adaptive_Fitness_Coach_Watch_AppApp: App {
 
     var body: some Scene {
         WindowGroup {
-            SessionContainerView(store: store)
+            SessionContainerView(store: store, recordProgressions: connectivity.recordProgressions)
                 .task {
                     // Simulate mode uses a scripted backend and never touches HealthKit, so skip
                     // the authorization prompt (it would otherwise block the scripted run).

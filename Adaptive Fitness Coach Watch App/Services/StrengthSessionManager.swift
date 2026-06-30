@@ -24,6 +24,9 @@ final class StrengthSessionManager {
 
     private(set) var sessionState: SessionState = .idle
     private(set) var routineName: String = "Strength"
+    /// The routine being worked out, when this is a real (non-demo) session — the key any recorded
+    /// weight/rep progression reports against. `nil` for the scripted demo (nothing to persist).
+    private(set) var routineId: UUID?
     /// Latest heart rate (bpm), 0 until the first sample. Ambient, not a load signal (N3).
     private(set) var currentHeartRate: Double = 0
     private(set) var sessionStartDate: Date?
@@ -35,6 +38,13 @@ final class StrengthSessionManager {
     private(set) var currentIndex = 0
     /// Weight adjustments keyed by exercise id, so a change applies to every round of that move.
     private var weightOverrides: [String: Weight] = [:]
+    /// Rep adjustments keyed by exercise id, mirroring `weightOverrides` (applies to every round).
+    private var repsOverrides: [String: Int] = [:]
+
+    /// Fired on finish with the routine's id and the progressions recorded this session (one per
+    /// adjusted exercise). Empty/absent when nothing was changed or this is a demo. A closure so the
+    /// manager stays free of WatchConnectivity/store (same purity discipline as the run manager).
+    var onProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
 
     private let injectedBackend: StrengthWorkoutBackend?
     private var backend: StrengthWorkoutBackend?
@@ -59,12 +69,12 @@ final class StrengthSessionManager {
 
     var currentExercise: Exercise? { exerciseMeta[currentIndex] }
 
-    /// The current exercise card's prescription, with any weight override applied.
+    /// The current exercise card's prescription, with any weight/rep overrides applied.
     var currentItem: StrengthExerciseItem? {
         guard case let .exercise(item) = currentCard else { return nil }
-        guard let override = weightOverrides[item.exerciseId] else { return item }
         var adjusted = item
-        adjusted.seedWeight = override
+        if let weight = weightOverrides[item.exerciseId] { adjusted.seedWeight = weight }
+        if let reps = repsOverrides[item.exerciseId] { adjusted.reps = reps }
         return adjusted
     }
 
@@ -84,15 +94,16 @@ final class StrengthSessionManager {
 
     // MARK: - Start
 
-    func start(cards: [WorkoutCard], routineName: String) {
+    func start(cards: [WorkoutCard], routineId: UUID? = nil, routineName: String) {
         guard sessionState == .idle else { return }
-        Task { await begin(cards: cards, routineName: routineName) }
+        Task { await begin(cards: cards, routineId: routineId, routineName: routineName) }
     }
 
     /// Resolve the block, start the backend, go active. A block with no coachable exercise fails
     /// rather than starting an empty workout (N6).
-    func begin(cards: [WorkoutCard], routineName: String) async {
+    func begin(cards: [WorkoutCard], routineId: UUID? = nil, routineName: String) async {
         guard sessionState == .idle else { return }
+        self.routineId = routineId
         self.routineName = routineName
 
         var resolved: [WorkoutCard] = []
@@ -152,6 +163,23 @@ final class StrengthSessionManager {
         weightOverrides[item.exerciseId] = weight.adjusted(byPounds: delta)
     }
 
+    /// Adjust the current exercise's proposed reps by a delta (clamped at 1 — a set is ≥ 1 rep). A
+    /// no-op on hold/rest cards (no rep count). Applies to every round of the exercise (N7 seed).
+    func adjustReps(by delta: Int) {
+        guard sessionState == .active, case let .exercise(item) = currentCard,
+              let reps = currentItem?.reps ?? item.reps else { return }
+        repsOverrides[item.exerciseId] = max(1, reps + delta)
+    }
+
+    /// The progressions recorded this session — one `ProgressionUpdate` per adjusted exercise,
+    /// carrying whichever of weight/reps was changed (the other stays `nil` = "no change").
+    func pendingProgressions(now: Date) -> [ProgressionUpdate] {
+        let ids = Set(weightOverrides.keys).union(repsOverrides.keys)
+        return ids.map { id in
+            ProgressionUpdate(exerciseId: id, weight: weightOverrides[id], reps: repsOverrides[id], date: now)
+        }
+    }
+
     /// Advance to the next card. Used by "Done set" (exercise) and by the rest countdown finishing
     /// or being skipped. Plays a haptic for the kind of thing coming next.
     func advance() {
@@ -186,6 +214,14 @@ final class StrengthSessionManager {
             exercisesCompleted: exercisesDone,
             averageHeartRate: totals.averageHeartRate
         )
+
+        // Report any weight/rep bumps against the routine so they persist as the new seed (and
+        // sync back to the phone). Only for a real routine with actual changes.
+        let progressions = pendingProgressions(now: now())
+        if let routineId, !progressions.isEmpty {
+            onProgressions?(routineId, progressions)
+        }
+
         sessionState = .complete
         haptics.playComplete()
     }
@@ -196,6 +232,8 @@ final class StrengthSessionManager {
         cards = []
         exerciseMeta = [:]
         weightOverrides = [:]
+        repsOverrides = [:]
+        routineId = nil
         currentIndex = 0
         currentHeartRate = 0
         summary = nil

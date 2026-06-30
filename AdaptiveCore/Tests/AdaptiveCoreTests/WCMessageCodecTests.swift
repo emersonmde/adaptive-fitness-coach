@@ -87,4 +87,50 @@ struct WCMessageCodecTests {
             try WCMessageCodec.decodeRoutines(from: message)
         }
     }
+
+    // MARK: - Progression channel (watch → phone)
+
+    private func sampleBatch() -> ProgressionBatch {
+        ProgressionBatch(routineId: UUID(), updates: [
+            ProgressionUpdate(exerciseId: "goblet_squat", weight: .lb(30), reps: 12),
+            ProgressionUpdate(exerciseId: "plank", reps: nil), // hold: reps stays nil
+        ])
+    }
+
+    @Test func roundTripsProgression() throws {
+        let batch = sampleBatch()
+        let message = try WCMessageCodec.encode(progression: batch)
+        let decoded = try WCMessageCodec.decodeProgression(from: message)
+        #expect(decoded == batch)
+        #expect(message[WCMessageCodec.Key.progressionVersion] as? Int == WCMessageCodec.currentProgressionVersion)
+    }
+
+    @Test func missingProgressionThrows() {
+        let message: [String: Any] = [WCMessageCodec.Key.progressionVersion: WCMessageCodec.currentProgressionVersion]
+        #expect(throws: WCMessageCodec.CodecError.missingProgression) {
+            try WCMessageCodec.decodeProgression(from: message)
+        }
+    }
+
+    @Test func unsupportedProgressionVersionThrows() throws {
+        var message = try WCMessageCodec.encode(progression: sampleBatch())
+        message[WCMessageCodec.Key.progressionVersion] = 99
+        #expect(throws: WCMessageCodec.CodecError.unsupportedVersion(99)) {
+            try WCMessageCodec.decodeProgression(from: message)
+        }
+    }
+
+    /// The two channels are isolated: a routines payload must not decode as a progression, and a
+    /// progression payload must not decode as routines (they key on different fields entirely).
+    @Test func channelsAreIsolated() throws {
+        let routinesMsg = try WCMessageCodec.encode(routines: sampleRoutines())
+        #expect(throws: WCMessageCodec.CodecError.self) {
+            try WCMessageCodec.decodeProgression(from: routinesMsg)
+        }
+
+        let progressionMsg = try WCMessageCodec.encode(progression: sampleBatch())
+        #expect(throws: WCMessageCodec.CodecError.self) {
+            try WCMessageCodec.decodeRoutines(from: progressionMsg)
+        }
+    }
 }

@@ -14,6 +14,10 @@ struct WorkoutSequenceView: View {
     let blocks: [WorkoutBlock]
     /// When true, blocks run against scripted backends (Simulator/UITest) and auto-start.
     var simulate = false
+    /// The routine these blocks came from, so a strength block can persist its weight/rep bumps.
+    /// `nil` under simulate (a scripted demo isn't a saved routine).
+    var routineId: UUID?
+    var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
 
     @State private var phase: Phase = .launch
 
@@ -39,7 +43,9 @@ struct WorkoutSequenceView: View {
         case .run:
             RunBlockView(durationMinutes: block.cards.firstRunDurationMinutes ?? 30, simulate: simulate, onComplete: onComplete)
         case .strength:
-            StrengthBlockView(cards: block.cards, simulate: simulate, onComplete: onComplete)
+            StrengthBlockView(cards: block.cards, simulate: simulate,
+                              routineId: routineId, recordProgressions: recordProgressions,
+                              onComplete: onComplete)
         }
     }
 }
@@ -97,12 +103,18 @@ private struct RunBlockView: View {
 private struct StrengthBlockView: View {
     let cards: [WorkoutCard]
     let simulate: Bool
+    let routineId: UUID?
+    let recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
     let onComplete: () -> Void
     @State private var manager: StrengthSessionManager
 
-    init(cards: [WorkoutCard], simulate: Bool, onComplete: @escaping () -> Void) {
+    init(cards: [WorkoutCard], simulate: Bool, routineId: UUID?,
+         recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?,
+         onComplete: @escaping () -> Void) {
         self.cards = cards
         self.simulate = simulate
+        self.routineId = routineId
+        self.recordProgressions = recordProgressions
         self.onComplete = onComplete
         _manager = State(initialValue: simulate
             ? StrengthSessionManager(backend: SimulatedStrengthBackend())
@@ -119,7 +131,10 @@ private struct StrengthBlockView: View {
             }
         }
         .task {
-            if manager.sessionState == .idle { manager.start(cards: cards, routineName: "Strength") }
+            manager.onProgressions = recordProgressions
+            if manager.sessionState == .idle {
+                manager.start(cards: cards, routineId: routineId, routineName: "Strength")
+            }
         }
     }
 }
