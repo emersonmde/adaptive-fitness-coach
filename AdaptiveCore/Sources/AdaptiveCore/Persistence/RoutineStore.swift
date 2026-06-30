@@ -108,6 +108,34 @@ public final class RoutineStore {
         return true
     }
 
+    // MARK: - Import (e.g. routines revised in Claude and brought back via RoutineExchange)
+
+    /// Merge imported routines by **name**: a routine whose name matches an existing one replaces
+    /// that one's contents (keeping its id, so schedules/calendar links survive); a new name is
+    /// added. Broadcasts so the watch picks up the changes. Returns (updated, added) counts.
+    @discardableResult
+    public func importRoutines(_ incoming: [Routine]) -> (updated: Int, added: Int) {
+        var updated = 0, added = 0
+        for routine in incoming {
+            if let index = routines.firstIndex(where: { $0.name == routine.name }) {
+                let existing = routines[index]
+                // Preserve identity + scheduling; take the imported cards/rounds (and days/time if set).
+                var merged = existing
+                merged.cards = routine.cards
+                merged.rounds = routine.rounds
+                if !routine.repeatDays.isEmpty { merged.repeatDays = routine.repeatDays }
+                if routine.scheduleTime != nil { merged.scheduleTime = routine.scheduleTime }
+                routines[index] = merged
+                updated += 1
+            } else {
+                routines.append(routine)
+                added += 1
+            }
+        }
+        if updated + added > 0 { save(broadcast: true) }
+        return (updated, added)
+    }
+
     // MARK: - Queries
 
     /// Routines that repeat on `day`, ordered by their scheduled time then name.

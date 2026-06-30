@@ -211,6 +211,9 @@ struct ExerciseDetailView: View {
                             .font(.footnote)
                             .foregroundStyle(WatchTheme.textSecondary)
                             .padding(.top, 2)
+
+                        ExerciseInfoView(exercise: exercise)
+                            .padding(.top, 6)
                     } else {
                         ProgressView().tint(WatchTheme.strength)
                     }
@@ -421,6 +424,56 @@ private struct DoneSetButton: View {
         }
         .buttonStyle(.borderedProminent)
         .tint(WatchTheme.strength)
+    }
+}
+
+/// The exercise help content on the Exercise page: how to perform the movement, the muscles it
+/// works, what it's good for, and coaching tips. The form demo above it is the future home of an
+/// animation/diagram; this is the text that teaches the movement (the same copy the iOS info sheet
+/// shows). A reference block, so it lives on the scrollable Exercise page, never the glance (N5).
+struct ExerciseInfoView: View {
+    let exercise: Exercise
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            section("HOW TO") {
+                Text(exercise.howTo).foregroundStyle(.white.opacity(0.9))
+            }
+            if !exercise.muscleTags.isEmpty {
+                section("WORKS") {
+                    Text(exercise.muscleTags.map(\.capitalized).joined(separator: " · "))
+                        .foregroundStyle(WatchTheme.strength)
+                }
+            }
+            section("GOOD FOR") {
+                Text(exercise.goodFor).foregroundStyle(.white.opacity(0.9))
+            }
+            if !exercise.tips.isEmpty {
+                section("TIPS") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(exercise.tips, id: \.self) { tip in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("•").foregroundStyle(WatchTheme.strength)
+                                Text(tip).foregroundStyle(.white.opacity(0.9))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .font(.footnote)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private func section(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .tracking(1.5)
+                .foregroundStyle(WatchTheme.textSecondary)
+            content()
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

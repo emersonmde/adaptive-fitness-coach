@@ -28,6 +28,7 @@ struct ExerciseLibraryTests {
         for exercise in ExerciseLibrary.all {
             #expect(!exercise.name.isEmpty)
             #expect(!exercise.goodFor.isEmpty)
+            #expect(!exercise.howTo.isEmpty)   // the help screen needs a how-to for every entry
             #expect(!exercise.muscleTags.isEmpty)
             #expect(exercise.defaultSets >= 1)
             switch exercise.kind {

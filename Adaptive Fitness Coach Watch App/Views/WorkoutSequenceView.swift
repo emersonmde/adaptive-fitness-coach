@@ -18,6 +18,10 @@ struct WorkoutSequenceView: View {
     /// `nil` under simulate (a scripted demo isn't a saved routine).
     var routineId: UUID?
     var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
+    /// Skip this view's own launch screen and start immediately — the crown picker already launched.
+    var autostart = false
+    /// Called from the done screen when launched by the picker, to return to it.
+    var onExit: (() -> Void)?
 
     @State private var phase: Phase = .launch
 
@@ -27,14 +31,14 @@ struct WorkoutSequenceView: View {
         switch phase {
         case .launch:
             SequenceLaunchView(name: routineName, blockCount: blocks.count) { phase = .running(0) }
-                .task { if simulate { phase = .running(0) } }
+                .task { if simulate || autostart { phase = .running(0) } }
         case let .running(i):
             blockView(blocks[i]) {
                 phase = (i + 1 < blocks.count) ? .running(i + 1) : .done
             }
             .id(i) // fresh manager + session per block
         case .done:
-            SequenceDoneView { phase = .launch }
+            SequenceDoneView { if let onExit { onExit() } else { phase = .launch } }
         }
     }
 

@@ -208,14 +208,30 @@ private struct RestCardEditor: View {
 
 private struct ExerciseCardEditor: View {
     @Binding var item: StrengthExerciseItem
+    @State private var showingInfo = false
 
     private var exercise: Exercise? { ExerciseLibrary.exercise(id: item.exerciseId) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(exercise?.name ?? item.exerciseId)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Theme.textPrimary)
+            HStack(spacing: 6) {
+                Text(exercise?.name ?? item.exerciseId)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                if exercise != nil {
+                    Button { showingInfo = true } label: {
+                        Image(systemName: "info.circle")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("About \(exercise?.name ?? "exercise")")
+                }
+                Spacer(minLength: 0)
+            }
+            .sheet(isPresented: $showingInfo) {
+                if let exercise { ExerciseInfoSheet(exercise: exercise) }
+            }
 
             if item.isHold {
                 MiniStepper(

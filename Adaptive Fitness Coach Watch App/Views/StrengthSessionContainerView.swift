@@ -6,14 +6,23 @@ import AdaptiveCore
 struct StrengthSessionContainerView: View {
     let store: RoutineStore
     var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
+    /// When set (from the launch picker), run this routine and auto-start — skipping this
+    /// container's own launch screen, which the picker has replaced.
+    var forcedRoutine: Routine?
+    /// Called when the user finishes/dismisses a forced session, to return to the picker.
+    var onFinish: (() -> Void)?
     @State private var manager: StrengthSessionManager
     private let simulate: Bool
 
     init(store: RoutineStore, simulate: Bool,
-         recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil) {
+         forcedRoutine: Routine? = nil,
+         recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil,
+         onFinish: (() -> Void)? = nil) {
         self.store = store
         self.simulate = simulate
+        self.forcedRoutine = forcedRoutine
         self.recordProgressions = recordProgressions
+        self.onFinish = onFinish
         _manager = State(initialValue: simulate
             ? StrengthSessionManager(backend: SimulatedStrengthBackend())
             : StrengthSessionManager())
@@ -23,12 +32,17 @@ struct StrengthSessionContainerView: View {
         Group {
             switch manager.sessionState {
             case .idle:
-                StrengthLaunchView(routine: nextRoutine, exerciseCount: exerciseCount, onStart: start)
+                // A forced session auto-starts; show a brief spinner instead of the launch screen.
+                if forcedRoutine != nil {
+                    ProgressView().tint(WatchTheme.strength)
+                } else {
+                    StrengthLaunchView(routine: effectiveRoutine, exerciseCount: exerciseCount, onStart: start)
+                }
             case .active:
                 StrengthSessionPager(manager: manager)
             case .complete:
                 if let summary = manager.summary {
-                    StrengthCompleteView(summary: summary) { manager.reset() }
+                    StrengthCompleteView(summary: summary) { manager.reset(); onFinish?() }
                 } else {
                     ProgressView()
                 }
@@ -38,21 +52,24 @@ struct StrengthSessionContainerView: View {
                 } description: {
                     Text("The workout couldn't start. Nothing was saved. Check Health permissions and try again.")
                 } actions: {
-                    Button("Back") { manager.reset() }
+                    Button("Back") { manager.reset(); onFinish?() }
                 }
             }
         }
         .task {
             manager.onProgressions = recordProgressions
-            if simulate, manager.sessionState == .idle { start() }
+            if (simulate || forcedRoutine != nil), manager.sessionState == .idle { start() }
         }
     }
 
-    /// The cards the watch will run: the next strength routine's cards (round-expanded), or a
+    /// The routine to run: the picked one if forced, else the next scheduled strength routine.
+    private var effectiveRoutine: Routine? { forcedRoutine ?? nextRoutine }
+
+    /// The cards the watch will run: the chosen/next strength routine's cards (round-expanded), or a
     /// compact demo under `-simulateStrength`. Runs are filtered out by the manager.
     private var sessionCards: [WorkoutCard] {
         if simulate { return Self.demoCards }
-        return nextRoutine?.expandedCards ?? []
+        return effectiveRoutine?.expandedCards ?? []
     }
 
     private var exerciseCount: Int { sessionCards.reduce(0) { $0 + ($1.exercise != nil ? 1 : 0) } }
@@ -73,9 +90,9 @@ struct StrengthSessionContainerView: View {
     }
 
     private func start() {
-        let name = simulate ? "Strength Demo" : (nextRoutine?.name ?? "Strength")
+        let name = simulate ? "Strength Demo" : (effectiveRoutine?.name ?? "Strength")
         // No routine id under simulate (the demo isn't a saved routine → nothing to persist).
-        manager.start(cards: sessionCards, routineId: simulate ? nil : nextRoutine?.id, routineName: name)
+        manager.start(cards: sessionCards, routineId: simulate ? nil : effectiveRoutine?.id, routineName: name)
     }
 
     /// A short scripted strength session for the Simulator: two exercises with a brief rest

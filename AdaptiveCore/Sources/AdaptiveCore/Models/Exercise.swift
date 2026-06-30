@@ -13,8 +13,14 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
     public var muscleTags: [String]
     /// Biomechanical family — the forward hook P2's IMU heuristics key off (see `MovementArchetype`).
     public var archetype: MovementArchetype
-    /// One-line "good for" copy shown in the library.
+    /// One-line "good for" copy shown in the library (the movement's benefit / why you'd do it).
     public var goodFor: String
+    /// 1–2 sentences on **how to perform** the movement — the help-screen description shown on the
+    /// watch and in the iOS info sheet, alongside the form demo (the future home of an animation).
+    public var howTo: String
+    /// Short coaching cues ("brace your core", "control the lowering"), shown as bullets in the
+    /// detailed info. May be empty.
+    public var tips: [String]
     /// Form demonstration reference (an SF Symbol placeholder in P1).
     public var formDemo: FormDemo
     /// Conservative default number of sets.
@@ -28,6 +34,8 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
         muscleTags: [String],
         archetype: MovementArchetype,
         goodFor: String,
+        howTo: String = "",
+        tips: [String] = [],
         formDemo: FormDemo,
         defaultSets: Int,
         kind: ExerciseKind
@@ -37,6 +45,8 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
         self.muscleTags = muscleTags
         self.archetype = archetype
         self.goodFor = goodFor
+        self.howTo = howTo
+        self.tips = tips
         self.formDemo = formDemo
         self.defaultSets = defaultSets
         self.kind = kind

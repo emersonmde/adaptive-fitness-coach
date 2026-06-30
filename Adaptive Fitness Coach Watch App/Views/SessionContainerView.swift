@@ -19,6 +19,9 @@ struct SessionContainerView: View {
     private let simulateStrength: Bool
     private let simulateMixed: Bool
 
+    /// The routine the user picked to run (via the crown launch picker). `nil` = still picking.
+    @State private var chosen: Routine?
+
     init(store: RoutineStore, recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil) {
         self.store = store
         self.recordProgressions = recordProgressions
@@ -35,14 +38,44 @@ struct SessionContainerView: View {
             StrengthSessionContainerView(store: store, simulate: true)
         } else if simulateRun {
             RunSessionContainerView(store: store, simulate: true)
-        } else if blocks.count > 1, let routine = nextRoutine {
-            WorkoutSequenceView(routineName: routine.name, blocks: blocks,
-                                routineId: routine.id, recordProgressions: recordProgressions)
-        } else if nextRoutine?.type == .strength {
-            StrengthSessionContainerView(store: store, simulate: false, recordProgressions: recordProgressions)
-        } else {
+        } else if let chosen {
+            // The user picked a routine — run its flow, returning to the picker when done.
+            routedFlow(for: chosen)
+        } else if orderedRoutines.isEmpty {
+            // No routines yet — the run container shows the "create one on iPhone" empty state.
             RunSessionContainerView(store: store, simulate: false)
+        } else {
+            RoutineLaunchPicker(routines: orderedRoutines, initialIndex: initialIndex) { chosen = $0 }
         }
+    }
+
+    /// Launch the picked routine's flow by its kind, and hand `onFinish`/`onExit` back so finishing
+    /// returns to the picker (rather than restarting the same session).
+    @ViewBuilder private func routedFlow(for routine: Routine) -> some View {
+        let blocks = routine.expandedCards.workoutBlocks()
+        if blocks.count > 1 {
+            WorkoutSequenceView(routineName: routine.name, blocks: blocks,
+                                routineId: routine.id, recordProgressions: recordProgressions,
+                                autostart: true, onExit: { chosen = nil })
+        } else if routine.type == .strength {
+            StrengthSessionContainerView(store: store, simulate: false, forcedRoutine: routine,
+                                         recordProgressions: recordProgressions, onFinish: { chosen = nil })
+        } else {
+            RunSessionContainerView(store: store, simulate: false, forcedRoutine: routine,
+                                    onFinish: { chosen = nil })
+        }
+    }
+
+    /// All routines in a stable order for the picker (the crown pages through these).
+    private var orderedRoutines: [Routine] {
+        store.routines.sorted { $0.name < $1.name }
+    }
+
+    /// The picker opens on the "up next" routine, falling back to the first page.
+    private var initialIndex: Int {
+        guard let next = nextRoutine,
+              let i = orderedRoutines.firstIndex(where: { $0.id == next.id }) else { return 0 }
+        return i
     }
 
     /// A short scripted mixed routine (a run, then two strength moves) for the Simulator/UITest —
@@ -77,12 +110,19 @@ struct SessionContainerView: View {
 /// `WorkoutSessionManager`; this view maps it to a screen. (Previously `SessionContainerView`.)
 struct RunSessionContainerView: View {
     let store: RoutineStore
+    /// When set (from the launch picker), run this routine and auto-start — skipping this
+    /// container's own launch screen, which the picker has replaced.
+    var forcedRoutine: Routine?
+    /// Called when the user finishes/dismisses a forced session, to return to the picker.
+    var onFinish: (() -> Void)?
     @State private var manager: WorkoutSessionManager
     private let simulate: Bool
 
-    init(store: RoutineStore, simulate: Bool) {
+    init(store: RoutineStore, simulate: Bool, forcedRoutine: Routine? = nil, onFinish: (() -> Void)? = nil) {
         self.store = store
         self.simulate = simulate
+        self.forcedRoutine = forcedRoutine
+        self.onFinish = onFinish
         _manager = State(initialValue: simulate
             ? WorkoutSessionManager(backend: SimulatedWorkoutBackend())
             : WorkoutSessionManager())
@@ -92,12 +132,17 @@ struct RunSessionContainerView: View {
         Group {
             switch manager.sessionState {
             case .idle:
-                LaunchView(routine: nextRoutine, estimatedDuration: plannedDuration, onStart: start)
+                // A forced session auto-starts; show a brief spinner instead of the launch screen.
+                if forcedRoutine != nil {
+                    ProgressView().tint(WatchTheme.run)
+                } else {
+                    LaunchView(routine: effectiveRoutine, estimatedDuration: plannedDuration, onStart: start)
+                }
             case .active:
                 WorkoutSessionPager(manager: manager)
             case .complete:
                 if let summary = manager.summary {
-                    WorkoutCompleteView(summary: summary) { manager.reset() }
+                    WorkoutCompleteView(summary: summary) { manager.reset(); onFinish?() }
                 } else {
                     ProgressView()
                 }
@@ -107,19 +152,22 @@ struct RunSessionContainerView: View {
                 } description: {
                     Text("The workout couldn't start. Nothing was saved. Check Health permissions and try again.")
                 } actions: {
-                    Button("Back") { manager.reset() }
+                    Button("Back") { manager.reset(); onFinish?() }
                 }
             }
         }
         .task {
-            if simulate, manager.sessionState == .idle { start() }
+            if (simulate || forcedRoutine != nil), manager.sessionState == .idle { start() }
         }
     }
+
+    /// The routine to run: the picked one if forced, else the next scheduled adaptive run.
+    private var effectiveRoutine: Routine? { forcedRoutine ?? nextRoutine }
 
     private var plannedDuration: TimeInterval { sessionPlan.plannedDuration }
 
     private var sessionPlan: IntervalPlan {
-        let minutes = nextRoutine?.firstRunCard?.durationMinutes ?? 30
+        let minutes = effectiveRoutine?.firstRunCard?.durationMinutes ?? 30
         return IntervalPlan.beginnerRunWalk(totalDuration: TimeInterval(minutes * 60))
     }
 
@@ -140,7 +188,7 @@ struct RunSessionContainerView: View {
     }
 
     private func start() {
-        let name = nextRoutine?.name ?? "Adaptive Run"
+        let name = effectiveRoutine?.name ?? "Adaptive Run"
         if simulate {
             // Compressed plan + small adaptation windows so a full adaptive run plays out quickly
             // for testing/demo (~25s of plan).

@@ -12,6 +12,7 @@ struct ExerciseLibraryView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selected: Set<String> = []
+    @State private var infoExercise: Exercise?
 
     /// The catalog grouped by the first muscle tag, in a stable order, for sectioned browsing.
     private var groups: [(muscle: String, exercises: [Exercise])] {
@@ -45,6 +46,7 @@ struct ExerciseLibraryView: View {
             }
             .navigationTitle("Add Exercises")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(item: $infoExercise) { ExerciseInfoSheet(exercise: $0) }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -60,42 +62,58 @@ struct ExerciseLibraryView: View {
     private func row(for exercise: Exercise) -> some View {
         let isAdded = alreadyAdded.contains(exercise.id)
         let isOn = selected.contains(exercise.id)
-        return Button {
-            guard !isAdded else { return }
-            if isOn { selected.remove(exercise.id) } else { selected.insert(exercise.id) }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: symbolName(exercise.formDemo))
-                    .font(.title3)
-                    .foregroundStyle(Theme.strength)
-                    .frame(width: 40, height: 40)
-                    .background(Theme.strength.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        return HStack(spacing: 8) {
+            // The selectable area (icon + copy + select indicator) — tap anywhere to toggle.
+            Button {
+                guard !isAdded else { return }
+                if isOn { selected.remove(exercise.id) } else { selected.insert(exercise.id) }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: symbolName(exercise.formDemo))
+                        .font(.title3)
+                        .foregroundStyle(Theme.strength)
+                        .frame(width: 40, height: 40)
+                        .background(Theme.strength.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(exercise.name)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                    Text(exercise.goodFor)
-                        .font(.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(2)
-                    Text(prescription(exercise))
-                        .font(.caption2)
-                        .foregroundStyle(Theme.textTertiary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(exercise.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                        Text(exercise.goodFor)
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(2)
+                        Text(prescription(exercise))
+                            .font(.caption2)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: isAdded ? "checkmark.circle" : (isOn ? "checkmark.circle.fill" : "plus.circle"))
+                        .font(.title3)
+                        .foregroundStyle(isAdded ? Theme.textTertiary : (isOn ? Theme.accent : Theme.textSecondary))
                 }
-
-                Spacer(minLength: 0)
-
-                Image(systemName: isAdded ? "checkmark.circle" : (isOn ? "checkmark.circle.fill" : "plus.circle"))
-                    .font(.title3)
-                    .foregroundStyle(isAdded ? Theme.textTertiary : (isOn ? Theme.accent : Theme.textSecondary))
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 10)
+            .buttonStyle(.plain)
+            .disabled(isAdded)
+            .opacity(isAdded ? 0.5 : 1)
+            .accessibilityIdentifier("exercise_\(exercise.id)")
+
+            // A separate info button — learn the movement without selecting it.
+            Button { infoExercise = exercise } label: {
+                Image(systemName: "info.circle")
+                    .font(.title3)
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 32, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("info_\(exercise.id)")
+            .accessibilityLabel("About \(exercise.name)")
         }
-        .buttonStyle(.plain)
-        .disabled(isAdded)
-        .opacity(isAdded ? 0.5 : 1)
-        .accessibilityIdentifier("exercise_\(exercise.id)")
+        .padding(.vertical, 10)
     }
 
     private func commit() {
