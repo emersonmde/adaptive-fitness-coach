@@ -47,9 +47,13 @@ struct WorkoutActiveView: View {
             WorkoutColors.field(for: phase).ignoresSafeArea()
 
             VStack(spacing: 2) {
-                // Top: HR · progress · session clock
+                // Top: workout clock · progress · HR. Two glyph-anchored primary metrics at
+                // full weight flanking a quiet center. The workout clock sits top-LEFT — the
+                // far corner from the (unremovable) system clock — so the two times can't be
+                // confused; the stopwatch and heart glyphs identify each number before it's
+                // read. "n of N" stays secondary: ambient context, not a metric.
                 HStack {
-                    HeartRateView(bpm: manager.currentHeartRate)
+                    SessionClockView(elapsed: manager.sessionElapsed)
                     Spacer()
                     if let progressText {
                         Text(progressText)
@@ -57,10 +61,7 @@ struct WorkoutActiveView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(manager.sessionElapsed.clockString)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
+                    HeartRateView(bpm: manager.currentHeartRate)
                 }
 
                 Spacer(minLength: 0)

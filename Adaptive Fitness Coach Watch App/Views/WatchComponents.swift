@@ -42,6 +42,27 @@ struct HeartRateView: View {
     }
 }
 
+/// Session elapsed time, glyph-anchored like `HeartRateView` (stopwatch : elapsed as heart :
+/// HR). Full weight, not secondary — it's a primary metric, and the glyph plus its top-LEFT
+/// placement keep it from ever being read as the system clock in the opposite corner (the
+/// "two clocks" confusion a real run surfaced).
+struct SessionClockView: View {
+    let elapsed: TimeInterval
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "stopwatch.fill")
+                .foregroundStyle(WatchTheme.textSecondary)
+                .font(.caption)
+            Text(elapsed.clockString)
+                .font(.system(.body, design: .rounded, weight: .semibold))
+                .monospacedDigit()
+        }
+        .accessibilityLabel("Workout time")
+        .accessibilityValue(elapsed.clockString)
+    }
+}
+
 /// A five-segment zone bar with the current zone highlighted and the aerobic target band
 /// underlined. Steady when in zone; the active segment pulses only when drifting **hot** (above
 /// target) — motion draws the eye exactly when something needs attention (N5). Reduce-Motion aware.
