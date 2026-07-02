@@ -23,6 +23,21 @@ private final class FailingBackend: WorkoutBackend {
     func end() async -> WorkoutTotals { WorkoutTotals() }
 }
 
+/// A backend whose `end()` never returns — stands in for a slow HealthKit finalize, to prove
+/// the summary no longer waits on it.
+@MainActor
+private final class StallingBackend: WorkoutBackend {
+    var onHeartRate: ((Double) -> Void)?
+    var onZoneChange: ((Int?) -> Void)?
+    var onCadence: ((Double) -> Void)?
+    var onFailure: (() -> Void)?
+
+    func start() async throws {}
+    func end() async -> WorkoutTotals {
+        while true { try? await Task.sleep(for: .seconds(60)) }
+    }
+}
+
 @MainActor
 struct WorkoutFlowTests {
 
@@ -80,7 +95,12 @@ struct WorkoutFlowTests {
 
         #expect(manager.sessionState == .complete)
         let summary = try? #require(manager.summary)
-        // Totals come from the backend read-back (the simulated backend reports these).
+        // Totals come from the backend read-back, which now finalizes in the background —
+        // yield until it lands (instant with the simulated backend).
+        for _ in 0..<200 {
+            if manager.healthSaveState == .saved { break }
+            await Task.yield()
+        }
         #expect(manager.summary?.totalDistance == 2400)
         #expect(manager.summary?.averageHeartRate == 138)
         #expect((manager.summary?.intervalsCompleted ?? 0) >= 2)
@@ -141,6 +161,67 @@ struct WorkoutFlowTests {
         #expect(manager.summary?.endedEarly == true)
     }
 
+    @Test func summaryAppearsInstantlyEvenIfHealthKitFinalizeStalls() async {
+        // The end-of-workout freeze fix: the summary must come from the engine immediately,
+        // not wait on the OS finalize. The stalling backend never returns from end().
+        let manager = WorkoutSessionManager(backend: StallingBackend(), autoTick: false)
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        tick(manager, seconds: 5)
+        manager.endManually()
+        await waitUntilComplete(manager)
+
+        #expect(manager.sessionState == .complete)
+        #expect(manager.summary != nil)
+        #expect(manager.summary?.totalDuration == 5)
+        #expect(manager.summary?.totalDistance == nil)     // OS-owned totals not in yet
+        #expect(manager.healthSaveState == .saving)        // and we say so, honestly (N6)
+    }
+
+    @Test func totalsAndSaveStateFillInWhenFinalizeReturns() async {
+        let manager = makeManager() // simulated backend: end() returns instantly
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        manager.receiveZone(nil)
+        tick(manager, seconds: 40)
+        await waitUntilComplete(manager)
+
+        // Let the background finalize task land.
+        for _ in 0..<200 {
+            if manager.healthSaveState == .saved { break }
+            await Task.yield()
+        }
+        #expect(manager.healthSaveState == .saved)
+        #expect(manager.summary?.totalDistance == 2400)
+        #expect(manager.summary?.averageHeartRate == 138)
+    }
+
+    @Test func endingDuringAnExtendedRunIsNotABail() async {
+        let manager = makeManager()
+        // Small windows so a fast recovery unlocks extension quickly.
+        let adaptation = AdaptationConfig(extendWindow: 3, recoverWindow: 2, recoveryDropBPM: 20,
+                                          minWalkDuration: 3, runExtendIncrement: 10)
+        let plan = IntervalPlan(segments: [
+            IntervalSegment(phase: .run, targetDuration: 5),
+            IntervalSegment(phase: .walk, targetDuration: 60),
+            IntervalSegment(phase: .run, targetDuration: 5),
+            IntervalSegment(phase: .walk, targetDuration: 60),
+        ])
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test", adaptationConfig: adaptation)
+
+        manager.receiveZone(2)
+        manager.receiveHeartRate(160)
+        tick(manager, seconds: 5)                 // run 1 completes on plan
+        manager.receiveHeartRate(130)             // 30bpm drop → fast recovery
+        tick(manager, seconds: 4)                 // walk ends at the floor
+        #expect(manager.currentPhase == .run)
+        tick(manager, seconds: 12)                // run 2 extends past its 5s seed
+        #expect(manager.currentPhase == .run)
+
+        manager.endManually()                     // stopping a long run, not bailing
+        await waitUntilComplete(manager)
+        #expect(manager.summary?.endedEarly == false)
+        #expect((manager.summary?.longestRunSeconds ?? 0) > 5)
+    }
+
     @Test func naturalCompletionIsNotMarkedEndedEarly() async {
         let manager = makeManager()
         await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
@@ -155,8 +236,9 @@ struct WorkoutFlowTests {
 
     @Test func sustainedRunningCadenceEndsTheWarmup() async {
         let manager = makeManager()
-        // Long warmup so only cadence (not the timer) can end it.
-        let plan = IntervalPlan.beginnerRunWalk(warmup: 300, runDuration: 5, walkDuration: 5, cycles: 2, cooldown: 2)
+        // Long warmup so only cadence (not the timer) can end it; long run so the ticks that
+        // deliver the cadence samples can't also run the first interval out.
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 300, runDuration: 60, walkDuration: 5, cycles: 2, cooldown: 2)
         await manager.begin(config: SessionConfig(plan: plan), routineName: "Test")
         #expect(manager.currentPhase == .warmupWalk)
 

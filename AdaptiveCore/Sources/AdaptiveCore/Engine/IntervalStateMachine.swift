@@ -61,6 +61,14 @@ public struct IntervalStateMachine: Sendable {
     /// first 60 seconds of the walk (Cole et al., NEJM 1999 — the standard HRR window), or
     /// at walk end for walks shorter than that. Empty when heart rate was unavailable.
     public private(set) var recoveryDrops: [Double]
+    /// Walks that ended essentially at the floor — recovery confirmed as early as the rules
+    /// allow. The "this user is fitter than the seeds" signal: it unlocks run extension for
+    /// the rest of the session and marks the session as strong for multi-notch progression.
+    public private(set) var fastRecoveries: Int
+    /// The longest single run interval actually sustained this session (seconds). With
+    /// extension unlocked this can far exceed the seed — progression snaps to it, so one
+    /// session is enough for a mis-seeded fit runner to land at their real level.
+    public private(set) var longestRunInterval: TimeInterval
 
     /// Peak heart rate observed during the current/most recent run segment. Reset when a new
     /// run begins; carried through the following walk for recovery math.
@@ -96,6 +104,8 @@ public struct IntervalStateMachine: Sendable {
         self.runBackOffCount = 0
         self.walksHitCap = 0
         self.recoveryDrops = []
+        self.fastRecoveries = 0
+        self.longestRunInterval = 0
     }
 
     /// The phase currently in progress, or nil once the session is complete.
@@ -111,6 +121,15 @@ public struct IntervalStateMachine: Sendable {
     /// Mean heart-rate recovery drop across the session's walks, or nil if never measurable.
     public var meanRecoveryDrop: Double? {
         recoveryDrops.isEmpty ? nil : recoveryDrops.reduce(0, +) / Double(recoveryDrops.count)
+    }
+
+    /// True while the current segment is a run that has been extended past its seed. Ending
+    /// the workout here is finishing a long run, not bailing — the caller uses this to keep
+    /// a manual end from reading as a struggle.
+    public var currentRunIsExtended: Bool {
+        !isComplete && !segments.isEmpty
+            && segments[currentIndex].phase == .run
+            && announcedThisSegment.contains(.extendedRun)
     }
 
     /// Zone-only convenience over `tick(deltaTime:sample:)` (no heart rate → no recovery math).
@@ -133,6 +152,7 @@ public struct IntervalStateMachine: Sendable {
         let phase = segments[currentIndex].phase
         if phase.isRun {
             totalRunDuration += deltaTime
+            longestRunInterval = max(longestRunInterval, intervalElapsed)
         } else {
             totalWalkDuration += deltaTime
         }
@@ -199,7 +219,8 @@ public struct IntervalStateMachine: Sendable {
             // Run adaptation is zone-driven; without a zone the run holds its plan (N6).
             guard let zone = sample.zone else { return nil }
             switch policy.evaluateRun(currentZone: zone, targetZone: targetZone,
-                                      intervalElapsed: intervalElapsed, segmentTarget: target, deltaTime: deltaTime) {
+                                      intervalElapsed: intervalElapsed, segmentTarget: target, deltaTime: deltaTime,
+                                      extensionUnlocked: fastRecoveries > 0) {
             case .shorten:
                 let event = AdaptationEvent(action: .shortenedRun, atSessionTime: sessionElapsed, zone: zone)
                 adaptationsApplied += 1
@@ -224,6 +245,11 @@ public struct IntervalStateMachine: Sendable {
             case .shorten:
                 let event = AdaptationEvent(action: .shortenedWalk, atSessionTime: sessionElapsed, zone: sample.zone)
                 adaptationsApplied += 1
+                // Ending at (or a breath past) the floor means recovery was confirmed as early
+                // as the rules allow — demonstrated fitness, not a lucky reading.
+                if intervalElapsed <= policy.config.minWalkDuration + policy.config.recoverWindow {
+                    fastRecoveries += 1
+                }
                 let transition = advance()
                 return TickResult(transition: transition, adaptation: event, isComplete: isComplete)
             case .lengthen:

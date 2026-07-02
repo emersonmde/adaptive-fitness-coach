@@ -1,16 +1,29 @@
 import SwiftUI
 import AdaptiveCore
 
-/// A5 — done. The session is already a native Apple workout in Health. This is a brief
-/// acknowledgement read back from the saved workout, not a logging step: nothing to confirm,
-/// rate, or save (N1).
+/// A5 — done. Shown the instant the session ends: everything the engine tracked itself
+/// (time, splits, intervals) is here immediately; distance and average HR fill in when the
+/// OS finishes finalizing the workout in the background. The one status line tracks that
+/// finalize honestly — "Saving…" → "Saved to Health" — and this stays an acknowledgement,
+/// not a logging step: nothing to confirm or rate (N1). Optional `nextRunNote` is the single
+/// quiet line that makes cross-session adaptation perceivable ("Next run: 2 min intervals").
 struct WorkoutCompleteView: View {
     let summary: SessionSummary
+    var saveState: HealthSaveState = .saved
+    var nextRunNote: String?
     let onDone: () -> Void
 
     private var distanceText: String? {
         guard let meters = summary.totalDistance, meters > 0 else { return nil }
         return String(format: "%.2f km", meters / 1000)
+    }
+
+    private var saveLine: (text: String, color: Color) {
+        switch saveState {
+        case .saving: ("Saving to Health…", .secondary)
+        case .saved: ("Saved to Health", WatchTheme.run)
+        case .unconfirmed: ("Check Health for this workout", .secondary)
+        }
     }
 
     var body: some View {
@@ -23,14 +36,17 @@ struct WorkoutCompleteView: View {
 
                 Text("Done")
                     .font(.title3.bold())
-                Text("Saved to Health")
+                Text(saveLine.text)
                     .font(.caption2)
-                    .foregroundStyle(WatchTheme.run)
+                    .foregroundStyle(saveLine.color)
+                    .animation(.easeInOut(duration: 0.3), value: saveState)
 
                 VStack(spacing: 6) {
                     stat("Time", summary.totalDuration.clockString)
-                    if let distanceText { stat("Distance", distanceText) }
-                    if let hr = summary.averageHeartRate, hr > 0 { stat("Avg HR", "\(Int(hr)) bpm") }
+                    // Totals owned by the OS appear once the finalize returns; a quiet dash
+                    // holds the slot so the layout never jumps.
+                    stat("Distance", distanceText ?? "—")
+                    stat("Avg HR", summary.averageHeartRate.map { "\(Int($0)) bpm" } ?? "—")
                     stat("Intervals", "\(summary.intervalsCompleted)")
                     if summary.adaptationsApplied > 0 {
                         stat("Adaptations", "\(summary.adaptationsApplied)")
@@ -38,10 +54,18 @@ struct WorkoutCompleteView: View {
                 }
                 .padding(.top, 4)
 
-                Text("Nothing to log")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
+                if let nextRunNote {
+                    Text(nextRunNote)
+                        .font(.caption2)
+                        .foregroundStyle(WatchTheme.run)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 2)
+                } else {
+                    Text("Nothing to log")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                }
 
                 Button("Done", action: onDone)
                     .tint(.green)
@@ -58,5 +82,6 @@ struct WorkoutCompleteView: View {
             Text(value).fontWeight(.semibold)
         }
         .font(.footnote)
+        .animation(.easeInOut(duration: 0.3), value: value)
     }
 }

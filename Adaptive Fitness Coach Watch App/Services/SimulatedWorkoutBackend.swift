@@ -66,11 +66,12 @@ final class SimulatedWorkoutBackend: WorkoutBackend {
             Step(at: 9, zone: 1, hr: 118, cadence: 155),
             Step(at: 13, zone: 2, hr: 128, cadence: 156),  // ...10s sustained → warmup skips
             Step(at: 18, zone: 4, hr: 168),                // running hot → back off (shorten run)
-            Step(at: 24, zone: 2, hr: 140),                // walking, coming down
-            Step(at: 28, zone: 2, hr: 132),                // 36bpm below peak → walk ends early
-            Step(at: 34, zone: 2, hr: 136),                // running, steady in the band
-            Step(at: 44, zone: 2, hr: 138),                // stays sustainable to the end
-            Step(at: 52, zone: 1, hr: 124),                // cooldown
+            Step(at: 20, zone: 2, hr: 140),                // walking, HR falling immediately
+            Step(at: 24, zone: 2, hr: 136),                // 32bpm below peak → fast recovery
+                                                           //   (also unlocks run extension)
+            Step(at: 34, zone: 2, hr: 136),                // run 2, comfortable → extends
+            Step(at: 44, zone: 3, hr: 152),                // drifting hot → extended run ends
+            Step(at: 52, zone: 1, hr: 128),                // recovered again → walk ends → cooldown
         ]
     }
 }

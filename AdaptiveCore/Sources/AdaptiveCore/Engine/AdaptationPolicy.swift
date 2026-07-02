@@ -140,14 +140,19 @@ public struct AdaptationPolicy: Sendable {
     ///
     /// Backing off has priority and can fire mid-run — a fast path for far-above-target
     /// (redlining) and the standard sustained-above window. Extending is only considered once
-    /// the planned duration is reached, requires a longer confirming window, and is gated off
-    /// by default (`allowRunExtension`).
+    /// the planned duration is reached, requires a longer confirming window, and is gated:
+    /// off by config default (`allowRunExtension`) because in-run zone comfort is untrustworthy
+    /// under HR lag, but the session can unlock it with `extensionUnlocked` once *demonstrated
+    /// recovery* (a walk ended at the floor with a full HRR drop) has proven the user is fitter
+    /// than the seeds — evidence-based, so a mis-seeded fit runner converges toward continuous
+    /// running within one session while a struggling one never extends.
     public mutating func evaluateRun(
         currentZone: Int,
         targetZone: Int,
         intervalElapsed: TimeInterval,
         segmentTarget: TimeInterval,
-        deltaTime: TimeInterval
+        deltaTime: TimeInterval,
+        extensionUnlocked: Bool = false
     ) -> RunDecision {
         let above = currentZone > targetZone
         Self.integrate(&timeAboveTarget, active: above, deltaTime: deltaTime)
@@ -164,7 +169,7 @@ public struct AdaptationPolicy: Sendable {
             return .shorten
         }
 
-        if config.allowRunExtension,
+        if config.allowRunExtension || extensionUnlocked,
            intervalElapsed >= segmentTarget, timeAtOrBelowTarget >= config.extendWindow {
             return .extend
         }

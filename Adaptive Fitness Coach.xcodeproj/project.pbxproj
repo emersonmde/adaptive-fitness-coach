@@ -654,9 +654,9 @@
 				CURRENT_PROJECT_VERSION = 5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_FILE = "Adaptive Fitness Coach Watch App/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Adaptive Fitness Coach saves each session to Apple Health as a native workout.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
@@ -691,9 +691,9 @@
 				CURRENT_PROJECT_VERSION = 5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_FILE = "Adaptive Fitness Coach Watch App/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Adaptive Fitness Coach reads your heart rate during a workout to keep you in the right effort zone and adjust your run/walk intervals automatically.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Adaptive Fitness Coach saves each session to Apple Health as a native workout.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
@@ -729,8 +729,8 @@
 				CURRENT_PROJECT_VERSION = 5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -766,8 +766,8 @@
 				CURRENT_PROJECT_VERSION = 5;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

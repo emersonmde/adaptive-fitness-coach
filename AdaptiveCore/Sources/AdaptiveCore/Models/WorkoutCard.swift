@@ -68,6 +68,11 @@ public struct RunCard: Codable, Sendable, Hashable, Identifiable {
     public var runSeconds: Int
     /// Seed walk-interval length in seconds. Progression rewrites this across sessions.
     public var walkSeconds: Int
+    /// Whether the seeds have ever been set from evidence (Health-history calibration or a
+    /// recorded session outcome). While false and the seeds are still factory defaults, the
+    /// watch runs a one-time silent calibration at first session start — the zero-config
+    /// cold start. Set by `applyingRunProgressions`.
+    public var seedsCalibrated: Bool
 
     public init(
         id: UUID = UUID(),
@@ -75,7 +80,8 @@ public struct RunCard: Codable, Sendable, Hashable, Identifiable {
         warmupMinutes: Int = 5,
         cooldownMinutes: Int = 5,
         runSeconds: Int = 90,
-        walkSeconds: Int = 120
+        walkSeconds: Int = 120,
+        seedsCalibrated: Bool = false
     ) {
         self.id = id
         self.durationMinutes = durationMinutes
@@ -83,13 +89,19 @@ public struct RunCard: Codable, Sendable, Hashable, Identifiable {
         self.cooldownMinutes = cooldownMinutes
         self.runSeconds = runSeconds
         self.walkSeconds = walkSeconds
+        self.seedsCalibrated = seedsCalibrated
+    }
+
+    /// True while the seeds are the untouched factory defaults with no evidence behind them.
+    public var needsCalibration: Bool {
+        !seedsCalibrated && runSeconds == 90 && walkSeconds == 120
     }
 
     /// Total planned session length in minutes (warmup + run block + cooldown).
     public var totalMinutes: Int { warmupMinutes + durationMinutes + cooldownMinutes }
 
     private enum CodingKeys: String, CodingKey {
-        case id, durationMinutes, warmupMinutes, cooldownMinutes, runSeconds, walkSeconds
+        case id, durationMinutes, warmupMinutes, cooldownMinutes, runSeconds, walkSeconds, seedsCalibrated
     }
 
     public init(from decoder: Decoder) throws {
@@ -102,6 +114,7 @@ public struct RunCard: Codable, Sendable, Hashable, Identifiable {
         cooldownMinutes = try container.decodeIfPresent(Int.self, forKey: .cooldownMinutes) ?? 5
         runSeconds = try container.decodeIfPresent(Int.self, forKey: .runSeconds) ?? 90
         walkSeconds = try container.decodeIfPresent(Int.self, forKey: .walkSeconds) ?? 120
+        seedsCalibrated = try container.decodeIfPresent(Bool.self, forKey: .seedsCalibrated) ?? false
     }
 }
 

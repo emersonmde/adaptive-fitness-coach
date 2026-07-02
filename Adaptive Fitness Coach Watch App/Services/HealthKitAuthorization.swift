@@ -26,6 +26,10 @@ enum HealthKitAuthorization {
             HKQuantityType(.heartRate),
             HKQuantityType(.activeEnergyBurned),
             HKQuantityType(.distanceWalkingRunning),
+            // Cold-start calibration: past workouts + Apple's VO2max estimate seed the first
+            // run/walk plan so nobody is asked "how fit are you?" (FitnessCalibration).
+            HKObjectType.workoutType(),
+            HKQuantityType(.vo2Max),
         ]
     }
 
