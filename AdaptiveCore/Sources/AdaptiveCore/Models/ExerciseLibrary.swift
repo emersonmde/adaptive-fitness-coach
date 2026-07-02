@@ -21,7 +21,9 @@ public enum ExerciseLibrary {
             tips: ["Keep your chest up and heels planted.", "Push your knees out over your toes — don't let them cave in."],
             formDemo: .symbol("figure.strengthtraining.functional"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 10, seedWeight: .lb(20))
+            kind: .reps(repRange: 8...12, seedWeight: .lb(20)),
+            weightStepPounds: 5,
+            restSeedSeconds: 120
         ),
         Exercise(
             id: "db_bench_press",
@@ -33,7 +35,9 @@ public enum ExerciseLibrary {
             tips: ["Keep your wrists stacked over your elbows.", "Don't bounce the weights — lower for a count of two."],
             formDemo: .symbol("figure.strengthtraining.traditional"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 10, seedWeight: .lb(15))
+            kind: .reps(repRange: 8...12, seedWeight: .lb(15)),
+            weightStepPounds: 5,
+            restSeedSeconds: 120
         ),
         Exercise(
             id: "db_overhead_press",
@@ -45,7 +49,9 @@ public enum ExerciseLibrary {
             tips: ["Brace your core so you don't arch your lower back.", "Keep the weights moving in a straight line, just in front of your face."],
             formDemo: .symbol("figure.strengthtraining.traditional"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 8, seedWeight: .lb(10))
+            kind: .reps(repRange: 6...10, seedWeight: .lb(10)),
+            weightStepPounds: 5,
+            restSeedSeconds: 120
         ),
         Exercise(
             id: "one_arm_row",
@@ -57,7 +63,9 @@ public enum ExerciseLibrary {
             tips: ["Pull with your back, not just your arm.", "Keep your torso still — don't twist to lift the weight."],
             formDemo: .symbol("figure.strengthtraining.traditional"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 10, seedWeight: .lb(20))
+            kind: .reps(repRange: 8...12, seedWeight: .lb(20)),
+            weightStepPounds: 5,
+            restSeedSeconds: 120
         ),
         Exercise(
             id: "db_curl",
@@ -69,7 +77,9 @@ public enum ExerciseLibrary {
             tips: ["Keep your elbows pinned to your sides.", "Don't swing — let the biceps do the work."],
             formDemo: .symbol("figure.strengthtraining.traditional"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 12, seedWeight: .lb(12.5))
+            kind: .reps(repRange: 10...15, seedWeight: .lb(12.5)),
+            weightStepPounds: 2.5,
+            restSeedSeconds: 75
         ),
         Exercise(
             id: "romanian_deadlift",
@@ -81,7 +91,9 @@ public enum ExerciseLibrary {
             tips: ["Keep the weights close to your legs the whole way.", "Hinge at the hips — your back stays flat, it doesn't round."],
             formDemo: .symbol("figure.strengthtraining.functional"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 10, seedWeight: .lb(20))
+            kind: .reps(repRange: 8...12, seedWeight: .lb(20)),
+            weightStepPounds: 5,
+            restSeedSeconds: 120
         ),
         Exercise(
             id: "reverse_lunge",
@@ -93,7 +105,9 @@ public enum ExerciseLibrary {
             tips: ["Keep most of your weight on the front foot.", "Lower straight down — don't let the front knee drift past your toes."],
             formDemo: .symbol("figure.strengthtraining.functional"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 10, seedWeight: .lb(15))
+            kind: .reps(repRange: 8...12, seedWeight: .lb(15)),
+            weightStepPounds: 5,
+            restSeedSeconds: 90
         ),
         Exercise(
             id: "lateral_raise",
@@ -105,7 +119,9 @@ public enum ExerciseLibrary {
             tips: ["Go light — this is a control exercise, not a heavy one.", "Lead with your elbows, not your hands."],
             formDemo: .symbol("figure.strengthtraining.traditional"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 12, seedWeight: .lb(7.5))
+            kind: .reps(repRange: 10...15, seedWeight: .lb(7.5)),
+            weightStepPounds: 2.5,
+            restSeedSeconds: 75
         ),
         Exercise(
             id: "glute_bridge",
@@ -117,7 +133,8 @@ public enum ExerciseLibrary {
             tips: ["Drive through your heels.", "Squeeze your glutes at the top — don't arch your lower back to go higher."],
             formDemo: .symbol("figure.core.training"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 12, seedWeight: nil)
+            kind: .reps(repRange: 12...20, seedWeight: nil),
+            restSeedSeconds: 60
         ),
         Exercise(
             id: "push_up",
@@ -129,7 +146,8 @@ public enum ExerciseLibrary {
             tips: ["Keep your body in one straight line — hips don't sag or pike.", "Drop to your knees if needed to keep clean form."],
             formDemo: .symbol("figure.strengthtraining.traditional"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 8, seedWeight: nil)
+            kind: .reps(repRange: 8...20, seedWeight: nil),
+            restSeedSeconds: 90
         ),
         Exercise(
             id: "plank",
@@ -141,7 +159,8 @@ public enum ExerciseLibrary {
             tips: ["Squeeze your glutes and abs to keep your hips level.", "Don't let your hips sag or rise — stay flat."],
             formDemo: .symbol("figure.core.training"),
             defaultSets: 3,
-            kind: .hold(defaultSeconds: 30)
+            kind: .hold(defaultSeconds: 30),
+            restSeedSeconds: 60
         ),
 
         // MARK: - Bodyweight movements (no equipment)
@@ -156,7 +175,8 @@ public enum ExerciseLibrary {
             tips: ["Lead with your chest, not your neck.", "Move smoothly — don't yank with your arms."],
             formDemo: .symbol("figure.core.training"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 15, seedWeight: nil)
+            kind: .reps(repRange: 15...25, seedWeight: nil),
+            restSeedSeconds: 60
         ),
         Exercise(
             id: "bicycle_crunch",
@@ -168,7 +188,8 @@ public enum ExerciseLibrary {
             tips: ["Rotate from your torso, not your arms.", "Keep your lower back pressed into the floor."],
             formDemo: .symbol("figure.core.training"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 20, seedWeight: nil)
+            kind: .reps(repRange: 20...30, seedWeight: nil),
+            restSeedSeconds: 60
         ),
         Exercise(
             id: "mountain_climber",
@@ -180,7 +201,8 @@ public enum ExerciseLibrary {
             tips: ["Keep your hips low and shoulders over your hands.", "Stay light on your feet — speed comes from the hips."],
             formDemo: .symbol("figure.mixed.cardio"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 16, seedWeight: nil)
+            kind: .reps(repRange: 16...30, seedWeight: nil),
+            restSeedSeconds: 60
         ),
         Exercise(
             id: "air_squat",
@@ -192,7 +214,8 @@ public enum ExerciseLibrary {
             tips: ["Keep your heels down and chest tall.", "Push your knees out in line with your toes."],
             formDemo: .symbol("figure.strengthtraining.functional"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 15, seedWeight: nil)
+            kind: .reps(repRange: 15...25, seedWeight: nil),
+            restSeedSeconds: 60
         ),
         Exercise(
             id: "superman",
@@ -204,7 +227,8 @@ public enum ExerciseLibrary {
             tips: ["Lift with your back, not by throwing your head up.", "Keep the movement small and controlled."],
             formDemo: .symbol("figure.core.training"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 12, seedWeight: nil)
+            kind: .reps(repRange: 12...20, seedWeight: nil),
+            restSeedSeconds: 60
         ),
         Exercise(
             id: "dead_bug",
@@ -216,7 +240,8 @@ public enum ExerciseLibrary {
             tips: ["Keep your lower back flat against the floor the whole time.", "Move slowly — control beats speed here."],
             formDemo: .symbol("figure.core.training"),
             defaultSets: 3,
-            kind: .reps(defaultReps: 12, seedWeight: nil)
+            kind: .reps(repRange: 12...20, seedWeight: nil),
+            restSeedSeconds: 60
         ),
     ]
 

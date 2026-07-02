@@ -40,6 +40,12 @@ struct HapticManager {
         burst(.directionDown, count: 2)
     }
 
+    /// → Rest is over, recovered — go lift. A double sharp tap: deliberately shorter than the
+    /// run's triple "run now" burst so the two "go" cues stay distinguishable by feel (N5).
+    func playRestReady() {
+        burst(.notification, count: 2, spacingMs: 250)
+    }
+
     /// Session finished — the standard success haptic.
     func playComplete() {
         device.play(.success)

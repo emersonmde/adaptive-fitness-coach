@@ -22,7 +22,10 @@ public struct ProgressionUpdate: Codable, Sendable, Hashable, Identifiable {
     public let weight: Weight?
     /// New seed reps, or `nil` to leave the existing reps unchanged.
     public let reps: Int?
-    /// When the adjustment was made (unused by latest-value apply; the seed for P2 history).
+    /// New seed hold duration, or `nil` to leave the existing hold unchanged (P2 — hold
+    /// progression). Shape-guarded on apply like the others: never turns a rep card into a hold.
+    public let holdSeconds: TimeInterval?
+    /// When the adjustment was made (unused by latest-value apply; the seed for history).
     public let date: Date
 
     public init(
@@ -30,13 +33,27 @@ public struct ProgressionUpdate: Codable, Sendable, Hashable, Identifiable {
         exerciseId: String,
         weight: Weight? = nil,
         reps: Int? = nil,
+        holdSeconds: TimeInterval? = nil,
         date: Date = Date()
     ) {
         self.id = id
         self.exerciseId = exerciseId
         self.weight = weight
         self.reps = reps
+        self.holdSeconds = holdSeconds
         self.date = date
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, exerciseId, weight, reps, holdSeconds, date }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        exerciseId = try c.decode(String.self, forKey: .exerciseId)
+        weight = try c.decodeIfPresent(Weight.self, forKey: .weight)
+        reps = try c.decodeIfPresent(Int.self, forKey: .reps)
+        holdSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .holdSeconds)
+        date = try c.decode(Date.self, forKey: .date)
     }
 }
 

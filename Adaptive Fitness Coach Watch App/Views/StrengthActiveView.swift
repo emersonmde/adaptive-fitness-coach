@@ -16,12 +16,10 @@ struct StrengthSessionPager: View {
     private enum Page { case controls, glance, exercise }
 
     var body: some View {
-        if manager.activity == .rest, let seconds = manager.currentRestSeconds {
-            // A rest card takes over the whole screen — nothing to do but recover. Keyed by
-            // card index so back-to-back rest cards get fresh state (same identity would keep
-            // the previous card's expired countdown frozen at 0:00).
-            RestView(seconds: seconds) { manager.advance() }
-                .id(manager.currentIndex)
+        if manager.activity == .rest {
+            // A rest card takes over the whole screen — nothing to do but recover. State is
+            // manager-owned and resets per card, so back-to-back rests just work.
+            RestView(manager: manager)
         } else {
             TabView(selection: $selection) {
                 StrengthControlsView(manager: manager).tag(Page.controls)
@@ -67,6 +65,10 @@ struct StrengthGlanceView: View {
     /// Jump to the Exercise page (form demo + weight adjust).
     let showExercise: () -> Void
 
+    /// Crown-bound mirror of `manager.repsPending` (the crown API wants a Double binding).
+    @State private var crownValue: Double = 0
+    @FocusState private var crownFocused: Bool
+
     private var exercise: Exercise? { manager.currentExercise }
     private var item: StrengthExerciseItem? { manager.currentItem }
 
@@ -88,10 +90,10 @@ struct StrengthGlanceView: View {
                         .minimumScaleFactor(0.6)
 
                     if item.isHold {
-                        HoldRingView(seconds: item.holdSeconds ?? 30) { manager.advance() }
+                        HoldRingView(manager: manager)
                             .padding(.top, 2)
                     } else {
-                        repHero(item)
+                        repHero
                         weightChip(item)
                     }
                 } else {
@@ -100,14 +102,39 @@ struct StrengthGlanceView: View {
 
                 Spacer(minLength: 0)
 
+                // Set pips: this exercise's sets across the block (real information — the
+                // strength analogue of the run's "n of N"), in the reserved bottom slot.
+                setPips
+
                 if let item, !item.isHold {
-                    DoneSetButton { manager.advance() }
+                    DoneSetButton { manager.completeSet() }
                 }
             }
             .padding(.horizontal, 6)
             .padding(.top, 2)
         }
         .animation(.easeInOut(duration: 0.25), value: manager.currentIndex)
+        .onChange(of: manager.currentIndex) { _, _ in crownValue = Double(manager.repsPending) }
+        .onAppear { crownValue = Double(manager.repsPending) }
+    }
+
+    /// Per-set pips for the current exercise: filled = done, bright = current, dim = ahead.
+    @ViewBuilder private var setPips: some View {
+        let pos = manager.currentExerciseSetPosition
+        if pos.total > 1 {
+            HStack(spacing: 5) {
+                ForEach(1...pos.total, id: \.self) { set in
+                    Capsule()
+                        .fill(WatchTheme.strength.opacity(set < pos.current ? 0.9 : (set == pos.current ? 0.5 : 0.18)))
+                        .frame(width: set == pos.current ? 18 : 10, height: 4)
+                }
+            }
+            .padding(.bottom, 2)
+            .accessibilityElement()
+            .accessibilityLabel("Set \(pos.current) of \(pos.total)")
+        } else {
+            Color.clear.frame(height: 4)
+        }
     }
 
     /// Top row: live HR (pinned left) and "n of N" exercise progress (centered). The top-right
@@ -127,18 +154,51 @@ struct StrengthGlanceView: View {
         .padding(.horizontal, 2)
     }
 
-    /// The rep prescription as one dominant number — the run timer's analogue.
-    private func repHero(_ item: StrengthExerciseItem) -> some View {
+    /// The rep number as one dominant, **live** element: it starts at the prescription and
+    /// the Digital Crown adjusts it before "Done set" — this is how the app learns the reps
+    /// actually done with zero added friction on a hit-the-prescription set. The tiny crown
+    /// glyph is the affordance; color stays out of it (color = instruction).
+    private var repHero: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("\(item.reps ?? 0)")
+            Text("\(manager.repsPending)")
                 .font(.system(size: 50, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
                 .monospacedDigit()
                 .contentTransition(.numericText())
-            Text("REPS")
-                .font(.caption.weight(.semibold))
-                .tracking(1.5)
-                .foregroundStyle(WatchTheme.textSecondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("REPS")
+                    .font(.caption.weight(.semibold))
+                    .tracking(1.5)
+                    .foregroundStyle(WatchTheme.textSecondary)
+                Image(systemName: "digitalcrown.horizontal.arrow.counterclockwise.fill")
+                    .font(.caption2)
+                    .foregroundStyle(WatchTheme.textSecondary.opacity(0.7))
+            }
+        }
+        .focusable(true)
+        .focused($crownFocused)
+        .digitalCrownRotation(
+            $crownValue,
+            from: 0,
+            through: Double((item?.reps ?? 0) + 5),
+            by: 1,
+            sensitivity: .medium,
+            isContinuous: false,
+            isHapticFeedbackEnabled: true
+        )
+        .onChange(of: crownValue) { _, value in
+            manager.repsPending = Int(value.rounded())
+        }
+        .onAppear { crownFocused = true }
+        .accessibilityElement()
+        .accessibilityLabel("Reps this set")
+        .accessibilityValue("\(manager.repsPending)")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: manager.repsPending += 1
+            case .decrement: manager.repsPending = max(0, manager.repsPending - 1)
+            @unknown default: break
+            }
         }
     }
 
@@ -273,91 +333,107 @@ struct ExerciseDetailView: View {
     }
 }
 
-/// A rest card — a full-screen recovery countdown between exercises (or between rounds). It runs
-/// itself down and advances on its own at zero; the user can skip. The ring matches the hold
-/// ring's premium language, in the calm "recover" amber rather than the work blue.
+/// A rest card — full-screen recovery between sets, rendered from manager state (the manager
+/// owns the clock and the `RestRecoveryModel`).
+///
+/// Two honest modes, one ring, one variable (DESIGN-PRINCIPLES): with heart rate on an
+/// adaptive rest, a **strength-blue ring fills** with recovery progress while the falling HR
+/// is the hero — the READY moment closes the ring, flips the label, and buzzes. Fixed rests
+/// (or no HR — N6) render the classic **heat-amber ring draining** with time as the hero.
+/// Blue means recovery; amber means time; never both arcs.
 struct RestView: View {
-    let seconds: TimeInterval
-    let onDone: () -> Void
+    let manager: StrengthSessionManager
 
-    @State private var remaining: TimeInterval
-    @State private var ticker: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(seconds: TimeInterval, onDone: @escaping () -> Void) {
-        self.seconds = seconds
-        self.onDone = onDone
-        _remaining = State(initialValue: seconds)
-    }
-
-    private var progress: Double { seconds > 0 ? remaining / seconds : 0 }
+    private var hrMode: Bool { manager.restUsesHeartRate }
+    private var ready: Bool { manager.restIsReady }
+    private var ringColor: Color { hrMode ? WatchTheme.strength : WatchTheme.heat }
 
     var body: some View {
         ZStack {
             WatchTheme.strengthField.ignoresSafeArea()
             VStack(spacing: 12) {
-                Text("REST")
+                Text(ready ? "READY" : "REST")
                     .font(.caption.weight(.semibold))
                     .tracking(2)
-                    .foregroundStyle(WatchTheme.heat)
+                    .foregroundStyle(ready ? WatchTheme.strength : ringColor)
+                    .animation(.easeInOut(duration: 0.3), value: ready)
+
                 ZStack {
-                    Circle().stroke(WatchTheme.heat.opacity(0.18), lineWidth: 7)
+                    Circle().stroke(ringColor.opacity(0.18), lineWidth: 7)
                     Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(WatchTheme.heat, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                        .trim(from: 0, to: hrMode ? manager.restReadiness : timeFraction)
+                        .stroke(ringColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                         .rotationEffect(.degrees(-90))
-                        .animation(.linear(duration: reduceMotion ? 0 : 1), value: remaining)
-                    Text(remaining.clockString)
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
+                        .shadow(color: ready ? WatchTheme.strength.opacity(0.5) : .clear, radius: 5)
+                        .animation(.easeInOut(duration: reduceMotion ? 0 : 0.6), value: hrMode ? manager.restReadiness : timeFraction)
+
+                    if hrMode {
+                        // The falling heart rate is the hero — watching it refill the ring is
+                        // the point; the clock is ambient.
+                        VStack(spacing: 2) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "heart.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(WatchTheme.hot)
+                                Text(manager.currentHeartRate > 0 ? "\(Int(manager.currentHeartRate))" : "--")
+                                    .font(.system(size: 28, weight: .bold, design: .rounded))
+                                    .monospacedDigit()
+                                    .contentTransition(.numericText())
+                                    .foregroundStyle(.white)
+                            }
+                            Text(manager.restRemaining.clockString)
+                                .font(.caption2)
+                                .monospacedDigit()
+                                .foregroundStyle(WatchTheme.textSecondary)
+                        }
+                    } else {
+                        Text(manager.restRemaining.clockString)
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                    }
                 }
                 .frame(width: 104, height: 104)
-                Button("Skip rest") { finish() }
-                    .buttonStyle(.bordered)
-                    .tint(WatchTheme.heat)
+
+                if ready {
+                    Button {
+                        manager.advance()
+                    } label: {
+                        Label("Start next set", systemImage: "arrow.right")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(WatchTheme.strength)
+                } else {
+                    Button("Skip rest") { manager.skipRest() }
+                        .buttonStyle(.bordered)
+                        .tint(ringColor)
+                }
             }
         }
-        .onAppear(perform: start)
-        .onDisappear { ticker?.cancel() }
+        .animation(.easeInOut(duration: 0.25), value: ready)
     }
 
-    private func start() {
-        ticker = Task {
-            while remaining > 0 && !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                if Task.isCancelled { return }
-                remaining = max(0, remaining - 1)
-            }
-            if !Task.isCancelled { finish() }
-        }
-    }
-
-    private func finish() {
-        ticker?.cancel()
-        onDone()
+    /// Time fraction remaining for the fallback ring (drains toward 0, like the old view).
+    private var timeFraction: Double {
+        guard let planned = manager.currentRestSeconds, planned > 0 else { return 0 }
+        return min(max(manager.restRemaining / planned, 0), 1)
     }
 }
 
-/// Isometric hold as a premium countdown ring: tap to run it, the ring drains as time elapses,
-/// and it completes the set on its own at zero (or the user can finish early). The ring is the
-/// hero — the strength counterpart to the rep number.
+/// Isometric hold as a premium countdown ring, rendered from manager state (the manager owns
+/// the clock, so the actual seconds held feed progression). Tap to run it; it records and
+/// advances on its own at zero, or "Done early" records what was actually held.
 struct HoldRingView: View {
-    let seconds: TimeInterval
-    let onComplete: () -> Void
+    let manager: StrengthSessionManager
 
-    @State private var remaining: TimeInterval
-    @State private var running = false
-    @State private var ticker: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(seconds: TimeInterval, onComplete: @escaping () -> Void) {
-        self.seconds = seconds
-        self.onComplete = onComplete
-        _remaining = State(initialValue: seconds)
-    }
-
-    private var progress: Double { seconds > 0 ? remaining / seconds : 0 }
+    private var planned: TimeInterval { manager.currentItem?.holdSeconds ?? 0 }
+    private var progress: Double { planned > 0 ? manager.holdRemaining / planned : 0 }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -368,22 +444,22 @@ struct HoldRingView: View {
                     .trim(from: 0, to: progress)
                     .stroke(WatchTheme.strength, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                    .shadow(color: WatchTheme.strength.opacity(running ? 0.5 : 0), radius: 5)
-                    .animation(.linear(duration: reduceMotion ? 0 : 1), value: remaining)
-                Text(remaining.clockString)
+                    .shadow(color: WatchTheme.strength.opacity(manager.holdRunning ? 0.5 : 0), radius: 5)
+                    .animation(.linear(duration: reduceMotion ? 0 : 1), value: manager.holdRemaining)
+                Text(manager.holdRemaining.clockString)
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.white)
             }
             .frame(width: 92, height: 92)
 
-            if running {
-                Button("Done early") { complete() }
+            if manager.holdRunning {
+                Button("Done early") { manager.completeHoldEarly() }
                     .buttonStyle(.bordered)
                     .tint(WatchTheme.strength)
             } else {
                 Button {
-                    start()
+                    manager.startHold()
                 } label: {
                     Label("Start hold", systemImage: "timer")
                         .font(.headline)
@@ -393,26 +469,6 @@ struct HoldRingView: View {
                 .tint(WatchTheme.strength)
             }
         }
-        .onDisappear { ticker?.cancel() }
-    }
-
-    private func start() {
-        running = true
-        remaining = seconds
-        ticker = Task {
-            while remaining > 0 && !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(1))
-                if Task.isCancelled { return }
-                remaining = max(0, remaining - 1)
-            }
-            if !Task.isCancelled { complete() }
-        }
-    }
-
-    private func complete() {
-        ticker?.cancel()
-        running = false
-        onComplete()
     }
 }
 

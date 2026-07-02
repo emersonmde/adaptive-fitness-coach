@@ -36,14 +36,45 @@ struct StrengthCompleteView: View {
                 VStack(spacing: 6) {
                     stat("Time", summary.totalDuration.clockString)
                     stat("Exercises", "\(summary.exercisesCompleted)")
+                    if summary.setsCompleted > 0 { stat("Sets", "\(summary.setsCompleted)") }
                     stat("Avg HR", summary.averageHeartRate.map { "\(Int($0)) bpm" } ?? "—")
                 }
                 .padding(.top, 4)
 
-                Text("Nothing to log")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 2)
+                if summary.progressionNotes.isEmpty {
+                    Text("Nothing to log")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                } else {
+                    // The quietly-perceivable adaptation moment: what the app learned and
+                    // what next session prescribes because of it (Q5 — one calm section).
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("NEXT TIME")
+                            .font(.caption2.weight(.semibold))
+                            .tracking(1.5)
+                            .foregroundStyle(WatchTheme.textSecondary)
+                        ForEach(summary.progressionNotes.prefix(3), id: \.self) { note in
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(WatchTheme.strength)
+                                Text(note)
+                                    .font(.caption2)
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                            }
+                        }
+                        if summary.progressionNotes.count > 3 {
+                            Text("+\(summary.progressionNotes.count - 3) more")
+                                .font(.caption2)
+                                .foregroundStyle(WatchTheme.textSecondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4)
+                }
 
                 Button("Done", action: onDone)
                     .tint(WatchTheme.strength)

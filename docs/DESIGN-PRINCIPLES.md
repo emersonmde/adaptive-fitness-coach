@@ -64,6 +64,12 @@ the way code is checked against the PRD's non-negotiables.
 13. **Failure screens always have an exit.** Skip / End actions on every failure state —
     being wedged mid-workout is worse than the failure itself.
 
+**Worked example (P2 rest ring):** one ring, one variable. With HR on an adaptive rest, a
+strength-blue ring **fills** with recovery progress (blue = the recovery instruction) and the
+falling heart rate is the hero. Without HR (or on a fixed rest card), the classic heat-amber
+ring **drains** with time as the hero. A blue-over-amber dual arc was considered and rejected:
+two arcs on one ring is two variables in one channel.
+
 ## Applying to P2 (strength redesign checklist)
 
 - Rep count / hold ring stays the single hero; deep-blue field stays the identity.

@@ -102,11 +102,11 @@ struct ExerciseInfoSheet: View {
 
     private var prescription: String {
         switch exercise.kind {
-        case let .reps(reps, weight):
-            let load = weight?.displayString() ?? "bodyweight"
-            return "Default: \(exercise.defaultSets) × \(reps) · \(load)"
+        case let .reps(range, weight):
+            let load = weight.map { "\($0.displayString()) start" } ?? "bodyweight"
+            return "\(range.lowerBound)–\(range.upperBound) reps · \(load) — grows as you do"
         case let .hold(seconds):
-            return "Default: \(exercise.defaultSets) × \(seconds.holdLabel) hold"
+            return "\(seconds.holdLabel) hold to start — grows as you do"
         }
     }
 }

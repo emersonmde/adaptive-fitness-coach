@@ -32,15 +32,21 @@ struct ExerciseLibraryTests {
             #expect(!exercise.muscleTags.isEmpty)
             #expect(exercise.defaultSets >= 1)
             switch exercise.kind {
-            case let .reps(defaultReps, seedWeight):
-                #expect(defaultReps >= 1)
-                // Seed loads are conservative: present ones sit in a sane beginner band.
+            case let .reps(repRange, seedWeight):
+                // Every band supports double progression: sane bottom, real headroom.
+                #expect(repRange.lowerBound >= 1)
+                #expect(repRange.count >= 3)
+                // Seed loads are conservative: present ones sit in a sane beginner band, and
+                // the load step is a real increment (2.5 or 5 lb) only for weighted moves.
                 if let seedWeight {
                     #expect(seedWeight.pounds > 0 && seedWeight.pounds <= 60)
+                    #expect(exercise.weightStepPounds == 2.5 || exercise.weightStepPounds == 5)
                 }
             case let .hold(defaultSeconds):
-                #expect(defaultSeconds >= 10)
+                // Hold seeds start inside the policy's [floor, cap] band.
+                #expect(defaultSeconds >= 15 && defaultSeconds <= 120)
             }
+            #expect(exercise.restSeedSeconds >= 45 && exercise.restSeedSeconds <= 180)
         }
     }
 

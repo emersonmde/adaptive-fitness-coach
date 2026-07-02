@@ -205,8 +205,21 @@ private struct RestCardEditor: View {
             MiniStepper(
                 label: "Seconds",
                 value: Binding(get: { Int(card.seconds) }, set: { card.seconds = TimeInterval($0) }),
-                range: 5...300, step: 5
+                range: 5...300, step: 5,
+                identifier: "restSecondsStepper"
             )
+            Toggle(isOn: $card.adaptive) {
+                Text("Adaptive")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            .tint(Theme.accent)
+            .accessibilityIdentifier("restAdaptiveToggle")
+            Text(card.adaptive
+                 ? "Ends early once your heart rate recovers — never below ¾ of this time."
+                 : "Runs exactly this long.")
+                .font(.caption2)
+                .foregroundStyle(Theme.textTertiary)
         }
     }
 }

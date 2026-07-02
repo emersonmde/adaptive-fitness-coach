@@ -27,6 +27,17 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
     public var defaultSets: Int
     /// Whether the movement is counted in reps (with an optional load) or held for time.
     public var kind: ExerciseKind
+    /// Load increment in pounds when double progression tops out the rep range: 5 lb for
+    /// compounds, 2.5 lb for small-muscle isolation. At these dumbbell loads a step lands in
+    /// the 2–10% band the ACSM Position Stand prescribes for load increases (ACSM, "Progression
+    /// Models in Resistance Training for Healthy Adults," MSSE 41(3), 2009). Ignored for
+    /// bodyweight/hold movements.
+    public var weightStepPounds: Double
+    /// Evidence-based rest seed between sets of this movement, used to seed rest cards in the
+    /// builder: ~120s for compounds (longer rest → greater strength/hypertrophy; Schoenfeld
+    /// et al., JSCR 30(7), 2016; Grgic et al. 2017 review), 60–90s adequate for isolation and
+    /// bodyweight work (de Salles & Simão, Sports Medicine 39(9), 2009).
+    public var restSeedSeconds: TimeInterval
 
     public init(
         id: String,
@@ -38,7 +49,9 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
         tips: [String] = [],
         formDemo: FormDemo,
         defaultSets: Int,
-        kind: ExerciseKind
+        kind: ExerciseKind,
+        weightStepPounds: Double = 5,
+        restSeedSeconds: TimeInterval = 60
     ) {
         self.id = id
         self.name = name
@@ -50,6 +63,14 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
         self.formDemo = formDemo
         self.defaultSets = defaultSets
         self.kind = kind
+        self.weightStepPounds = weightStepPounds
+        self.restSeedSeconds = restSeedSeconds
+    }
+
+    /// The double-progression rep band, or nil for holds.
+    public var repRange: ClosedRange<Int>? {
+        if case let .reps(range, _) = kind { return range }
+        return nil
     }
 }
 
@@ -58,8 +79,11 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
 /// Modeled as an enum rather than a bag of optionals so an illegal combination — a planked
 /// "rep count", a curl with a "hold time" — is simply unrepresentable.
 public enum ExerciseKind: Codable, Sendable, Hashable {
-    /// Rep-based work. `seedWeight == nil` means bodyweight (e.g. a push-up).
-    case reps(defaultReps: Int, seedWeight: Weight?)
+    /// Rep-based work across a double-progression band: prescriptions start at
+    /// `repRange.lowerBound`, climb one rep per clean session, and convert to a load increase
+    /// at the top (ACSM 2009 progression model; Schoenfeld's dose-response work motivates
+    /// 8–12 for compounds, 10–15 for isolation). `seedWeight == nil` means bodyweight.
+    case reps(repRange: ClosedRange<Int>, seedWeight: Weight?)
     /// Isometric hold for a duration (e.g. a plank). Bodyweight by definition.
     case hold(defaultSeconds: TimeInterval)
 
@@ -68,5 +92,11 @@ public enum ExerciseKind: Codable, Sendable, Hashable {
     public var isHold: Bool {
         if case .hold = self { return true }
         return false
+    }
+
+    /// Seed reps for a new card: the bottom of the progression band.
+    public var seedReps: Int? {
+        if case let .reps(range, _) = self { return range.lowerBound }
+        return nil
     }
 }

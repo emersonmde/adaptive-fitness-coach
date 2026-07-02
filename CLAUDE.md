@@ -9,7 +9,7 @@ A watch-first adaptive running app (iOS + watchOS, SwiftUI). For current status,
 **Critical toolchain gotcha:** the watch target's minimum is **watchOS 27**, which ships only in the **watchOS 27 SDK → Xcode 27 beta** at `/Applications/Xcode-beta.app`. The default `xcode-select` is Xcode 26.5. Any `xcodebuild` for a device target (watch, or the iOS scheme — it embeds the watch app) **must** prefix `DEVELOPER_DIR`:
 
 ```bash
-# Pure logic — the fast loop. Default toolchain, no simulator. ~194 tests.
+# Pure logic — the fast loop. Default toolchain, no simulator. ~221 tests.
 cd AdaptiveCore && swift test
 cd AdaptiveCore && swift test --filter AdaptationPolicyTests          # one suite
 cd AdaptiveCore && swift test --filter IntervalStateMachineTests/nonPositiveDeltaIsInert  # one test

@@ -50,7 +50,7 @@ struct ExerciseModelTests {
         let bench = try #require(ExerciseLibrary.exercise(id: "db_bench_press"))
         let item = StrengthExerciseItem(from: bench)
         #expect(item.exerciseId == "db_bench_press")
-        #expect(item.reps == 10)
+        #expect(item.reps == 8) // seeds at the bottom of the 8...12 progression band
         #expect(item.seedWeight == .lb(15))
         #expect(item.isHold == false)
     }

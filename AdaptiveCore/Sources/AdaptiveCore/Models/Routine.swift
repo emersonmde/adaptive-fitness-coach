@@ -148,6 +148,7 @@ public struct Routine: Codable, Sendable, Identifiable, Hashable {
             var updated = item
             if let weight = update.weight, item.seedWeight != nil { updated.seedWeight = weight }
             if let reps = update.reps, item.reps != nil { updated.reps = reps }
+            if let hold = update.holdSeconds, item.holdSeconds != nil { updated.holdSeconds = hold }
             return .exercise(updated)
         }
         return copy

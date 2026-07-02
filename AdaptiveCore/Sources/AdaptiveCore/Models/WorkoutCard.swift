@@ -118,15 +118,30 @@ public struct RunCard: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
-/// A rest card: a fixed pause. Placed between exercises it's a transition; placed at the end of a
-/// routine it falls between rounds — i.e. it becomes rest between sets when the routine repeats.
+/// A rest card: a pause between work. Placed between exercises it's a transition; placed at the
+/// end of a routine it falls between rounds — i.e. it becomes rest between sets when the routine
+/// repeats.
 public struct RestCard: Codable, Sendable, Hashable, Identifiable {
     public let id: UUID
-    /// Rest length in seconds. Seeded to a sensible value when added; adjustable.
+    /// Rest length in seconds — the evidence-anchored seed (see `RestRecoveryModel`).
     public var seconds: TimeInterval
+    /// When true (default), heart-rate recovery may end the rest early or extend it, within a
+    /// bounded band around `seconds` (never below ¾ of it). False = a plain fixed timer —
+    /// authored control for users who want exact rests.
+    public var adaptive: Bool
 
-    public init(id: UUID = UUID(), seconds: TimeInterval = 60) {
+    public init(id: UUID = UUID(), seconds: TimeInterval = 60, adaptive: Bool = true) {
         self.id = id
         self.seconds = seconds
+        self.adaptive = adaptive
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, seconds, adaptive }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        seconds = try c.decode(TimeInterval.self, forKey: .seconds)
+        adaptive = try c.decodeIfPresent(Bool.self, forKey: .adaptive) ?? true
     }
 }

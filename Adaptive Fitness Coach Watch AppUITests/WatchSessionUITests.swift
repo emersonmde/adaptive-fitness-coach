@@ -30,11 +30,20 @@ final class WatchSessionUITests: XCTestCase {
                       "the scripted run should play through to the saved-to-Health summary")
     }
 
-    /// `-simulateStrength` reaches the live strength screen end-to-end (launch → active). Tapping
-    /// through the cards is covered by `StrengthFlowTests` (see the limitation note above).
-    func testStrengthSessionReachesLiveScreen() throws {
+    /// `-simulateStrength` now self-drives the whole adaptive loop (sets auto-complete, the
+    /// HR-bounded rest runs its recovery ring, the hold auto-runs) to the summary — a full
+    /// launch → sets → adaptive rest → hold → "Done" E2E with no taps (see the limitation
+    /// note above; per-tap logic is covered by `StrengthFlowTests`).
+    func testStrengthSessionPlaysToSummary() throws {
         let app = launch("-simulateStrength")
         XCTAssertTrue(app.staticTexts["Goblet Squat"].waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["Done set"].exists, "the live strength glance should be showing")
+        // The adaptive rest screen appears after the first auto-completed set...
+        XCTAssertTrue(app.staticTexts["REST"].waitForExistence(timeout: 30) ||
+                      app.staticTexts["READY"].waitForExistence(timeout: 5),
+                      "the recovery rest screen should follow the first set")
+        // ...and the whole session self-drives to the summary.
+        XCTAssertTrue(app.staticTexts["Done"].waitForExistence(timeout: 150),
+                      "the scripted strength session should play through to the summary")
     }
 }
