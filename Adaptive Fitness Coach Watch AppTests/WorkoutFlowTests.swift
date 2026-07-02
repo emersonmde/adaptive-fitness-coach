@@ -278,6 +278,42 @@ struct WorkoutFlowTests {
         #expect(manager.currentPhase == .run)
     }
 
+    @Test func stillRunningDuringWalkPulsesAndClearsWhenCompliant() async {
+        let manager = makeManager()
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 2, runDuration: 5, walkDuration: 60, cycles: 1, cooldown: 2)
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test")
+        manager.receiveZone(nil)
+        tick(manager, seconds: 7) // warmup (2) + run (5) → into the walk
+        #expect(manager.currentPhase == .walk)
+        #expect(!manager.gaitMismatch)
+
+        // Still at running cadence past the 8s grace: the mismatch pulse turns on.
+        for _ in 0..<10 {
+            manager.receiveCadence(155)
+            tick(manager, seconds: 1)
+        }
+        #expect(manager.gaitMismatch)
+
+        // Feet finally comply → the protest stops.
+        manager.receiveCadence(105)
+        tick(manager, seconds: 1)
+        #expect(!manager.gaitMismatch)
+    }
+
+    @Test func runningCadenceDuringARunIsNotAMismatch() async {
+        let manager = makeManager()
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 2, runDuration: 60, walkDuration: 5, cycles: 1, cooldown: 2)
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test")
+        manager.receiveZone(nil)
+        tick(manager, seconds: 2) // into the run
+        for _ in 0..<15 {
+            manager.receiveCadence(160)
+            tick(manager, seconds: 1)
+        }
+        #expect(manager.currentPhase == .run)
+        #expect(!manager.gaitMismatch)
+    }
+
     @Test func manualSkipEndsTheWarmupImmediately() async {
         let manager = makeManager()
         let plan = IntervalPlan.beginnerRunWalk(warmup: 300, runDuration: 5, walkDuration: 5, cycles: 1, cooldown: 2)

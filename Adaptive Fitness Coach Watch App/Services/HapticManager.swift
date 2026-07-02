@@ -7,21 +7,37 @@ import WatchKit
 struct HapticManager {
     private let device = WKInterfaceDevice.current()
 
-    /// → Run: a sharp double tap. Two `.notification` haptics in quick succession read as
-    /// distinctly "go" versus the single walk haptic, even mid-stride without looking.
-    func playRunTransition() {
-        device.play(.notification)
+    /// Play a burst of haptics spread over enough wall time to register mid-stride. Real-run
+    /// feedback: single or tightly-spaced taps disappear under footstrike vibration, so
+    /// transitions use three pulses ~350ms apart (~a full stride cycle each — at 160+ spm at
+    /// least one lands between footfalls).
+    private func burst(_ type: WKHapticType, count: Int, spacingMs: Int = 350) {
+        device.play(type)
+        guard count > 1 else { return }
         Task {
-            try? await Task.sleep(for: .milliseconds(150))
-            device.play(.notification)
+            for _ in 1..<count {
+                try? await Task.sleep(for: .milliseconds(spacingMs))
+                device.play(type)
+            }
         }
     }
 
-    /// → Walk: a single haptic, clearly distinct from the run double-tap. The design calls for
-    /// "single long, soft"; watchOS exposes no true long/soft `WKHapticType`, so `.directionDown`
-    /// is the closest single, gentler-reading cue. Revisit on-device against `.stop`/`.retry`.
+    /// → Run: a triple sharp tap — unmistakably "go", even mid-stride without looking.
+    func playRunTransition() {
+        burst(.notification, count: 3)
+    }
+
+    /// → Walk: a triple descending cue, spaced like the run burst but a clearly different
+    /// character (`.directionDown` vs `.notification`), so run/walk stay distinguishable by
+    /// feel alone (N5). The old single tap was too easy to miss while running.
     func playWalkTransition() {
-        device.play(.directionDown)
+        burst(.directionDown, count: 3)
+    }
+
+    /// → Still running after a walk cue (cadence-verified): a gentle two-pulse reminder,
+    /// shorter than the transition burst so it reads as "hey, walk" rather than a new phase.
+    func playWalkNudge() {
+        burst(.directionDown, count: 2)
     }
 
     /// Session finished — the standard success haptic.

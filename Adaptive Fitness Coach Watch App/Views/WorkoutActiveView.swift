@@ -10,6 +10,7 @@ struct WorkoutActiveView: View {
     let manager: WorkoutSessionManager
 
     @State private var switchPulse = false
+    @State private var mismatchPulse = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var phase: IntervalPhase? { manager.currentPhase }
@@ -64,15 +65,20 @@ struct WorkoutActiveView: View {
 
                 Spacer(minLength: 0)
 
-                // Center: phase label + glyph + interval timer
+                // Center: phase label + glyph + interval timer. When cadence says the user is
+                // still running through a WALK phase, the instruction itself throbs — motion
+                // is the compliance channel, the color stays the instruction (a glance that
+                // misread amber as green can't misread a pulsing word).
                 Image(systemName: isRun ? "arrow.up" : "arrow.down")
                     .font(.headline)
                     .foregroundStyle(tint)
+                    .scaleEffect(mismatchPulse ? 1.25 : 1.0)
                 Text(phaseLabel)
                     .font(.system(size: 38, weight: .black, design: .rounded))
                     .foregroundStyle(tint)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
+                    .scaleEffect(mismatchPulse ? 1.12 : 1.0)
                 // The timer doubles as the pre-switch cue: in the final seconds it shifts to the
                 // phase color and gently pulses, so the upcoming switch is anticipated visually
                 // (N5) without adding another stacked line to the bottom.
@@ -87,7 +93,8 @@ struct WorkoutActiveView: View {
 
                 // Bottom: zone bar, then a brief directional adaptation cue (non-occluding) in
                 // the space where the End control used to sit.
-                ZoneBarView(currentZoneIndex: manager.currentZoneIndex, targetZoneIndex: manager.targetZone)
+                ZoneBarView(currentZoneIndex: manager.currentZoneIndex, targetZoneIndex: manager.targetZone,
+                            emphasize: manager.gaitMismatch)
 
                 ZStack {
                     // Reserve a constant slot so the layout doesn't jump when the cue appears.
@@ -122,6 +129,13 @@ struct WorkoutActiveView: View {
                 withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { switchPulse = true }
             } else {
                 withAnimation(.default) { switchPulse = false }
+            }
+        }
+        .onChange(of: manager.gaitMismatch) { _, mismatched in
+            if mismatched && !reduceMotion {
+                withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { mismatchPulse = true }
+            } else {
+                withAnimation(.default) { mismatchPulse = false }
             }
         }
     }
