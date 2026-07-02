@@ -13,7 +13,7 @@ struct RoutineStoreTests {
     }
 
     private func run(_ name: String = "Run", at time: ScheduleTime? = nil, days: Set<DayOfWeek> = [.monday]) -> Routine {
-        Routine(name: name, type: .adaptiveRun, repeatDays: days, scheduleTime: time)
+        Routine(name: name, repeatDays: days, scheduleTime: time, cards: [.run(RunCard())])
     }
 
     @Test func addPersistsAcrossInstances() {
@@ -62,6 +62,26 @@ struct RoutineStoreTests {
         store.replaceFromSync([run("A"), run("B")])
         #expect(broadcasts == 0)
         #expect(store.routines.count == 2)
+    }
+
+    @Test func importUpdatesByNameKeepingIdAndAddsNew() {
+        let store = makeStore()
+        let existing = run("Push Day", days: [.monday])
+        store.add(existing)
+
+        var revised = run("Push Day", days: [.tuesday])   // same name, new content/days
+        revised.cards = [.exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 12, seedWeight: .lb(25)))]
+        let fresh = run("Pull Day", days: [.thursday])
+
+        let result = store.importRoutines([revised, fresh])
+        #expect(result.updated == 1)
+        #expect(result.added == 1)
+        #expect(store.routines.count == 2)
+        // The updated routine keeps the original id (so schedules/calendar survive).
+        let push = store.routines.first { $0.name == "Push Day" }
+        #expect(push?.id == existing.id)
+        #expect(push?.repeatDays == [.tuesday])
+        #expect(push?.exerciseItems.first?.seedWeight == .lb(25))
     }
 
     @Test func routinesOnDaySortedByTime() {

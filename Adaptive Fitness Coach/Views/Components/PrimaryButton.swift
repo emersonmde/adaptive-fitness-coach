@@ -34,7 +34,7 @@ struct PrimaryButton: View {
             )
         }
         .buttonStyle(.plain)
-        .shadow(color: Theme.accent.opacity(glow && !reduceMotion ? 0.4 : 0), radius: 18, y: 4)
+        .shadow(color: Theme.accent.opacity(glow && !reduceMotion ? 0.18 : 0), radius: 12, y: 4)
     }
 }
 

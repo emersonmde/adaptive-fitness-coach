@@ -1,22 +1,40 @@
 import Foundation
 
-/// Tunable thresholds for the adaptation policy. Defaults encode the P0 design.
+/// Tunable thresholds for the adaptation policy. Defaults encode the P1 design.
 ///
-/// The asymmetry between `backOffWindow` and `extendWindow` is where the
-/// "bias toward backing off over extending" constraint lives: backing off needs only a
-/// short confirming window and can fire mid-run, while extending effort (longer run,
-/// shorter walk) requires a longer confirming window. A wrong default still self-corrects
-/// because the seed durations bend to the body, not the other way around (N7).
+/// Runs are **back-off only** by default: heart-rate lag in deconditioned runners reads as
+/// comfort for the first 1–2 minutes of a run, so "HR looks fine → run longer" extends runs
+/// exactly when the user is fading (observed on the first real-world run). Extension survives
+/// behind `allowRunExtension` for a future mode where the user's HR response is trusted.
+///
+/// Walks end on **recovery**, not a timer: the walk completes once heart rate has dropped
+/// `recoveryDropBPM` from the run's peak (heart-rate recovery — HRR — a validated autonomic
+/// readiness marker; Cole et al., NEJM 1999: <12 bpm drop in the first minute is the clinical
+/// risk cutoff, so 20 bpm targets comfortable readiness) or the zone has fallen below target.
+/// A wrong default still self-corrects because the seed durations bend to the body, not the
+/// other way around (N7), and every asymmetry biases toward backing off.
 public struct AdaptationConfig: Sendable, Hashable {
     /// Sustained seconds above target zone before a run is cut short. Shorter = quicker to ease off.
     public var backOffWindow: TimeInterval
-    /// Sustained seconds at/below target zone before a run is extended past its planned end.
+    /// Sustained seconds far above target (`hardBackOffZoneDelta` or more over) before a run is
+    /// cut short regardless of `backOffWindow` — the "genuinely redlining" fast path.
+    public var hardBackOffWindow: TimeInterval
+    /// How many zones above target counts as far above (2 → zone 4+ against a zone-2 target).
+    public var hardBackOffZoneDelta: Int
+    /// A run must last at least this long before the hard ceiling can end it.
+    public var hardBackOffMinRun: TimeInterval
+    /// Whether a comfortable run may be extended past its planned end. Off by default — see above.
+    public var allowRunExtension: Bool
+    /// Sustained seconds at/below target zone before a run is extended (only when
+    /// `allowRunExtension` is true).
     public var extendWindow: TimeInterval
-    /// Sustained seconds recovered (at/below target) before a walk is ended early.
+    /// Sustained seconds recovered before a walk is ended early.
     public var recoverWindow: TimeInterval
-    /// A run must last at least this long before it can be shortened.
+    /// Heart-rate drop from the preceding run's peak that counts as recovered.
+    public var recoveryDropBPM: Double
+    /// A run must last at least this long before it can be shortened by `backOffWindow`.
     public var minRunDuration: TimeInterval
-    /// A walk must last at least this long before it can be shortened.
+    /// A walk always lasts at least this long, so run/walk cues never yo-yo.
     public var minWalkDuration: TimeInterval
     /// Seconds added to a run each time it is extended.
     public var runExtendIncrement: TimeInterval
@@ -27,17 +45,27 @@ public struct AdaptationConfig: Sendable, Hashable {
 
     public init(
         backOffWindow: TimeInterval = 20,
+        hardBackOffWindow: TimeInterval = 8,
+        hardBackOffZoneDelta: Int = 2,
+        hardBackOffMinRun: TimeInterval = 15,
+        allowRunExtension: Bool = false,
         extendWindow: TimeInterval = 45,
-        recoverWindow: TimeInterval = 30,
+        recoverWindow: TimeInterval = 10,
+        recoveryDropBPM: Double = 20,
         minRunDuration: TimeInterval = 20,
-        minWalkDuration: TimeInterval = 15,
+        minWalkDuration: TimeInterval = 60,
         runExtendIncrement: TimeInterval = 30,
         walkLengthenIncrement: TimeInterval = 15,
         maxWalkDuration: TimeInterval = 300
     ) {
         self.backOffWindow = backOffWindow
+        self.hardBackOffWindow = hardBackOffWindow
+        self.hardBackOffZoneDelta = hardBackOffZoneDelta
+        self.hardBackOffMinRun = hardBackOffMinRun
+        self.allowRunExtension = allowRunExtension
         self.extendWindow = extendWindow
         self.recoverWindow = recoverWindow
+        self.recoveryDropBPM = recoveryDropBPM
         self.minRunDuration = minRunDuration
         self.minWalkDuration = minWalkDuration
         self.runExtendIncrement = runExtendIncrement
@@ -52,7 +80,8 @@ public enum RunDecision: Sendable, Equatable {
     case keepGoing
     /// End the run now — HR has run hot for a sustained window.
     case shorten
-    /// Push past the planned end — HR has stayed comfortable for a sustained window.
+    /// Push past the planned end — HR has stayed comfortable for a sustained window
+    /// (only reachable with `allowRunExtension`).
     case extend
 }
 
@@ -62,12 +91,11 @@ public enum WalkDecision: Sendable, Equatable {
     case keepGoing
     /// Walk longer than planned — HR has not recovered by the planned end.
     case lengthen
-    /// End the walk now — HR recovered quickly.
+    /// End the walk now — HR recovered.
     case shorten
 }
 
-/// Decides, tick by tick, whether to adjust the current run or walk based on the live
-/// heart-rate zone Apple classifies during the workout.
+/// Decides, tick by tick, whether to adjust the current run or walk from the live signals.
 ///
 /// The policy is a pure value type holding only time accumulators, so it is fully
 /// deterministic and unit-testable without HealthKit or a clock. The owning state machine
@@ -80,6 +108,10 @@ public struct AdaptationPolicy: Sendable {
     private var timeAboveTarget: TimeInterval = 0
     /// Sustained time the current zone has been at or below the target zone.
     private var timeAtOrBelowTarget: TimeInterval = 0
+    /// Sustained time the current zone has been far above target (hard-ceiling accumulator).
+    private var timeFarAboveTarget: TimeInterval = 0
+    /// Sustained time the walk-recovery signal has read "recovered".
+    private var timeRecovered: TimeInterval = 0
 
     public init(config: AdaptationConfig = AdaptationConfig()) {
         self.config = config
@@ -89,30 +121,27 @@ public struct AdaptationPolicy: Sendable {
     public mutating func resetAccumulators() {
         timeAboveTarget = 0
         timeAtOrBelowTarget = 0
+        timeFarAboveTarget = 0
+        timeRecovered = 0
     }
 
-    /// Advance the sustained-time accumulators for this tick using a leaky integrator: the
-    /// active side accrues `deltaTime`, the opposite side *decays* by `deltaTime` rather than
-    /// resetting to zero. This is the hysteresis that makes "sustained" robust to flapping —
-    /// a brief 1–2s excursion across the zone boundary (common as HR rides the Zone 2/3 line)
-    /// only costs a couple of seconds off a nearly-complete window instead of wiping it, while
-    /// a genuinely sustained excursion still drives the opposite side to zero. This honors the
-    /// PRD's "smoothed/sustained, never a single reading" constraint at the decision layer even
-    /// though the zone itself is Apple's already-classified signal.
-    private mutating func accumulate(currentZone: Int, targetZone: Int, deltaTime: TimeInterval) {
-        if currentZone > targetZone {
-            timeAboveTarget += deltaTime
-            timeAtOrBelowTarget = max(0, timeAtOrBelowTarget - deltaTime)
-        } else {
-            timeAtOrBelowTarget += deltaTime
-            timeAboveTarget = max(0, timeAboveTarget - deltaTime)
-        }
+    /// Advance one leaky-integrator accumulator: the active side accrues `deltaTime`, the
+    /// opposite side *decays* by `deltaTime` rather than resetting to zero. This is the
+    /// hysteresis that makes "sustained" robust to flapping — a brief 1–2s excursion across a
+    /// boundary (common as HR rides the Zone 2/3 line) only costs a couple of seconds off a
+    /// nearly-complete window instead of wiping it, while a genuinely sustained excursion still
+    /// drives the opposite side to zero. This honors the PRD's "smoothed/sustained, never a
+    /// single reading" constraint at the decision layer.
+    private static func integrate(_ accumulator: inout TimeInterval, active: Bool, deltaTime: TimeInterval) {
+        accumulator = active ? accumulator + deltaTime : max(0, accumulator - deltaTime)
     }
 
     /// Evaluate the current run interval.
     ///
-    /// Backing off has priority and can fire mid-run; extending is only considered once the
-    /// planned duration is reached and requires a longer confirming window.
+    /// Backing off has priority and can fire mid-run — a fast path for far-above-target
+    /// (redlining) and the standard sustained-above window. Extending is only considered once
+    /// the planned duration is reached, requires a longer confirming window, and is gated off
+    /// by default (`allowRunExtension`).
     public mutating func evaluateRun(
         currentZone: Int,
         targetZone: Int,
@@ -120,41 +149,75 @@ public struct AdaptationPolicy: Sendable {
         segmentTarget: TimeInterval,
         deltaTime: TimeInterval
     ) -> RunDecision {
-        accumulate(currentZone: currentZone, targetZone: targetZone, deltaTime: deltaTime)
+        let above = currentZone > targetZone
+        Self.integrate(&timeAboveTarget, active: above, deltaTime: deltaTime)
+        Self.integrate(&timeAtOrBelowTarget, active: !above, deltaTime: deltaTime)
+        Self.integrate(&timeFarAboveTarget,
+                       active: currentZone >= targetZone + config.hardBackOffZoneDelta,
+                       deltaTime: deltaTime)
+
+        if timeFarAboveTarget >= config.hardBackOffWindow, intervalElapsed >= config.hardBackOffMinRun {
+            return .shorten
+        }
 
         if timeAboveTarget >= config.backOffWindow, intervalElapsed >= config.minRunDuration {
             return .shorten
         }
 
-        if intervalElapsed >= segmentTarget, timeAtOrBelowTarget >= config.extendWindow {
+        if config.allowRunExtension,
+           intervalElapsed >= segmentTarget, timeAtOrBelowTarget >= config.extendWindow {
             return .extend
         }
 
         return .keepGoing
     }
 
-    /// Evaluate the current walk interval.
+    /// Evaluate the current walk interval against the recovery signal.
     ///
-    /// Cutting a walk short raises effort, so it requires a longer confirming window
-    /// (`recoverWindow`). Lengthening a walk is the conservative direction and fires as soon
-    /// as the planned end is reached with HR still above target.
+    /// "Recovered" means heart rate has dropped `recoveryDropBPM` from the preceding run's
+    /// peak (HRR) **or** the zone has fallen strictly below target — whichever signal is
+    /// available. With neither signal the walk holds its planned duration (N6).
+    ///
+    /// Ending a walk early raises effort, so it needs a sustained confirming window
+    /// (`recoverWindow`) *and* the `minWalkDuration` floor. Lengthening is the conservative
+    /// direction and fires as soon as the planned end is reached while still unrecovered.
     public mutating func evaluateWalk(
-        currentZone: Int,
+        currentZone: Int?,
+        heartRate: Double?,
+        peakRunHeartRate: Double?,
         targetZone: Int,
         intervalElapsed: TimeInterval,
         segmentTarget: TimeInterval,
         deltaTime: TimeInterval
     ) -> WalkDecision {
-        accumulate(currentZone: currentZone, targetZone: targetZone, deltaTime: deltaTime)
+        guard let recovered = isRecovered(zone: currentZone, heartRate: heartRate,
+                                          peakRunHeartRate: peakRunHeartRate, targetZone: targetZone) else {
+            return .keepGoing
+        }
 
-        if timeAtOrBelowTarget >= config.recoverWindow, intervalElapsed >= config.minWalkDuration {
+        Self.integrate(&timeRecovered, active: recovered, deltaTime: deltaTime)
+
+        if timeRecovered >= config.recoverWindow, intervalElapsed >= config.minWalkDuration {
             return .shorten
         }
 
-        if intervalElapsed >= segmentTarget, currentZone > targetZone {
+        if intervalElapsed >= segmentTarget, !recovered {
             return .lengthen
         }
 
         return .keepGoing
+    }
+
+    /// The instantaneous recovery signal, or nil when no usable signal exists this tick.
+    private func isRecovered(zone: Int?, heartRate: Double?, peakRunHeartRate: Double?, targetZone: Int) -> Bool? {
+        var signals: [Bool] = []
+        if let hr = heartRate, let peak = peakRunHeartRate {
+            signals.append(peak - hr >= config.recoveryDropBPM)
+        }
+        if let zone {
+            signals.append(zone < targetZone)
+        }
+        guard !signals.isEmpty else { return nil }
+        return signals.contains(true)
     }
 }

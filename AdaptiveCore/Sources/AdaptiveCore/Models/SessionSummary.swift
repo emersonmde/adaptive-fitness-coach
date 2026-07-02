@@ -13,6 +13,17 @@ public struct SessionSummary: Sendable, Hashable {
     public var totalWalkDuration: TimeInterval
     public var intervalsCompleted: Int
     public var adaptationsApplied: Int
+    /// Run intervals the plan called for (before adaptation) — with `intervalsCompleted`,
+    /// the completion signal for cross-session progression.
+    public var plannedRunIntervals: Int
+    /// Runs the engine cut short (HR back-off) — the struggle signal for progression.
+    public var runBackOffCount: Int
+    /// Walks that hit the max-walk cap still unrecovered.
+    public var walksHitCap: Int
+    /// Mean heart-rate recovery drop (bpm) across the session's walks, nil if unmeasurable.
+    public var meanRecoveryDrop: Double?
+    /// True when the user ended the workout before the plan finished.
+    public var endedEarly: Bool
 
     public init(
         totalDuration: TimeInterval,
@@ -21,7 +32,12 @@ public struct SessionSummary: Sendable, Hashable {
         totalRunDuration: TimeInterval = 0,
         totalWalkDuration: TimeInterval = 0,
         intervalsCompleted: Int = 0,
-        adaptationsApplied: Int = 0
+        adaptationsApplied: Int = 0,
+        plannedRunIntervals: Int = 0,
+        runBackOffCount: Int = 0,
+        walksHitCap: Int = 0,
+        meanRecoveryDrop: Double? = nil,
+        endedEarly: Bool = false
     ) {
         self.totalDuration = totalDuration
         self.totalDistance = totalDistance
@@ -30,5 +46,10 @@ public struct SessionSummary: Sendable, Hashable {
         self.totalWalkDuration = totalWalkDuration
         self.intervalsCompleted = intervalsCompleted
         self.adaptationsApplied = adaptationsApplied
+        self.plannedRunIntervals = plannedRunIntervals
+        self.runBackOffCount = runBackOffCount
+        self.walksHitCap = walksHitCap
+        self.meanRecoveryDrop = meanRecoveryDrop
+        self.endedEarly = endedEarly
     }
 }

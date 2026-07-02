@@ -29,6 +29,21 @@ struct HapticManager {
         device.play(.success)
     }
 
+    /// → A set is done within the same exercise: a light single tap to confirm without looking.
+    func playSetComplete() {
+        device.play(.click)
+    }
+
+    /// → Moving to the next exercise: a distinct double tap so the change of movement registers
+    /// by feel, like the run/walk transition does (N5).
+    func playExerciseChange() {
+        device.play(.notification)
+        Task {
+            try? await Task.sleep(for: .milliseconds(150))
+            device.play(.notification)
+        }
+    }
+
     /// Fire the haptic appropriate to a phase transition.
     func play(for transition: TransitionEventKind) {
         switch transition {

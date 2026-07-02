@@ -86,7 +86,8 @@ struct IntervalStateMachineTests {
     // MARK: - Extending
 
     @Test func sustainedComfortExtendsRunWithExactlyOneBanner() {
-        let adapt = AdaptationConfig(backOffWindow: 999, extendWindow: 3, runExtendIncrement: 3)
+        // Extension is opt-in (allowRunExtension) — see comfortableRunNeverExtendsByDefault.
+        let adapt = AdaptationConfig(backOffWindow: 999, allowRunExtension: true, extendWindow: 3, runExtendIncrement: 3)
         var machine = IntervalStateMachine(config: config([(.run, 5), (.walk, 5)]), adaptationConfig: adapt)
         let rec = drive(&machine, zone: { _ in 1 }, maxSeconds: 12)
 
@@ -96,6 +97,20 @@ struct IntervalStateMachineTests {
         // ...but the "keep running" banner is surfaced exactly once, not every increment (Q5).
         #expect(rec.adaptations.filter { $0.action == .extendedRun }.count == 1)
         #expect(machine.adaptationsApplied == 1)
+    }
+
+    // MARK: - Extension gated off by default
+
+    @Test func comfortableRunNeverExtendsByDefault() {
+        // The default config must hold the planned run duration even under permanent comfort —
+        // HR lag reads as comfort in a deconditioned runner (the first real-run failure).
+        var machine = IntervalStateMachine(config: config([(.run, 5), (.walk, 5)]))
+        let rec = drive(&machine, zone: { _ in 1 }, maxSeconds: 8)
+
+        #expect(rec.transitions.first == TransitionEvent(from: .run, to: .walk))
+        #expect(rec.transitions.first != nil)
+        #expect(!rec.adaptations.contains { $0.action == .extendedRun })
+        #expect(machine.totalRunDuration == 5) // exactly the plan
     }
 
     // MARK: - Walk lengthening / capping
@@ -109,6 +124,8 @@ struct IntervalStateMachineTests {
         // Walk is lengthened 5→8→11→12 (capped), then completes at the 12s cap.
         #expect(machine.isComplete)
         #expect(rec.completedAt == 12)
+        // Ending at the cap still unrecovered is remembered as a struggle signal.
+        #expect(machine.walksHitCap == 1)
     }
 
     // MARK: - Quick recovery shortens walk
@@ -190,5 +207,122 @@ struct IntervalStateMachineTests {
         let result = machine.tick(deltaTime: 1, currentZone: 3)
         #expect(result.isComplete)
         #expect(machine.sessionElapsed == elapsedAtComplete) // no further advancement
+    }
+
+    // MARK: - Skipping a segment (warmup ends when running is detected / "Start Run" tap)
+
+    @Test func skipDuringWarmupTransitionsToTheFirstRun() {
+        var machine = IntervalStateMachine(config: config([(.warmupWalk, 300), (.run, 60), (.walk, 60)]))
+        _ = machine.tick(deltaTime: 1, currentZone: nil)
+        let result = machine.skipCurrentSegment()
+
+        // Identical shape to a natural transition, so the same haptic path fires.
+        #expect(result.transition == TransitionEvent(from: .warmupWalk, to: .run))
+        #expect(!result.isComplete)
+        #expect(machine.currentPhase == .run)
+        #expect(machine.intervalElapsed == 0)
+        #expect(machine.sessionElapsed == 1) // session clock keeps its true elapsed
+    }
+
+    @Test func skipOnTheFinalSegmentCompletesTheSession() {
+        var machine = IntervalStateMachine(config: config([(.cooldownWalk, 300)]))
+        let result = machine.skipCurrentSegment()
+        #expect(result.isComplete)
+        #expect(result.transition == nil)
+        #expect(machine.isComplete)
+    }
+
+    @Test func skipAfterCompletionIsInert() {
+        var machine = IntervalStateMachine(config: config([(.run, 1)]))
+        _ = drive(&machine, zone: { _ in nil }, maxSeconds: 3)
+        #expect(machine.isComplete)
+        let result = machine.skipCurrentSegment()
+        #expect(result.isComplete)
+        #expect(result.transition == nil)
+    }
+
+    // MARK: - Heart-rate recovery (walk ends when HR drops from run peak)
+
+    /// Tick the machine with full samples (zone + heart rate).
+    private func drive(
+        _ machine: inout IntervalStateMachine,
+        sample: (TimeInterval) -> WorkoutSample,
+        maxSeconds: Int
+    ) -> Recording {
+        var rec = Recording()
+        for _ in 0..<maxSeconds {
+            let nextElapsed = machine.sessionElapsed + 1
+            let result = machine.tick(deltaTime: 1, sample: sample(nextElapsed))
+            if let t = result.transition { rec.transitions.append(t) }
+            if let a = result.adaptation { rec.adaptations.append(a) }
+            if result.isComplete {
+                rec.completedAt = machine.sessionElapsed
+                break
+            }
+        }
+        return rec
+    }
+
+    @Test func walkEndsWhenHeartRateDropsFromRunPeak() {
+        // 10s run at HR 160 (in zone), then walking at HR 130 (still zone 2 — the green band):
+        // the 30bpm drop is the recovery signal even though the zone never falls below target.
+        let adapt = AdaptationConfig(recoverWindow: 3, recoveryDropBPM: 20, minWalkDuration: 5)
+        var machine = IntervalStateMachine(config: config([(.run, 10), (.walk, 90), (.run, 10)]), adaptationConfig: adapt)
+        let rec = drive(&machine, sample: { elapsed in
+            elapsed <= 10 ? WorkoutSample(zone: 2, heartRate: 160)
+                          : WorkoutSample(zone: 2, heartRate: 130)
+        }, maxSeconds: 30)
+
+        #expect(rec.adaptations.contains { $0.action == .shortenedWalk })
+        #expect(rec.transitions.contains(TransitionEvent(from: .walk, to: .run)))
+        // Walk ended at the minWalk floor (recovery confirmed well inside it), not at 90s.
+        #expect(machine.totalWalkDuration < 10)
+    }
+
+    @Test func insufficientHeartRateDropHoldsTheWalkInTheGreenBand() {
+        // Peak 160 → walking at 150 (only 10bpm), zone pinned at target: unrecovered, so the
+        // walk lengthens rather than handing the user back to a run they can't sustain.
+        let adapt = AdaptationConfig(recoverWindow: 3, recoveryDropBPM: 20, minWalkDuration: 5,
+                                     walkLengthenIncrement: 5, maxWalkDuration: 20)
+        var machine = IntervalStateMachine(config: config([(.run, 5), (.walk, 10), (.run, 5)]), adaptationConfig: adapt)
+        let rec = drive(&machine, sample: { elapsed in
+            elapsed <= 5 ? WorkoutSample(zone: 2, heartRate: 160)
+                         : WorkoutSample(zone: 2, heartRate: 150)
+        }, maxSeconds: 60)
+
+        #expect(rec.adaptations.contains { $0.action == .lengthenedWalk })
+        #expect(!rec.adaptations.contains { $0.action == .shortenedWalk })
+        #expect(machine.walksHitCap == 1) // rode the walk all the way to the cap
+    }
+
+    @Test func recoveryDropIsRecordedPerWalk() {
+        var machine = IntervalStateMachine(config: config([(.run, 5), (.walk, 5), (.cooldownWalk, 2)]))
+        _ = drive(&machine, sample: { elapsed in
+            elapsed <= 5 ? WorkoutSample(zone: 2, heartRate: 158)
+                         : WorkoutSample(zone: 2, heartRate: 136)
+        }, maxSeconds: 20)
+
+        // Short walk (< the 60s HRR mark) records its drop at walk exit: 158 - 136 = 22.
+        #expect(machine.recoveryDrops == [22])
+        #expect(machine.meanRecoveryDrop == 22)
+    }
+
+    @Test func runBackOffsAreCounted() {
+        let adapt = AdaptationConfig(backOffWindow: 2, recoverWindow: 2, minRunDuration: 2, minWalkDuration: 2)
+        var machine = IntervalStateMachine(config: config([(.run, 30), (.walk, 30), (.run, 30)]), adaptationConfig: adapt)
+        // Hot through each run (cut at 2s), recovered through the walk (cut at 2s).
+        _ = drive(&machine, zone: { elapsed in elapsed <= 2 || elapsed > 4 ? 3 : 1 }, maxSeconds: 60)
+        #expect(machine.runBackOffCount == 2)
+        #expect(machine.intervalsCompleted == 2) // cut-short runs still count as reached
+    }
+
+    @Test func noSignalsWalkRunsItsPlannedDuration() {
+        // Neither zone nor HR: the walk runs its seed duration exactly (N6 degradation).
+        var machine = IntervalStateMachine(config: config([(.run, 3), (.walk, 5), (.run, 3)]))
+        let rec = drive(&machine, zone: { _ in nil }, maxSeconds: 20)
+        #expect(rec.transitions.contains(TransitionEvent(from: .walk, to: .run)))
+        #expect(rec.adaptations.isEmpty)
+        #expect(machine.recoveryDrops.isEmpty)
+        #expect(machine.totalWalkDuration == 5)
     }
 }

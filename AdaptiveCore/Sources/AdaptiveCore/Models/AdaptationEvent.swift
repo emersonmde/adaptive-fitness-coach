@@ -28,9 +28,11 @@ public enum AdaptationAction: String, Codable, Sendable, Hashable {
 public struct AdaptationEvent: Codable, Sendable, Hashable {
     public let action: AdaptationAction
     public let atSessionTime: TimeInterval
-    public let zone: Int
+    /// The zone at the moment of adaptation, when one was classified. Walk recovery can fire
+    /// on heart-rate drop alone, so this may be nil.
+    public let zone: Int?
 
-    public init(action: AdaptationAction, atSessionTime: TimeInterval, zone: Int) {
+    public init(action: AdaptationAction, atSessionTime: TimeInterval, zone: Int?) {
         self.action = action
         self.atSessionTime = atSessionTime
         self.zone = zone

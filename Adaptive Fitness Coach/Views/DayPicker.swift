@@ -20,7 +20,7 @@ struct DayPicker: View {
                         .background(isOn ? Theme.accent : Theme.surface2,
                                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .foregroundStyle(isOn ? Theme.bg : Theme.textSecondary)
-                        .shadow(color: Theme.accent.opacity(isOn && !reduceMotion ? 0.3 : 0), radius: 8, y: 2)
+                        .shadow(color: Theme.accent.opacity(isOn && !reduceMotion ? 0.15 : 0), radius: 6, y: 2)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(day.fullName)

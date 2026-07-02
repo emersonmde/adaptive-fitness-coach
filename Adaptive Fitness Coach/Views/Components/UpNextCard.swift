@@ -13,6 +13,17 @@ struct UpNextCard: View {
 
     private var tint: Color { RoutineTheme.tint(for: routine.type) }
 
+    /// A run-only routine shows its target minutes; anything with strength shows its exercise
+    /// count and rounds (the more meaningful read).
+    private var detailText: String {
+        if routine.hasStrength {
+            let n = routine.exerciseItems.count
+            let base = "\(n) exercise\(n == 1 ? "" : "s")"
+            return routine.rounds > 1 ? "\(base) · \(routine.rounds) rounds" : base
+        }
+        return "~\(routine.estimatedMinutes) min"
+    }
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             meshBackground
@@ -32,7 +43,7 @@ struct UpNextCard: View {
 
                 HStack(spacing: 10) {
                     StateDot(color: tint, label: routine.type.displayName)
-                    Text("~\(routine.durationMinutes) min")
+                    Text(detailText)
                         .font(.caption.weight(.medium))
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -51,9 +62,10 @@ struct UpNextCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Theme.accent.opacity(0.35), lineWidth: 1)
+                .strokeBorder(Theme.accent.opacity(0.25), lineWidth: 1)
         )
-        .shadow(color: Theme.accent.opacity(reduceMotion ? 0 : 0.22), radius: 24, y: 8)
+        // Kept subtle: at higher opacity/radius the halo reads as a gradient wash, not a glow.
+        .shadow(color: Theme.accent.opacity(reduceMotion ? 0 : 0.10), radius: 14, y: 6)
         .accessibilityElement(children: .combine)
     }
 

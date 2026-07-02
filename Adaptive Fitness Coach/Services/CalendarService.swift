@@ -96,7 +96,7 @@ final class CalendarService {
         event.calendar = event.calendar ?? store.defaultCalendarForNewEvents
         if let start = nextStart(for: routine) {
             event.startDate = start
-            event.endDate = start.addingTimeInterval(TimeInterval(routine.durationMinutes * 60))
+            event.endDate = start.addingTimeInterval(TimeInterval(routine.estimatedMinutes * 60))
         }
         // Replace any prior recurrence/alarms so an edit doesn't accumulate them.
         (event.recurrenceRules ?? []).forEach { event.removeRecurrenceRule($0) }

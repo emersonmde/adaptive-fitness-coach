@@ -18,4 +18,26 @@ enum RoutineTheme {
         case .strength: "dumbbell.fill"
         }
     }
+
+    // MARK: - Per-card identity (the builder's card stack)
+
+    /// Semantic tint for a card by type: green run / blue strength / neutral rest. Rest is
+    /// deliberately uncolored — it's recovery, not work — so the work cards pop in the stack.
+    static func tint(forCard card: WorkoutCard) -> Color {
+        switch card {
+        case .run: Theme.run
+        case .exercise: Theme.strength
+        case .rest: Theme.textSecondary
+        }
+    }
+
+    static func symbol(forCard card: WorkoutCard) -> String {
+        switch card {
+        case .run: return "figure.run"
+        case let .exercise(item):
+            if case let .symbol(name) = ExerciseLibrary.exercise(id: item.exerciseId)?.formDemo { return name }
+            return "dumbbell.fill"
+        case .rest: return "hourglass"
+        }
+    }
 }

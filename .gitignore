@@ -31,3 +31,6 @@ build-archive/
 *.ipa
 *.dSYM.zip
 *.dSYM
+
+# App Store Connect API credentials (path-only; never the .p8 itself)
+.env

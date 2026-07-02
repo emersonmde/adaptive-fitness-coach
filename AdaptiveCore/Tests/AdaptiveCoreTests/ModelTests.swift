@@ -71,10 +71,10 @@ struct ModelTests {
     @Test func routineRoundTrips() throws {
         let routine = Routine(
             name: "Morning Run",
-            type: .adaptiveRun,
             repeatDays: [.monday, .thursday],
             scheduleTime: ScheduleTime(hour: 7, minute: 0),
-            reminderEnabled: true
+            reminderEnabled: true,
+            cards: [.run(RunCard(durationMinutes: 30))]
         )
         let data = try JSONEncoder().encode(routine)
         let decoded = try JSONDecoder().decode(Routine.self, from: data)
@@ -88,19 +88,48 @@ struct ModelTests {
         #expect(decoded == plan)
     }
 
-    @Test func durationRoundTripsAndDefaultsForLegacyData() throws {
-        // Present value survives a round-trip.
-        let routine = Routine(name: "Tempo", type: .adaptiveRun, durationMinutes: 45)
-        let decoded = try JSONDecoder().decode(Routine.self, from: JSONEncoder().encode(routine))
-        #expect(decoded.durationMinutes == 45)
+    /// A routine persisted in the pre-card shape (`type`/`durationMinutes`/`exercises`) migrates
+    /// to cards on decode rather than failing — the data outlives the format change.
+    @Test func legacyRunRoutineMigratesToRunCard() throws {
+        let legacyJSON = """
+        {
+            "id": "11111111-1111-1111-1111-111111111111",
+            "name": "Old Run", "type": "adaptiveRun",
+            "repeatDays": [2, 5], "durationMinutes": 45,
+            "reminderEnabled": false, "createdAt": 0
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(Routine.self, from: legacyJSON)
+        #expect(decoded.cards.count == 1)
+        #expect(decoded.firstRunCard?.durationMinutes == 45)
+        #expect(decoded.type == .adaptiveRun)
+    }
 
-        // A routine persisted before `durationMinutes` existed (build 2) decodes with the default,
-        // not a failure. Simulate by stripping the key from otherwise-valid JSON.
-        var dict = try JSONSerialization.jsonObject(with: JSONEncoder().encode(routine)) as! [String: Any]
-        dict.removeValue(forKey: "durationMinutes")
-        let legacy = try JSONSerialization.data(withJSONObject: dict)
-        let legacyDecoded = try JSONDecoder().decode(Routine.self, from: legacy)
-        #expect(legacyDecoded.durationMinutes == 30)
+    @Test func legacyStrengthRoutineMigratesToExerciseCards() throws {
+        // Old strength routine carried `exercises` with a now-removed `sets` field.
+        let legacyJSON = """
+        {
+            "id": "22222222-2222-2222-2222-222222222222",
+            "name": "Old Push", "type": "strength",
+            "repeatDays": [2], "durationMinutes": 30, "reminderEnabled": false,
+            "exercises": [
+                {"id": "33333333-3333-3333-3333-333333333333", "exerciseId": "db_bench_press", "sets": 3, "reps": 10}
+            ],
+            "createdAt": 0
+        }
+        """.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(Routine.self, from: legacyJSON)
+        #expect(decoded.exerciseItems.count == 1)
+        #expect(decoded.exerciseItems.first?.exerciseId == "db_bench_press")
+        #expect(decoded.type == .strength)
+    }
+
+    @Test func roundsExpandCards() {
+        let routine = Routine(name: "Circuit",
+                              cards: [.exercise(StrengthExerciseItem(exerciseId: "push_up", reps: 8)),
+                                      .rest(RestCard(seconds: 20))],
+                              rounds: 3)
+        #expect(routine.expandedCards.count == 6) // (exercise + rest) × 3
     }
 
     @Test func scaledPlanTracksTargetDuration() {

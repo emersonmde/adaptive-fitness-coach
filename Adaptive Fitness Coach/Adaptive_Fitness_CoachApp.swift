@@ -27,13 +27,20 @@ struct Adaptive_Fitness_CoachApp: App {
         let store = RoutineStore(fileURL: url) { routines in
             connectivity.sync(routines: routines)
         }
+        // Let inbound progressions (a weight/rep bump recorded on the watch) apply to the store.
+        connectivity.store = store
         // Dev/QA only: populate a throwaway store with demo routines for screenshots.
         if ProcessInfo.processInfo.arguments.contains("-seedDemo"), store.routines.isEmpty {
-            store.add(Routine(name: "Morning Run", type: .adaptiveRun,
+            store.add(Routine(name: "Morning Run",
                               repeatDays: [.tuesday, .friday], scheduleTime: ScheduleTime(hour: 7, minute: 0),
-                              reminderEnabled: true))
-            store.add(Routine(name: "Strength Circuit", type: .strength,
-                              repeatDays: [.monday, .wednesday], scheduleTime: ScheduleTime(hour: 18, minute: 30)))
+                              reminderEnabled: true,
+                              cards: [.run(RunCard())]))
+            let circuit: [WorkoutCard] = ["goblet_squat", "db_bench_press", "one_arm_row", "plank"]
+                .compactMap { ExerciseLibrary.exercise(id: $0) }
+                .flatMap { [WorkoutCard.exercise(StrengthExerciseItem(from: $0)), .rest(RestCard(seconds: 30))] }
+            store.add(Routine(name: "Strength Circuit",
+                              repeatDays: [.monday, .wednesday], scheduleTime: ScheduleTime(hour: 18, minute: 30),
+                              cards: circuit, rounds: 3))
         }
         _store = State(initialValue: store)
     }

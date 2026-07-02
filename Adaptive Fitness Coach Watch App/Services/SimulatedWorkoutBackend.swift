@@ -7,14 +7,23 @@ import Foundation
 final class SimulatedWorkoutBackend: WorkoutBackend {
     var onHeartRate: ((Double) -> Void)?
     var onZoneChange: ((Int?) -> Void)?
+    var onCadence: ((Double) -> Void)?
     var onFailure: (() -> Void)? // never invoked; the simulated workout cannot fail
 
     /// One scripted reading: at `at` seconds into the session, report `zone` (1-based position)
-    /// and `hr`.
+    /// and `hr`, plus optionally a `cadence` (steps/minute — drives warmup run-detection).
     struct Step: Sendable {
         let at: TimeInterval
         let zone: Int
         let hr: Double
+        var cadence: Double?
+
+        init(at: TimeInterval, zone: Int, hr: Double, cadence: Double? = nil) {
+            self.at = at
+            self.zone = zone
+            self.hr = hr
+            self.cadence = cadence
+        }
     }
 
     private let script: [Step]
@@ -34,6 +43,7 @@ final class SimulatedWorkoutBackend: WorkoutBackend {
                 if Task.isCancelled { return }
                 self?.onHeartRate?(step.hr)
                 self?.onZoneChange?(step.zone)
+                if let cadence = step.cadence { self?.onCadence?(cadence) }
             }
         }
     }
@@ -44,18 +54,23 @@ final class SimulatedWorkoutBackend: WorkoutBackend {
         return WorkoutTotals(distanceMeters: 2400, averageHeartRate: 138)
     }
 
-    /// A ~60s timeline that exercises both adaptation directions: comfortable → hot (back off)
-    /// → recovered (shorten walk) → comfortable (extend). Target zone is 2.
+    /// A ~60s timeline for the compressed demo plan (25s warmup, 6s runs / 5s walks): walking
+    /// cadence turns into a sustained running cadence that cuts the warmup short ~13s in, then
+    /// the zones/HR exercise back-off (hot run) and HR-drop recovery (walk ends early).
+    /// Target zone is 2.
     nonisolated static var demoScript: [Step] {
         [
-            Step(at: 0, zone: 1, hr: 102),   // warmup, easy
-            Step(at: 4, zone: 2, hr: 128),   // running, in the aerobic band
-            Step(at: 9, zone: 4, hr: 168),   // running hot → back off (shorten run)
-            Step(at: 16, zone: 1, hr: 118),  // walking, recovered fast → shorten walk
-            Step(at: 24, zone: 2, hr: 132),  // running, comfortable
-            Step(at: 30, zone: 1, hr: 120),  // sustained easy → extend run
-            Step(at: 44, zone: 3, hr: 150),  // drifting up
-            Step(at: 52, zone: 2, hr: 134),  // settled back
+            Step(at: 0, zone: 1, hr: 102, cadence: 112),   // warmup walking
+            Step(at: 3, zone: 1, hr: 106, cadence: 152),   // user starts jogging...
+            Step(at: 6, zone: 1, hr: 112, cadence: 154),
+            Step(at: 9, zone: 1, hr: 118, cadence: 155),
+            Step(at: 13, zone: 2, hr: 128, cadence: 156),  // ...10s sustained → warmup skips
+            Step(at: 18, zone: 4, hr: 168),                // running hot → back off (shorten run)
+            Step(at: 24, zone: 2, hr: 140),                // walking, coming down
+            Step(at: 28, zone: 2, hr: 132),                // 36bpm below peak → walk ends early
+            Step(at: 34, zone: 2, hr: 136),                // running, steady in the band
+            Step(at: 44, zone: 2, hr: 138),                // stays sustainable to the end
+            Step(at: 52, zone: 1, hr: 124),                // cooldown
         ]
     }
 }

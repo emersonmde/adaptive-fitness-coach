@@ -50,6 +50,13 @@ final class WorkoutSessionManager {
     // Engine
     private var machine: IntervalStateMachine?
     private var latestZone: Int?
+    /// Latest raw heart rate fed to the engine for recovery math; nil until the first sample
+    /// so the engine never sees a fabricated 0 bpm (N6).
+    private var latestHeartRate: Double?
+    /// Detects "started running" from cadence during the warmup, to end it early.
+    private var cadenceDetector = RunningCadenceDetector()
+    /// Set when the user ends the workout before the plan finishes — a progression signal.
+    private var endedEarly = false
 
     // Ticking
     private var tickTask: Task<Void, Never>?
@@ -84,6 +91,7 @@ final class WorkoutSessionManager {
         self.backend = backend
         backend.onHeartRate = { [weak self] hr in self?.receiveHeartRate(hr) }
         backend.onZoneChange = { [weak self] zone in self?.receiveZone(zone) }
+        backend.onCadence = { [weak self] cadence in self?.receiveCadence(cadence) }
         backend.onFailure = { [weak self] in self?.handleFailure() }
 
         targetZone = config.targetZone
@@ -124,11 +132,31 @@ final class WorkoutSessionManager {
 
     func receiveHeartRate(_ hr: Double) {
         currentHeartRate = hr
+        latestHeartRate = hr
     }
 
     func receiveZone(_ zone: Int?) {
         latestZone = zone
         currentZoneIndex = zone
+    }
+
+    /// Feed a cadence sample (steps/minute). Only meaningful during the warmup: a sustained
+    /// running cadence ends the warmup early — the user said "let's go" with their feet.
+    func receiveCadence(_ cadence: Double) {
+        guard sessionState == .active, currentPhase == .warmupWalk, let machine else { return }
+        if cadenceDetector.update(cadence: cadence, at: machine.sessionElapsed) {
+            skipWarmup()
+        }
+    }
+
+    /// End the warmup now and start the first run — from cadence detection or the user's
+    /// "Start Run" tap. Routed through the engine so the transition (and its haptic) is
+    /// exactly the one a natural warmup end would produce.
+    func skipWarmup() {
+        guard var machine, sessionState == .active, machine.currentPhase == .warmupWalk else { return }
+        let result = machine.skipCurrentSegment()
+        self.machine = machine
+        applyTickResult(result, from: machine)
     }
 
     // MARK: - Tick loop
@@ -155,9 +183,16 @@ final class WorkoutSessionManager {
     func tick(delta: TimeInterval) {
         guard var machine, sessionState == .active else { return }
 
-        let result = machine.tick(deltaTime: delta, currentZone: latestZone)
+        let sample = WorkoutSample(zone: latestZone, heartRate: latestHeartRate)
+        let result = machine.tick(deltaTime: delta, sample: sample)
         self.machine = machine // write back the mutated value type
 
+        applyTickResult(result, from: machine)
+    }
+
+    /// Reflect one engine step (a tick or a segment skip) into observed state, haptics, and
+    /// the adaptation banner.
+    private func applyTickResult(_ result: TickResult, from machine: IntervalStateMachine) {
         currentPhase = machine.currentPhase
         intervalElapsed = machine.intervalElapsed
         intervalTarget = machine.currentTargetDuration ?? intervalTarget
@@ -196,6 +231,7 @@ final class WorkoutSessionManager {
 
     /// End early (user-initiated). Routed through the same guarded `finish()`.
     func endManually() {
+        if machine?.isComplete == false { endedEarly = true }
         finish()
     }
 
@@ -211,7 +247,12 @@ final class WorkoutSessionManager {
             totalRunDuration: machine?.totalRunDuration ?? 0,
             totalWalkDuration: machine?.totalWalkDuration ?? 0,
             intervalsCompleted: machine?.intervalsCompleted ?? 0,
-            adaptationsApplied: machine?.adaptationsApplied ?? 0
+            adaptationsApplied: machine?.adaptationsApplied ?? 0,
+            plannedRunIntervals: totalRunIntervals,
+            runBackOffCount: machine?.runBackOffCount ?? 0,
+            walksHitCap: machine?.walksHitCap ?? 0,
+            meanRecoveryDrop: machine?.meanRecoveryDrop,
+            endedEarly: endedEarly
         )
 
         sessionState = .complete
@@ -226,6 +267,9 @@ final class WorkoutSessionManager {
         backend = nil
         machine = nil
         latestZone = nil
+        latestHeartRate = nil
+        cadenceDetector = RunningCadenceDetector()
+        endedEarly = false
         currentHeartRate = 0
         currentZoneIndex = nil
         adaptationEvent = nil

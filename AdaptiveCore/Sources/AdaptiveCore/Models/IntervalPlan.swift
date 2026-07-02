@@ -54,6 +54,56 @@ public struct IntervalPlan: Codable, Sendable, Hashable {
 }
 
 public extension IntervalPlan {
+    /// Build a session plan from a run card's shape and seeds: an optional warmup walk, a run
+    /// block filled with `runSeconds`/`walkSeconds` cycles, and an optional cooldown walk.
+    ///
+    /// The block is filled with whole cycles (at least one) landing near `blockDuration` —
+    /// exactness doesn't matter because the engine adapts every segment live (N7). A trailing
+    /// walk is kept (recovery before cooldown); once the seeds have progressed to where a
+    /// single run covers the whole block (`runSeconds >= blockDuration`, or the walk seed has
+    /// reached zero), the block becomes one continuous run.
+    static func runWalk(
+        runSeconds: TimeInterval,
+        walkSeconds: TimeInterval,
+        blockDuration: TimeInterval,
+        warmup: TimeInterval,
+        cooldown: TimeInterval
+    ) -> IntervalPlan {
+        var segments: [IntervalSegment] = []
+        if warmup > 0 {
+            segments.append(IntervalSegment(phase: .warmupWalk, targetDuration: warmup))
+        }
+
+        let run = max(15, runSeconds)
+        if walkSeconds <= 0 || run >= blockDuration {
+            // Continuous running reached (or the block is shorter than one run interval).
+            segments.append(IntervalSegment(phase: .run, targetDuration: max(run, blockDuration)))
+        } else {
+            let cycleLength = run + walkSeconds
+            let cycles = max(1, Int((blockDuration / cycleLength).rounded()))
+            for _ in 0..<cycles {
+                segments.append(IntervalSegment(phase: .run, targetDuration: run))
+                segments.append(IntervalSegment(phase: .walk, targetDuration: walkSeconds))
+            }
+        }
+
+        if cooldown > 0 {
+            segments.append(IntervalSegment(phase: .cooldownWalk, targetDuration: cooldown))
+        }
+        return IntervalPlan(segments: segments)
+    }
+
+    /// The plan for a run card — shape and seeds both come from the card.
+    static func plan(for card: RunCard) -> IntervalPlan {
+        runWalk(
+            runSeconds: TimeInterval(card.runSeconds),
+            walkSeconds: TimeInterval(card.walkSeconds),
+            blockDuration: TimeInterval(card.durationMinutes * 60),
+            warmup: TimeInterval(card.warmupMinutes * 60),
+            cooldown: TimeInterval(card.cooldownMinutes * 60)
+        )
+    }
+
     /// The default seed plan for a low-fitness beginner — a starting point for Q1, not its
     /// resolution (Q1's research-optimal ratio is still pending per the PRD).
     ///

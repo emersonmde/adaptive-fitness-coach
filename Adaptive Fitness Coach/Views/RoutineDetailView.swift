@@ -15,6 +15,7 @@ struct RoutineDetailView: View {
     /// Local editable copy; committed to the store on each change. Loaded reactively by id.
     @State private var draft: Routine?
     @State private var confirmingDelete = false
+    @State private var editingCards = false
 
     var body: some View {
         ZStack {
@@ -31,6 +32,77 @@ struct RoutineDetailView: View {
         // re-appearance the way `onAppear` would; it only (re)loads when the id actually changes.
         .task(id: routineID) {
             draft = store.routines.first { $0.id == routineID }
+        }
+        .navigationDestination(isPresented: $editingCards) {
+            RoutineBuilderView(initialCards: draft?.cards ?? [], initialRounds: draft?.rounds ?? 1) { cards, rounds in
+                commit { $0.cards = cards; $0.rounds = max(1, rounds) }
+                editingCards = false
+            }
+        }
+    }
+
+    /// A read-only summary of the card stack with an Edit button into the builder.
+    private func cardSummary(for routine: Routine) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if routine.cards.isEmpty {
+                Text("No cards yet.")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
+            } else {
+                ForEach(Array(routine.cards.enumerated()), id: \.element.id) { index, card in
+                    HStack(spacing: 10) {
+                        Image(systemName: RoutineTheme.symbol(forCard: card))
+                            .font(.caption)
+                            .foregroundStyle(RoutineTheme.tint(forCard: card))
+                            .frame(width: 20)
+                        Text(cardTitle(card))
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.textPrimary)
+                        Spacer(minLength: 0)
+                        Text(cardDetail(card))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    if card.id != routine.cards.last?.id {
+                        Divider().overlay(Theme.hairline)
+                    }
+                }
+                if routine.rounds > 1 {
+                    Text("Repeat × \(routine.rounds) rounds")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
+                        .padding(.top, 2)
+                }
+            }
+
+            Button {
+                editingCards = true
+            } label: {
+                Label(routine.cards.isEmpty ? "Add Cards" : "Edit Cards", systemImage: "slider.horizontal.3")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+        }
+    }
+
+    private func cardTitle(_ card: WorkoutCard) -> String {
+        switch card {
+        case .run: return "Adaptive Run"
+        case let .exercise(item): return ExerciseLibrary.exercise(id: item.exerciseId)?.name ?? item.exerciseId
+        case .rest: return "Rest"
+        }
+    }
+
+    private func cardDetail(_ card: WorkoutCard) -> String {
+        switch card {
+        case let .run(c): return "~\(c.totalMinutes) min · \(c.warmupMinutes)/\(c.durationMinutes)/\(c.cooldownMinutes)"
+        case let .exercise(item):
+            if item.isHold { return "\(Int(item.holdSeconds ?? 0))s hold" }
+            let load = item.seedWeight.map { " · \($0.displayString())" } ?? ""
+            return "\(item.reps ?? 0) reps\(load)"
+        case let .rest(c): return "\(Int(c.seconds))s"
         }
     }
 
@@ -57,11 +129,8 @@ struct RoutineDetailView: View {
                     ))
                 }
 
-                FieldSection(title: "DURATION") {
-                    DurationStepper(minutes: Binding(
-                        get: { draft?.durationMinutes ?? 30 },
-                        set: { setDuration($0) }
-                    ))
+                FieldSection(title: "WORKOUT") {
+                    cardSummary(for: routine)
                 }
 
                 FieldSection(title: "SCHEDULE") {
@@ -133,7 +202,6 @@ struct RoutineDetailView: View {
 
     private func setDays(_ days: Set<DayOfWeek>) { commit { $0.repeatDays = days } }
     private func setTime(_ time: ScheduleTime) { commit { $0.scheduleTime = time } }
-    private func setDuration(_ minutes: Int) { commit { $0.durationMinutes = minutes } }
 
     private func setReminders(_ on: Bool) {
         commit(promptCalendar: on) {

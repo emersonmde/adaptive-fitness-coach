@@ -89,6 +89,62 @@ public final class RoutineStore {
         save(broadcast: false)
     }
 
+    // MARK: - Progression (apply a recorded weight/rep bump to a routine's seeds)
+
+    /// Apply progressions to the routine with `id` and persist. Returns `true` if anything changed.
+    ///
+    /// - `broadcast`: the phone passes `true` so its corrected routine re-syncs to the watch; the
+    ///   watch passes `false` (it never broadcasts). The apply is idempotent latest-value, and a
+    ///   no-op change short-circuits without writing — together these keep a watch→phone→watch round
+    ///   trip from oscillating (it reaches a fixed point in one pass).
+    /// - A missing routine (deleted/never present) is a graceful no-op returning `false` (N6).
+    @discardableResult
+    public func applyProgressions(_ updates: [ProgressionUpdate], toRoutineId id: Routine.ID, broadcast: Bool) -> Bool {
+        applyProgressions(ProgressionBatch(routineId: id, updates: updates), broadcast: broadcast)
+    }
+
+    /// Apply a full progression batch (strength + run seeds) in one pass. Same fixed-point
+    /// contract as above: idempotent apply + no-op short-circuit, so a round trip converges.
+    @discardableResult
+    public func applyProgressions(_ batch: ProgressionBatch, broadcast: Bool) -> Bool {
+        guard let index = routines.firstIndex(where: { $0.id == batch.routineId }) else { return false }
+        let updated = routines[index]
+            .applyingProgressions(batch.updates)
+            .applyingRunProgressions(batch.runUpdates)
+        guard updated != routines[index] else { return false } // already converged → no write, no echo
+        routines[index] = updated
+        save(broadcast: broadcast)
+        return true
+    }
+
+    // MARK: - Import (e.g. routines revised in Claude and brought back via RoutineExchange)
+
+    /// Merge imported routines by **name**: a routine whose name matches an existing one replaces
+    /// that one's contents (keeping its id, so schedules/calendar links survive); a new name is
+    /// added. Broadcasts so the watch picks up the changes. Returns (updated, added) counts.
+    @discardableResult
+    public func importRoutines(_ incoming: [Routine]) -> (updated: Int, added: Int) {
+        var updated = 0, added = 0
+        for routine in incoming {
+            if let index = routines.firstIndex(where: { $0.name == routine.name }) {
+                let existing = routines[index]
+                // Preserve identity + scheduling; take the imported cards/rounds (and days/time if set).
+                var merged = existing
+                merged.cards = routine.cards
+                merged.rounds = routine.rounds
+                if !routine.repeatDays.isEmpty { merged.repeatDays = routine.repeatDays }
+                if routine.scheduleTime != nil { merged.scheduleTime = routine.scheduleTime }
+                routines[index] = merged
+                updated += 1
+            } else {
+                routines.append(routine)
+                added += 1
+            }
+        }
+        if updated + added > 0 { save(broadcast: true) }
+        return (updated, added)
+    }
+
     // MARK: - Queries
 
     /// Routines that repeat on `day`, ordered by their scheduled time then name.
