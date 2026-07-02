@@ -10,6 +10,18 @@ enum SessionState: Equatable {
     case failed
 }
 
+/// Where HealthKit finalization stands after the session ends. The summary shows the moment
+/// the user stops (the engine already knows time/intervals); the OS finishes persisting the
+/// workout in the background and this drives the one status line — never claim "Saved" before
+/// the OS confirms it (N2/N6), never freeze the UI waiting for it.
+enum HealthSaveState: Equatable {
+    case saving
+    case saved
+    /// Finalization reported an error. The workout data may still be in Health (the builder
+    /// collected live), but we can't confirm — say so instead of pretending.
+    case unconfirmed
+}
+
 /// Drives the adaptive interval loop on top of a `WorkoutBackend` (real HealthKit or a
 /// scripted simulator). It ticks the pure `IntervalStateMachine` once a second, feeding it the
 /// latest zone the backend reports, and turns the engine's output into observed UI state plus
@@ -37,6 +49,7 @@ final class WorkoutSessionManager {
     /// seconds. Carries the action (direction) rather than a sentence to read mid-run (N5).
     private(set) var adaptationEvent: AdaptationEvent?
     private(set) var summary: SessionSummary?
+    private(set) var healthSaveState: HealthSaveState = .saving
     private(set) var routineName: String = "Adaptive Run"
 
     private let injectedBackend: WorkoutBackend?
@@ -230,20 +243,27 @@ final class WorkoutSessionManager {
     }
 
     /// End early (user-initiated). Routed through the same guarded `finish()`.
+    /// Stopping mid-*extended*-run is finishing a long run the plan didn't dare schedule,
+    /// not bailing — don't let it read as a struggle to progression.
     func endManually() {
-        if machine?.isComplete == false { endedEarly = true }
+        if let machine, !machine.isComplete, !machine.currentRunIsExtended {
+            endedEarly = true
+        }
         finish()
     }
 
+    /// Complete the session **immediately** from what the engine already knows — time,
+    /// intervals, splits — and let HealthKit finalize in the background. The user is standing
+    /// there sweating; making them stare at a frozen screen while the OS does bookkeeping is
+    /// the wrong place to spend seconds. Distance/avg HR arrive with the finalize and fill in.
     private func end() async {
         tickTask?.cancel()
         tickTask = nil
 
-        let totals = await backend?.end() ?? WorkoutTotals()
         summary = SessionSummary(
             totalDuration: machine?.sessionElapsed ?? sessionElapsed,
-            totalDistance: totals.distanceMeters,
-            averageHeartRate: totals.averageHeartRate,
+            totalDistance: nil,
+            averageHeartRate: nil,
             totalRunDuration: machine?.totalRunDuration ?? 0,
             totalWalkDuration: machine?.totalWalkDuration ?? 0,
             intervalsCompleted: machine?.intervalsCompleted ?? 0,
@@ -251,12 +271,30 @@ final class WorkoutSessionManager {
             plannedRunIntervals: totalRunIntervals,
             runBackOffCount: machine?.runBackOffCount ?? 0,
             walksHitCap: machine?.walksHitCap ?? 0,
+            fastRecoveries: machine?.fastRecoveries ?? 0,
+            longestRunSeconds: machine?.longestRunInterval ?? 0,
             meanRecoveryDrop: machine?.meanRecoveryDrop,
             endedEarly: endedEarly
         )
-
+        healthSaveState = .saving
         sessionState = .complete
         haptics.playComplete()
+
+        // Finalize with the OS off the critical path. The backend is captured strongly so a
+        // reset/dismiss can't abandon HealthKit mid-finalize; the state guard keeps a late
+        // result from touching a session that has since been reset.
+        let finishingBackend = backend
+        backend = nil
+        Task { [weak self] in
+            let totals = await finishingBackend?.end() ?? WorkoutTotals()
+            guard let self, self.sessionState == .complete else { return }
+            if var filled = self.summary {
+                filled.totalDistance = totals.distanceMeters
+                filled.averageHeartRate = totals.averageHeartRate
+                self.summary = filled
+            }
+            self.healthSaveState = totals.savedToHealth ? .saved : .unconfirmed
+        }
     }
 
     /// Reset to idle so a new session can start (e.g. after dismissing the summary).
@@ -274,6 +312,7 @@ final class WorkoutSessionManager {
         currentZoneIndex = nil
         adaptationEvent = nil
         summary = nil
+        healthSaveState = .saving
         intervalElapsed = 0
         sessionElapsed = 0
         intervalsCompleted = 0

@@ -63,19 +63,19 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
         do {
             try await builder?.endCollection(at: endDate)
             let workout = try await builder?.finishWorkout()
-            return readTotals(workout: workout)
+            return readTotals(workout: workout, saved: true)
         } catch {
-            return readTotals(workout: nil)
+            return readTotals(workout: nil, saved: false)
         }
     }
 
-    private func readTotals(workout: HKWorkout?) -> WorkoutTotals {
+    private func readTotals(workout: HKWorkout?, saved: Bool) -> WorkoutTotals {
         let hr = builder?.statistics(for: HKQuantityType(.heartRate))?
             .averageQuantity()?.doubleValue(for: heartRateUnit)
         let distance = builder?.statistics(for: HKQuantityType(.distanceWalkingRunning))?
             .sumQuantity()?.doubleValue(for: .meter())
             ?? workout?.totalDistance?.doubleValue(for: .meter())
-        return WorkoutTotals(distanceMeters: distance, averageHeartRate: hr)
+        return WorkoutTotals(distanceMeters: distance, averageHeartRate: hr, savedToHealth: saved)
     }
 
     /// Map Apple's raw `HKWorkoutZone.index` to a 1-based position within the configuration's

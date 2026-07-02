@@ -166,6 +166,7 @@ public struct Routine: Codable, Sendable, Identifiable, Hashable {
             guard case var .run(runCard) = card, let update = byCard[runCard.id] else { return card }
             runCard.runSeconds = min(max(update.runSeconds, 15), 3600)
             runCard.walkSeconds = min(max(update.walkSeconds, 0), 600)
+            runCard.seedsCalibrated = true // evidence has spoken; never re-run cold-start calibration
             return .run(runCard)
         }
         return copy

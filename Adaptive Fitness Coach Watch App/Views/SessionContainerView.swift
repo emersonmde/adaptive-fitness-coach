@@ -125,6 +125,10 @@ struct RunSessionContainerView: View {
     /// Called when the user finishes/dismisses a forced session, to return to the picker.
     var onFinish: (() -> Void)?
     @State private var manager: WorkoutSessionManager
+    /// Seeds actually used this session (defaults → possibly calibrated at start).
+    @State private var activeCard: RunCard?
+    /// The quiet "Next run: …" line for the summary — how the user perceives adaptation.
+    @State private var nextRunNote: String?
     private let simulate: Bool
 
     init(store: RoutineStore, simulate: Bool, forcedRoutine: Routine? = nil,
@@ -154,7 +158,9 @@ struct RunSessionContainerView: View {
                 WorkoutSessionPager(manager: manager)
             case .complete:
                 if let summary = manager.summary {
-                    WorkoutCompleteView(summary: summary) { manager.reset(); onFinish?() }
+                    WorkoutCompleteView(summary: summary,
+                                        saveState: manager.healthSaveState,
+                                        nextRunNote: nextRunNote) { manager.reset(); onFinish?() }
                         .task { recordOutcome(summary) }
                 } else {
                     ProgressView()
@@ -181,7 +187,7 @@ struct RunSessionContainerView: View {
 
     /// The card driving this session: shape (warmup/block/cooldown) and seeds (run/walk) both
     /// come from it; the default card covers the no-routine "just run" case.
-    private var sessionCard: RunCard { effectiveRoutine?.firstRunCard ?? RunCard() }
+    private var sessionCard: RunCard { activeCard ?? effectiveRoutine?.firstRunCard ?? RunCard() }
 
     private var sessionPlan: IntervalPlan { IntervalPlan.plan(for: sessionCard) }
 
@@ -191,10 +197,12 @@ struct RunSessionContainerView: View {
     private func recordOutcome(_ summary: SessionSummary) {
         guard !simulate,
               let record = recordRunProgression,
-              let routine = effectiveRoutine, let card = routine.firstRunCard else { return }
+              let routine = effectiveRoutine, routine.firstRunCard != nil else { return }
+        let card = sessionCard
         let current = RunSeeds(runSeconds: card.runSeconds, walkSeconds: card.walkSeconds)
         let next = RunProgressionPolicy().nextSeeds(current: current, outcome: RunSessionOutcome(summary: summary))
-        guard next != current else { return }
+        guard next != current || !card.seedsCalibrated else { return }
+        nextRunNote = RunSeeds.progressionNote(from: current, to: next, blockSeconds: card.durationMinutes * 60)
         record(routine.id, [RunProgressionUpdate(cardId: card.id, runSeconds: next.runSeconds, walkSeconds: next.walkSeconds)])
     }
 
@@ -221,7 +229,7 @@ struct RunSessionContainerView: View {
             // quickly for testing/demo (~45s of plan). The 25s warmup exists to demo cadence
             // run-detection: the script's sustained running cadence cuts it short ~13s in.
             let plan = IntervalPlan.beginnerRunWalk(
-                warmup: 25, runDuration: 6, walkDuration: 5, cycles: 2, cooldown: 2
+                warmup: 25, runDuration: 6, walkDuration: 8, cycles: 2, cooldown: 2
             )
             let adaptation = AdaptationConfig(
                 backOffWindow: 3, hardBackOffWindow: 2, hardBackOffMinRun: 2,
@@ -231,7 +239,19 @@ struct RunSessionContainerView: View {
             )
             manager.start(config: SessionConfig(plan: plan), routineName: name, adaptationConfig: adaptation)
         } else {
-            manager.start(config: SessionConfig(plan: sessionPlan), routineName: name)
+            // Zero-config cold start: a card whose seeds have never been touched by evidence
+            // gets one silent Health-history calibration before the first plan is built, so
+            // an experienced runner's first session is already a normal run. Any failure
+            // keeps the conservative defaults (N6).
+            Task {
+                var card = sessionCard
+                if card.needsCalibration, let seeds = await HealthFitnessCalibrator.calibratedSeeds() {
+                    card.runSeconds = seeds.runSeconds
+                    card.walkSeconds = seeds.walkSeconds
+                }
+                activeCard = card
+                manager.start(config: SessionConfig(plan: IntervalPlan.plan(for: card)), routineName: name)
+            }
         }
     }
 }

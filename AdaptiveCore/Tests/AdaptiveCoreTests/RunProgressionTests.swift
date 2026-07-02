@@ -87,6 +87,135 @@ struct RunProgressionPolicyTests {
         let next = policy.nextSeeds(current: seeds, outcome: outcome(planned: 0, completed: 0))
         #expect(next == seeds)
     }
+
+    // MARK: - Strong sessions and demonstrated capacity
+
+    @Test func strongSessionAdvancesTwoNotches() {
+        // Every walk ended at the recovery floor: two notches, not one.
+        let strong = RunSessionOutcome(plannedRunIntervals: 6, completedRunIntervals: 6,
+                                       runBackOffCount: 0, walksHitCap: 0, fastRecoveries: 6)
+        let next = policy.nextSeeds(current: seeds, outcome: strong)
+        // 90 → +22 → 112 → +28 → 140
+        #expect(next.runSeconds == 140)
+    }
+
+    @Test func partialFastRecoveriesAdvanceOneNotch() {
+        let mixed = RunSessionOutcome(plannedRunIntervals: 6, completedRunIntervals: 6,
+                                      runBackOffCount: 0, walksHitCap: 0, fastRecoveries: 3)
+        let next = policy.nextSeeds(current: seeds, outcome: mixed)
+        #expect(next.runSeconds == 112)
+    }
+
+    @Test func demonstratedLongRunSnapsTheSeed() {
+        // Extension unlocked mid-session and the user ran 14 minutes straight: next session
+        // starts from what was actually run, not one notch up.
+        let out = RunSessionOutcome(plannedRunIntervals: 6, completedRunIntervals: 2,
+                                    runBackOffCount: 0, walksHitCap: 0, fastRecoveries: 1,
+                                    longestRunSeconds: 845)
+        let next = policy.nextSeeds(current: seeds, outcome: out)
+        #expect(next.runSeconds == 840) // rounded down to 15s
+        #expect(next.walkSeconds <= 90) // long runs come with short recoveries
+    }
+
+    @Test func longRunEndingInStruggleDoesNotSnap() {
+        // A long run that ended in repeated back-offs is overreach, not capacity.
+        let out = RunSessionOutcome(plannedRunIntervals: 6, completedRunIntervals: 3,
+                                    runBackOffCount: 3, walksHitCap: 0,
+                                    longestRunSeconds: 600)
+        let next = policy.nextSeeds(current: seeds, outcome: out)
+        #expect(next.runSeconds == 75) // regressed, no snap
+    }
+
+    @Test func normalCompletedRunDoesNotSnap() {
+        // longestRun == the seed itself (every run ran its plan) — snap must not fire.
+        let next = policy.nextSeeds(current: seeds, outcome: {
+            var o = outcome(); o.longestRunSeconds = 90; return o
+        }())
+        #expect(next.runSeconds == 112) // plain single-notch advance
+    }
+}
+
+// MARK: - FitnessCalibration (Health history → starting seeds)
+
+struct FitnessCalibrationTests {
+
+    private func run(_ minutes: Double, km: Double? = nil) -> FitnessCalibration.PriorRun {
+        FitnessCalibration.PriorRun(duration: minutes * 60, distanceMeters: km.map { $0 * 1000 })
+    }
+
+    @Test func noSignalIsBeginner() {
+        #expect(FitnessCalibration.seeds(vo2Max: nil, recentRuns: []) == FitnessCalibration.beginnerSeeds)
+    }
+
+    @Test func regularRunnerIsContinuous() {
+        let runs = [run(25, km: 4.5), run(30, km: 5), run(22, km: 4)]
+        #expect(FitnessCalibration.seeds(vo2Max: nil, recentRuns: runs) == FitnessCalibration.continuousSeeds)
+    }
+
+    @Test func occasionalRunnerIsIntermediate() {
+        let runs = [run(15, km: 2.5)]
+        #expect(FitnessCalibration.seeds(vo2Max: nil, recentRuns: runs) == FitnessCalibration.intermediateSeeds)
+    }
+
+    @Test func goodVo2WithoutRunsIsIntermediateNotContinuous() {
+        // Cardio capacity without recent running practice: don't skip the build-up entirely.
+        #expect(FitnessCalibration.seeds(vo2Max: 48, recentRuns: []) == FitnessCalibration.intermediateSeeds)
+    }
+
+    @Test func lowVo2IsBeginner() {
+        #expect(FitnessCalibration.seeds(vo2Max: 33, recentRuns: []) == FitnessCalibration.beginnerSeeds)
+    }
+
+    @Test func walkingPaceWorkoutsAreNotRuns() {
+        // 30 minutes covering 2.5 km is a walk logged as a run (12 min/km).
+        let walks = [run(30, km: 2.5), run(25, km: 2.0), run(40, km: 3.0)]
+        #expect(FitnessCalibration.seeds(vo2Max: nil, recentRuns: walks) == FitnessCalibration.beginnerSeeds)
+    }
+
+    @Test func shortJogsDoNotCountAsRealRuns() {
+        let jogs = [run(5, km: 0.9), run(4, km: 0.7), run(6, km: 1.0)]
+        #expect(FitnessCalibration.seeds(vo2Max: nil, recentRuns: jogs) == FitnessCalibration.beginnerSeeds)
+    }
+
+    @Test func calibrationOnlyAppliesToUntouchedDefaultSeeds() {
+        #expect(RunCard().needsCalibration)
+        #expect(!RunCard(runSeconds: 112).needsCalibration)
+        #expect(!RunCard(seedsCalibrated: true).needsCalibration)
+    }
+
+    @Test func applyingRunProgressionMarksTheCardCalibrated() {
+        let card = RunCard()
+        let routine = Routine(name: "Run", cards: [.run(card)])
+        // Same seed values as the defaults — the apply must still stick the flag.
+        let applied = routine.applyingRunProgressions([
+            RunProgressionUpdate(cardId: card.id, runSeconds: 90, walkSeconds: 120),
+        ])
+        #expect(applied.firstRunCard?.seedsCalibrated == true)
+        #expect(applied != routine) // flag change persists through the store's no-op check
+    }
+
+    @Test func progressionNoteDescribesTheNextRun() {
+        let note = RunSeeds.progressionNote(
+            from: RunSeeds(runSeconds: 90, walkSeconds: 120),
+            to: RunSeeds(runSeconds: 120, walkSeconds: 120),
+            blockSeconds: 1200
+        )
+        #expect(note == "Next run: 2 min run · 2 min walk")
+
+        let continuous = RunSeeds.progressionNote(
+            from: RunSeeds(runSeconds: 600, walkSeconds: 60),
+            to: RunSeeds(runSeconds: 1300, walkSeconds: 60),
+            blockSeconds: 1200
+        )
+        #expect(continuous == "Next run: continuous")
+
+        let unchanged = RunSeeds.progressionNote(
+            from: RunSeeds(runSeconds: 90, walkSeconds: 120),
+            to: RunSeeds(runSeconds: 90, walkSeconds: 120),
+            blockSeconds: 1200
+        )
+        #expect(unchanged == nil)
+    }
 }
 
 // MARK: - Run progression persistence & sync compatibility

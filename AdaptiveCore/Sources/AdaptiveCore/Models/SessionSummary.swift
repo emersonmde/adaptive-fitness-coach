@@ -20,6 +20,11 @@ public struct SessionSummary: Sendable, Hashable {
     public var runBackOffCount: Int
     /// Walks that hit the max-walk cap still unrecovered.
     public var walksHitCap: Int
+    /// Walks that ended at the floor (recovery confirmed as early as allowed) — the
+    /// "fitter than the seeds" evidence for multi-notch progression.
+    public var fastRecoveries: Int
+    /// Longest single run interval sustained this session, seconds.
+    public var longestRunSeconds: TimeInterval
     /// Mean heart-rate recovery drop (bpm) across the session's walks, nil if unmeasurable.
     public var meanRecoveryDrop: Double?
     /// True when the user ended the workout before the plan finished.
@@ -36,6 +41,8 @@ public struct SessionSummary: Sendable, Hashable {
         plannedRunIntervals: Int = 0,
         runBackOffCount: Int = 0,
         walksHitCap: Int = 0,
+        fastRecoveries: Int = 0,
+        longestRunSeconds: TimeInterval = 0,
         meanRecoveryDrop: Double? = nil,
         endedEarly: Bool = false
     ) {
@@ -49,6 +56,8 @@ public struct SessionSummary: Sendable, Hashable {
         self.plannedRunIntervals = plannedRunIntervals
         self.runBackOffCount = runBackOffCount
         self.walksHitCap = walksHitCap
+        self.fastRecoveries = fastRecoveries
+        self.longestRunSeconds = longestRunSeconds
         self.meanRecoveryDrop = meanRecoveryDrop
         self.endedEarly = endedEarly
     }

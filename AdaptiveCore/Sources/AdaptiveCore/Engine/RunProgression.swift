@@ -11,6 +11,11 @@ public struct RunSessionOutcome: Sendable, Hashable {
     public var runBackOffCount: Int
     /// Walks that hit the max-walk cap still unrecovered.
     public var walksHitCap: Int
+    /// Walks that ended at the floor — recovery confirmed as early as the rules allow.
+    public var fastRecoveries: Int
+    /// Longest single run interval sustained this session, seconds. With extension unlocked
+    /// this is the user's demonstrated capacity, which progression snaps to.
+    public var longestRunSeconds: TimeInterval
     /// Mean heart-rate recovery drop (bpm) across walks, nil when HR was unavailable.
     public var meanRecoveryDrop: Double?
     /// True when the user ended the workout before the plan finished.
@@ -21,6 +26,8 @@ public struct RunSessionOutcome: Sendable, Hashable {
         completedRunIntervals: Int,
         runBackOffCount: Int,
         walksHitCap: Int,
+        fastRecoveries: Int = 0,
+        longestRunSeconds: TimeInterval = 0,
         meanRecoveryDrop: Double? = nil,
         endedEarly: Bool = false
     ) {
@@ -28,6 +35,8 @@ public struct RunSessionOutcome: Sendable, Hashable {
         self.completedRunIntervals = completedRunIntervals
         self.runBackOffCount = runBackOffCount
         self.walksHitCap = walksHitCap
+        self.fastRecoveries = fastRecoveries
+        self.longestRunSeconds = longestRunSeconds
         self.meanRecoveryDrop = meanRecoveryDrop
         self.endedEarly = endedEarly
     }
@@ -38,6 +47,8 @@ public struct RunSessionOutcome: Sendable, Hashable {
             completedRunIntervals: summary.intervalsCompleted,
             runBackOffCount: summary.runBackOffCount,
             walksHitCap: summary.walksHitCap,
+            fastRecoveries: summary.fastRecoveries,
+            longestRunSeconds: summary.longestRunSeconds,
             meanRecoveryDrop: summary.meanRecoveryDrop,
             endedEarly: summary.endedEarly
         )
@@ -52,6 +63,25 @@ public struct RunSeeds: Sendable, Hashable {
     public init(runSeconds: Int, walkSeconds: Int) {
         self.runSeconds = runSeconds
         self.walkSeconds = walkSeconds
+    }
+}
+
+public extension RunSeeds {
+    /// The one quiet line that makes cross-session adaptation perceivable on the summary
+    /// screen ("Next run: 2 min run · 90s walk"). Nil when nothing changed — adaptation
+    /// never nags (Q5).
+    static func progressionNote(from old: RunSeeds, to new: RunSeeds, blockSeconds: Int) -> String? {
+        guard new != old else { return nil }
+        if new.runSeconds >= blockSeconds || new.walkSeconds <= 0 {
+            return "Next run: continuous"
+        }
+        return "Next run: \(shortTime(new.runSeconds)) run · \(shortTime(new.walkSeconds)) walk"
+    }
+
+    private static func shortTime(_ seconds: Int) -> String {
+        if seconds < 60 { return "\(seconds)s" }
+        if seconds % 60 == 0 { return "\(seconds / 60) min" }
+        return "\(seconds / 60)m \(seconds % 60)s"
     }
 }
 
@@ -104,13 +134,33 @@ public struct RunProgressionPolicy: Sendable {
             seeds.runSeconds = max(minRunSeconds, current.runSeconds - regressStep)
             seeds.walkSeconds = min(maxWalkSeconds, current.walkSeconds + regressStep)
         } else if isClean(outcome) {
-            let step = min(maxAdvanceStep, max(15, current.runSeconds / 4))
-            seeds.runSeconds = current.runSeconds + step
-            if seeds.runSeconds >= walkShrinkThreshold {
-                seeds.walkSeconds = max(minWalkSeconds, current.walkSeconds - 15)
+            // A strong session — every walk ended at the floor, i.e. the user out-recovered
+            // the plan everywhere — jumps two notches instead of one, so a mis-seeded fit
+            // runner reaches their real level in a couple of sessions, not a month.
+            let notches = isStrong(outcome) ? 2 : 1
+            for _ in 0..<notches {
+                let step = min(maxAdvanceStep, max(15, seeds.runSeconds / 4))
+                seeds.runSeconds += step
+                if seeds.runSeconds >= walkShrinkThreshold {
+                    seeds.walkSeconds = max(minWalkSeconds, seeds.walkSeconds - 15)
+                }
             }
         }
         // Anything in between: hold. A held seed is a fine seed (N7).
+
+        // Snap to demonstrated capacity: a run sustained well past the seed (extension
+        // unlocked by fast recovery) is direct evidence of the user's real level — start
+        // there next time instead of climbing notch by notch. Never on a struggle (a long
+        // run that ended in repeated back-offs isn't capacity), and never downward.
+        if !isStruggle(outcome) {
+            let demonstrated = Int(outcome.longestRunSeconds / 15) * 15
+            if demonstrated >= seeds.runSeconds * 3 / 2 {
+                seeds.runSeconds = demonstrated
+                if seeds.runSeconds >= walkShrinkThreshold {
+                    seeds.walkSeconds = max(minWalkSeconds, min(seeds.walkSeconds, 90))
+                }
+            }
+        }
 
         return seeds
     }
@@ -124,6 +174,12 @@ public struct RunProgressionPolicy: Sendable {
             && outcome.completedRunIntervals >= outcome.plannedRunIntervals
             && outcome.runBackOffCount == 0
             && outcome.walksHitCap == 0
+    }
+
+    /// A strong session: clean, and every planned walk ended at the recovery floor.
+    /// (Walks == planned runs in the plan factory; require all of them.)
+    private func isStrong(_ outcome: RunSessionOutcome) -> Bool {
+        outcome.fastRecoveries >= outcome.plannedRunIntervals && outcome.plannedRunIntervals > 0
     }
 
     /// A struggle: repeated back-offs, or bailing out with under half the runs done.

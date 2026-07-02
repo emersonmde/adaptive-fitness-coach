@@ -316,6 +316,30 @@ struct IntervalStateMachineTests {
         #expect(machine.intervalsCompleted == 2) // cut-short runs still count as reached
     }
 
+    @Test func fastRecoveryUnlocksRunExtensionForTheRestOfTheSession() {
+        // Extension is off by default (in-run zone comfort lies under HR lag), but a walk
+        // that ends at the recovery floor is trustworthy evidence of fitness — after it,
+        // comfortable runs may stretch. Run 1 must NOT extend; run 2 (after the fast
+        // recovery) must.
+        let adapt = AdaptationConfig(extendWindow: 4, recoverWindow: 3, recoveryDropBPM: 20,
+                                     minWalkDuration: 5, runExtendIncrement: 10)
+        var machine = IntervalStateMachine(config: config([(.run, 10), (.walk, 60), (.run, 10), (.walk, 60)]),
+                                           adaptationConfig: adapt)
+        let rec = drive(&machine, sample: { elapsed in
+            elapsed <= 10 ? WorkoutSample(zone: 2, heartRate: 160)   // run 1, comfortable
+                          : WorkoutSample(zone: 2, heartRate: 130)   // 30bpm drop → fast recovery
+        }, maxSeconds: 40)
+
+        // Run 1 ended exactly on plan (no extension before evidence).
+        #expect(rec.transitions.first == TransitionEvent(from: .run, to: .walk))
+        #expect(machine.fastRecoveries >= 1)
+        // Run 2 extended: the machine is still in it well past its 10s seed.
+        #expect(machine.currentPhase == .run)
+        #expect(rec.adaptations.contains { $0.action == .extendedRun })
+        #expect(machine.currentRunIsExtended)
+        #expect(machine.longestRunInterval > 10)
+    }
+
     @Test func noSignalsWalkRunsItsPlannedDuration() {
         // Neither zone nor HR: the walk runs its seed duration exactly (N6 degradation).
         var machine = IntervalStateMachine(config: config([(.run, 3), (.walk, 5), (.run, 3)]))

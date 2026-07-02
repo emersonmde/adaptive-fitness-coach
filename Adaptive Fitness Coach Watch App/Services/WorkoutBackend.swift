@@ -5,6 +5,9 @@ import Foundation
 struct WorkoutTotals: Sendable {
     var distanceMeters: Double?
     var averageHeartRate: Double?
+    /// Whether the OS confirmed the workout was finalized. False only when `finishWorkout`
+    /// errored — the summary then avoids claiming "Saved to Health" (N6).
+    var savedToHealth: Bool = true
 }
 
 /// The sensor/zone source behind a workout. Abstracting it lets the adaptive loop run against

@@ -113,6 +113,11 @@ struct StrengthFlowTests {
         await waitUntilComplete(manager)
         #expect(manager.sessionState == .complete)
         #expect(manager.summary?.exercisesCompleted == 3)
+        // Average HR fills in from the background HealthKit finalize.
+        for _ in 0..<200 {
+            if manager.summary?.averageHeartRate != nil { break }
+            await Task.yield()
+        }
         #expect(manager.summary?.averageHeartRate == 121)
     }
 

@@ -205,14 +205,16 @@ final class StrengthSessionManager {
 
     func endManually() { finish() }
 
+    /// Complete immediately from local state; HealthKit finalizes in the background and the
+    /// average HR fills in when it returns (same instant-end contract as the run manager —
+    /// never freeze the UI on OS bookkeeping).
     private func end() async {
-        let totals = await backend?.end() ?? WorkoutTotals()
         let duration = sessionStartDate.map { now().timeIntervalSince($0) } ?? 0
         let exercisesDone = min(currentIndex, cards.count).reduceExerciseCount(in: cards)
         summary = StrengthSummary(
             totalDuration: duration,
             exercisesCompleted: exercisesDone,
-            averageHeartRate: totals.averageHeartRate
+            averageHeartRate: nil
         )
 
         // Report any weight/rep bumps against the routine so they persist as the new seed (and
@@ -224,6 +226,17 @@ final class StrengthSessionManager {
 
         sessionState = .complete
         haptics.playComplete()
+
+        let finishingBackend = backend
+        backend = nil
+        Task { [weak self] in
+            let totals = await finishingBackend?.end() ?? WorkoutTotals()
+            guard let self, self.sessionState == .complete else { return }
+            if var filled = self.summary {
+                filled.averageHeartRate = totals.averageHeartRate
+                self.summary = filled
+            }
+        }
     }
 
     func reset() {

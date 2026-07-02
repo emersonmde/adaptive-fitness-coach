@@ -74,6 +74,8 @@ private struct RunBlockView: View {
     let recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?
     let onComplete: () -> Void
     @State private var manager: WorkoutSessionManager
+    /// Seeds actually used (defaults → possibly calibrated at start).
+    @State private var activeCard: RunCard?
 
     init(card: RunCard, simulate: Bool, routineId: UUID?,
          recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?,
@@ -105,7 +107,14 @@ private struct RunBlockView: View {
                 manager.start(config: SessionConfig(plan: plan), routineName: "Run",
                               adaptationConfig: AdaptationConfig(backOffWindow: 3, minRunDuration: 2))
             } else {
-                manager.start(config: SessionConfig(plan: IntervalPlan.plan(for: card)), routineName: "Run")
+                // One-time zero-config calibration, same as the standalone run flow (N6).
+                var active = card
+                if active.needsCalibration, let seeds = await HealthFitnessCalibrator.calibratedSeeds() {
+                    active.runSeconds = seeds.runSeconds
+                    active.walkSeconds = seeds.walkSeconds
+                }
+                activeCard = active
+                manager.start(config: SessionConfig(plan: IntervalPlan.plan(for: active)), routineName: "Run")
             }
         }
     }
@@ -116,9 +125,10 @@ private struct RunBlockView: View {
         guard !simulate,
               let record = recordRunProgression, let routineId,
               let summary = manager.summary else { return }
-        let current = RunSeeds(runSeconds: card.runSeconds, walkSeconds: card.walkSeconds)
+        let active = activeCard ?? card
+        let current = RunSeeds(runSeconds: active.runSeconds, walkSeconds: active.walkSeconds)
         let next = RunProgressionPolicy().nextSeeds(current: current, outcome: RunSessionOutcome(summary: summary))
-        guard next != current else { return }
+        guard next != current || !active.seedsCalibrated else { return }
         record(routineId, [RunProgressionUpdate(cardId: card.id, runSeconds: next.runSeconds, walkSeconds: next.walkSeconds)])
     }
 }
