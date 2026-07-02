@@ -68,6 +68,12 @@ final class WorkoutSessionManager {
     private var latestHeartRate: Double?
     /// Detects "started running" from cadence during the warmup, to end it early.
     private var cadenceDetector = RunningCadenceDetector()
+    /// Detects "still running after the walk cue" from the same cadence stream, driving the
+    /// repeated haptic nudge and the on-screen mismatch pulse.
+    private var complianceMonitor = WalkComplianceMonitor()
+    /// True while the user is demonstrably still running during a walk phase. The active
+    /// screen pulses on this — the visual protest for a missed walk cue.
+    private(set) var gaitMismatch = false
     /// Set when the user ends the workout before the plan finishes — a progression signal.
     private var endedEarly = false
 
@@ -153,12 +159,20 @@ final class WorkoutSessionManager {
         currentZoneIndex = zone
     }
 
-    /// Feed a cadence sample (steps/minute). Only meaningful during the warmup: a sustained
-    /// running cadence ends the warmup early — the user said "let's go" with their feet.
+    /// Feed a cadence sample (steps/minute). During the warmup a sustained running cadence
+    /// ends it early — the user said "let's go" with their feet. During a recovery walk the
+    /// same stream verifies compliance (still running? → nudge).
     func receiveCadence(_ cadence: Double) {
-        guard sessionState == .active, currentPhase == .warmupWalk, let machine else { return }
-        if cadenceDetector.update(cadence: cadence, at: machine.sessionElapsed) {
-            skipWarmup()
+        guard sessionState == .active, let machine else { return }
+        switch currentPhase {
+        case .warmupWalk:
+            if cadenceDetector.update(cadence: cadence, at: machine.sessionElapsed) {
+                skipWarmup()
+            }
+        case .walk:
+            complianceMonitor.recordCadence(cadence, at: machine.sessionElapsed)
+        default:
+            break
         }
     }
 
@@ -214,12 +228,28 @@ final class WorkoutSessionManager {
 
         if let transition = result.transition {
             haptics.play(for: transition.to.isRun ? .toRun : .toWalk)
+            if transition.to == .walk {
+                complianceMonitor.walkStarted(at: machine.sessionElapsed)
+            } else {
+                complianceMonitor.walkEnded()
+            }
+            gaitMismatch = false
         }
         if let adaptation = result.adaptation {
             showAdaptation(adaptation)
         }
         if result.isComplete {
             finish()
+        }
+
+        // Compliance check: still running after the walk cue? Re-buzz (rate-limited, capped)
+        // and let the screen pulse until the feet agree with the plan.
+        if currentPhase == .walk {
+            let assessment = complianceMonitor.assess(at: machine.sessionElapsed)
+            if assessment.shouldNudge { haptics.playWalkNudge() }
+            gaitMismatch = assessment.isMismatched
+        } else if gaitMismatch {
+            gaitMismatch = false
         }
     }
 
@@ -307,6 +337,8 @@ final class WorkoutSessionManager {
         latestZone = nil
         latestHeartRate = nil
         cadenceDetector = RunningCadenceDetector()
+        complianceMonitor = WalkComplianceMonitor()
+        gaitMismatch = false
         endedEarly = false
         currentHeartRate = 0
         currentZoneIndex = nil

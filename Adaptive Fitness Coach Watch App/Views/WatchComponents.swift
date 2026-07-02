@@ -53,6 +53,8 @@ struct ZoneBarView: View {
     let currentZoneIndex: Int?
     /// The aerobic target zone position (marked as the "good" band).
     let targetZoneIndex: Int
+    /// Extra reason to pulse (e.g. cadence says the user is still running during a walk).
+    var emphasize: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var hotPulse = false
@@ -76,6 +78,7 @@ struct ZoneBarView: View {
     private var activeSlot: Int? { currentZoneIndex.map(slot(forPosition:)) }
     private var targetSlot: Int { slot(forPosition: targetZoneIndex) }
     private var isHot: Bool { (activeSlot ?? 0) > targetSlot }
+    private var shouldPulse: Bool { isHot || emphasize }
 
     var body: some View {
         // One clear element: the active segment dominates (taller, full color, soft glow), the
@@ -92,13 +95,13 @@ struct ZoneBarView: View {
                     )
                     .shadow(color: isActive ? color(for: slot).opacity(0.6) : .clear,
                             radius: isActive ? 5 : 0)
-                    .scaleEffect(y: isActive && isHot && hotPulse ? 1.3 : 1.0, anchor: .center)
+                    .scaleEffect(y: isActive && shouldPulse && hotPulse ? 1.3 : 1.0, anchor: .center)
             }
         }
         .frame(height: 14)
         .animation(.easeInOut(duration: 0.3), value: activeSlot)
-        .onChange(of: isHot) { _, hot in
-            if hot && !reduceMotion {
+        .onChange(of: shouldPulse, initial: true) { _, pulse in
+            if pulse && !reduceMotion {
                 withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) { hotPulse = true }
             } else {
                 withAnimation(.default) { hotPulse = false }
