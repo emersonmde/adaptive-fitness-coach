@@ -141,18 +141,21 @@ private struct CardRow: View {
     @ViewBuilder private var content: some View {
         switch card {
         case .run:
-            RunCardEditor(card: bind(\.run, wrap: WorkoutCard.run))
+            RunCardEditor(card: bind(\.run, fallback: RunCard(), wrap: WorkoutCard.run))
         case .exercise:
-            ExerciseCardEditor(item: bind(\.exercise, wrap: WorkoutCard.exercise))
+            ExerciseCardEditor(item: bind(\.exercise, fallback: StrengthExerciseItem(exerciseId: "push_up"), wrap: WorkoutCard.exercise))
         case .rest:
-            RestCardEditor(card: bind(\.rest, wrap: WorkoutCard.rest))
+            RestCardEditor(card: bind(\.rest, fallback: RestCard(), wrap: WorkoutCard.rest))
         }
     }
 
     /// Build a binding to the card's associated payload, writing the wrapped case back.
-    private func bind<T>(_ get: @escaping (WorkoutCard) -> T?, wrap: @escaping (T) -> WorkoutCard) -> Binding<T> {
+    /// The getter tolerates a stale evaluation after reorder/delete (SwiftUI can re-read a
+    /// ForEach binding whose row now holds a different case) by falling back to the last
+    /// value instead of force-unwrapping into a crash.
+    private func bind<T>(_ get: @escaping (WorkoutCard) -> T?, fallback: T, wrap: @escaping (T) -> WorkoutCard) -> Binding<T> {
         Binding(
-            get: { get(card)! },
+            get: { get(card) ?? fallback },
             set: { card = wrap($0) }
         )
     }
@@ -182,9 +185,9 @@ private struct RunCardEditor: View {
             Text("Adaptive Run")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.textPrimary)
-            MiniStepper(label: "Warm-up min", value: $card.warmupMinutes, range: 0...15, step: 1)
-            MiniStepper(label: "Run min", value: $card.durationMinutes, range: 5...90, step: 5)
-            MiniStepper(label: "Cool-down min", value: $card.cooldownMinutes, range: 0...15, step: 1)
+            MiniStepper(label: "Warm-up min", value: $card.warmupMinutes, range: 0...15, step: 1, identifier: "runWarmupStepper")
+            MiniStepper(label: "Run min", value: $card.durationMinutes, range: 5...90, step: 5, identifier: "runBlockStepper")
+            MiniStepper(label: "Cool-down min", value: $card.cooldownMinutes, range: 0...15, step: 1, identifier: "runCooldownStepper")
             Text("Warm-up and cool-down are walking. The run block alternates run/walk intervals that grow as your recovery improves.")
                 .font(.caption2)
                 .foregroundStyle(Theme.textTertiary)
@@ -302,6 +305,8 @@ private struct MiniStepper: View {
     @Binding var value: Int
     var range: ClosedRange<Int>
     var step: Int = 1
+    /// Stable identifier for UI tests (text queries break on copy changes).
+    var identifier: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -317,6 +322,19 @@ private struct MiniStepper: View {
                 button("plus", enabled: value < range.upperBound) { value = min(range.upperBound, value + step) }
             }
         }
+        // One adjustable element for VoiceOver ("Warm-up min, 5, swipe up to adjust") instead
+        // of two anonymous "plus"/"minus" buttons.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+        .accessibilityValue("\(value)")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: value = min(range.upperBound, value + step)
+            case .decrement: value = max(range.lowerBound, value - step)
+            @unknown default: break
+            }
+        }
+        .accessibilityIdentifier(identifier ?? "stepper_\(label)")
     }
 
     private func button(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {

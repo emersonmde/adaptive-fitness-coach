@@ -5,7 +5,16 @@ import AdaptiveCore
 /// strength workout in Health; this is acknowledgement, not a logging step (N1/N2).
 struct StrengthCompleteView: View {
     let summary: StrengthSummary
+    var saveState: HealthSaveState = .saved
     let onDone: () -> Void
+
+    private var saveLine: (text: String, color: Color) {
+        switch saveState {
+        case .saving: ("Saving to Health…", .secondary)
+        case .saved: ("Saved to Health", WatchTheme.strength)
+        case .unconfirmed: ("Check Health for this workout", .secondary)
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -19,14 +28,15 @@ struct StrengthCompleteView: View {
 
                 Text("Done")
                     .font(.title3.bold())
-                Text("Saved to Health")
+                Text(saveLine.text)
                     .font(.caption2)
-                    .foregroundStyle(WatchTheme.strength)
+                    .foregroundStyle(saveLine.color)
+                    .animation(.easeInOut(duration: 0.3), value: saveState)
 
                 VStack(spacing: 6) {
                     stat("Time", summary.totalDuration.clockString)
                     stat("Exercises", "\(summary.exercisesCompleted)")
-                    if let hr = summary.averageHeartRate, hr > 0 { stat("Avg HR", "\(Int(hr)) bpm") }
+                    stat("Avg HR", summary.averageHeartRate.map { "\(Int($0)) bpm" } ?? "—")
                 }
                 .padding(.top, 4)
 

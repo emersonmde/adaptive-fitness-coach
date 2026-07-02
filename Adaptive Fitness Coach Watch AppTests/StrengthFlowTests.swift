@@ -8,8 +8,10 @@ import AdaptiveCore
 /// the user-driven analogue of the run flow's tick loop — so progression, rest, weight adjust,
 /// and failure are covered without HealthKit or a clock.
 @MainActor
-private final class FailingStrengthBackend: StrengthWorkoutBackend {
+private final class FailingStrengthBackend: WorkoutBackend {
     var onHeartRate: ((Double) -> Void)?
+    var onZoneChange: ((Int?) -> Void)?
+    var onCadence: ((Double) -> Void)?
     var onFailure: (() -> Void)?
     let failOnStart: Bool
     init(failOnStart: Bool = true) { self.failOnStart = failOnStart }
@@ -113,12 +115,10 @@ struct StrengthFlowTests {
         await waitUntilComplete(manager)
         #expect(manager.sessionState == .complete)
         #expect(manager.summary?.exercisesCompleted == 3)
-        // Average HR fills in from the background HealthKit finalize.
-        for _ in 0..<200 {
-            if manager.summary?.averageHeartRate != nil { break }
-            await Task.yield()
-        }
+        // Average HR fills in from the background HealthKit finalize (deterministic seam).
+        await manager.finalizeTask?.value
         #expect(manager.summary?.averageHeartRate == 121)
+        #expect(manager.healthSaveState == .saved)
     }
 
     // MARK: - Weight adjust (N7 seed, applies across rounds)

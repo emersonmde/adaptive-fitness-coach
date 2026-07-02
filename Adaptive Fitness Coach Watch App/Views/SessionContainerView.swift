@@ -107,10 +107,6 @@ struct SessionContainerView: View {
         return store.nextRoutine(fromWeekday: weekday, hour: hour, minute: minute)
     }
 
-    /// The next routine's Apple-workout blocks (run/strength runs of cards). More than one ⇒ mixed.
-    private var blocks: [WorkoutBlock] {
-        (nextRoutine?.expandedCards ?? []).workoutBlocks()
-    }
 }
 
 /// The run flow: A1 launch → A2/A3 active (+ A4 overlay) → A5 complete. State lives in the
@@ -127,6 +123,10 @@ struct RunSessionContainerView: View {
     @State private var manager: WorkoutSessionManager
     /// Seeds actually used this session (defaults → possibly calibrated at start).
     @State private var activeCard: RunCard?
+    /// The routine this session actually started from, snapshotted at start — `nextRoutine`
+    /// is wall-clock-derived and can point at a *different* routine by the time a long run
+    /// completes, which would attribute the outcome to the wrong card.
+    @State private var activeRoutineId: UUID?
     /// The quiet "Next run: …" line for the summary — how the user perceives adaptation.
     @State private var nextRunNote: String?
     private let simulate: Bool
@@ -197,13 +197,13 @@ struct RunSessionContainerView: View {
     private func recordOutcome(_ summary: SessionSummary) {
         guard !simulate,
               let record = recordRunProgression,
-              let routine = effectiveRoutine, routine.firstRunCard != nil else { return }
+              let routineId = activeRoutineId else { return }
         let card = sessionCard
         let current = RunSeeds(runSeconds: card.runSeconds, walkSeconds: card.walkSeconds)
         let next = RunProgressionPolicy().nextSeeds(current: current, outcome: RunSessionOutcome(summary: summary))
         guard next != current || !card.seedsCalibrated else { return }
         nextRunNote = RunSeeds.progressionNote(from: current, to: next, blockSeconds: card.durationMinutes * 60)
-        record(routine.id, [RunProgressionUpdate(cardId: card.id, runSeconds: next.runSeconds, walkSeconds: next.walkSeconds)])
+        record(routineId, [RunProgressionUpdate(cardId: card.id, runSeconds: next.runSeconds, walkSeconds: next.walkSeconds)])
     }
 
     /// The next adaptive-run routine to surface on the launch screen, based on the current
@@ -245,6 +245,7 @@ struct RunSessionContainerView: View {
             // keeps the conservative defaults (N6).
             Task {
                 var card = sessionCard
+                activeRoutineId = effectiveRoutine?.id // snapshot before the clock can move on
                 if card.needsCalibration, let seeds = await HealthFitnessCalibrator.calibratedSeeds() {
                     card.runSeconds = seeds.runSeconds
                     card.walkSeconds = seeds.walkSeconds

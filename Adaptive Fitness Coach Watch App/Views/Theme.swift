@@ -25,9 +25,10 @@ enum WatchTheme {
     /// and red-green color deficiency — a real-run glance misread amber WALK as RUN). Warm =
     /// effort, cool = recover; cyan-leaning so it never reads as `strength`'s royal blue.
     static let recover = Color(hex: 0x3EC5FF)
-    /// Heat amber. No longer the walk-phase color — it keeps its *gradient* jobs: the zone
-    /// ladder's threshold step and the strength rest ring.
-    static let walk = Color(hex: 0xFFB23E)
+    /// Heat amber. Not a phase color — it serves *gradient* jobs only: the zone ladder's
+    /// threshold step and the strength rest ring. (Named `heat`, not `walk`, so nobody
+    /// reaches for it as the walk-phase color again.)
+    static let heat = Color(hex: 0xFFB23E)
     static let hot = Color(hex: 0xFF5A4D)   // sustained-high HR
     static let strength = Color(hex: 0x4C8DFF)
 
@@ -36,7 +37,6 @@ enum WatchTheme {
     static let runField = Color(hex: 0x06180C)
     /// Recover's colored ground — a deep cool-blue lift of true black, matching `recover`.
     static let recoverField = Color(hex: 0x061520)
-    static let walkField = Color(hex: 0x1A1206)
     /// Strength's colored ground — a deep blue lift of true black, matching `strength`.
     static let strengthField = Color(hex: 0x070E1C)
 

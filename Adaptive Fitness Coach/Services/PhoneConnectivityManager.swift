@@ -47,7 +47,17 @@ extension PhoneConnectivityManager: WCSessionDelegate {
         _ session: WCSession,
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
-    ) {}
+    ) {
+        // The launch-time sync races activation (`sync` bails while not yet .activated), so a
+        // first install would leave the watch empty until the user's next edit. Re-push the
+        // current set the moment activation lands.
+        guard activationState == .activated else { return }
+        Task { @MainActor in
+            if let routines = self.store?.routines, !routines.isEmpty {
+                self.sync(routines: routines)
+            }
+        }
+    }
 
     // Required on iOS so the session can re-activate after switching watches.
     nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}

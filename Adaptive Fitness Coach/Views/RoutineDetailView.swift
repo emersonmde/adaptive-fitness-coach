@@ -193,7 +193,10 @@ struct RoutineDetailView: View {
     /// Apply an edit, persist it, and reflect it in the Calendar. `promptCalendar` requests
     /// access (only when the user just turned the calendar toggle on).
     private func commit(promptCalendar: Bool = false, _ mutate: (inout Routine) -> Void) {
-        guard var routine = draft else { return }
+        // Mutate the STORE's current copy, not the (possibly stale) draft: a watch
+        // progression can land while this screen is open, and writing the cached draft back
+        // would silently revert it. The draft is a view cache; the store is the truth.
+        guard var routine = store.routines.first(where: { $0.id == routineID }) ?? draft else { return }
         mutate(&routine)
         draft = routine
         store.update(routine)

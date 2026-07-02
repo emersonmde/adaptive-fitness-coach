@@ -87,7 +87,7 @@ struct ZoneBarView: View {
         case 0: WatchTheme.strength      // recovery / low
         case 1: WatchTheme.run           // aerobic
         case 2: Color(hex: 0xFFD23E)     // tempo
-        case 3: WatchTheme.walk          // threshold
+        case 3: WatchTheme.heat          // threshold
         default: WatchTheme.hot          // max
         }
     }
@@ -128,6 +128,14 @@ struct ZoneBarView: View {
                 withAnimation(.default) { hotPulse = false }
             }
         }
-        .accessibilityHidden(true)
+        .accessibilityElement()
+        .accessibilityLabel("Heart rate zone")
+        .accessibilityValue(zoneAccessibilityValue)
+    }
+
+    private var zoneAccessibilityValue: String {
+        guard let activeSlot else { return "no reading" }
+        let position = "zone \(activeSlot + 1) of \(zoneCount)"
+        return isHot ? "\(position), above target" : position
     }
 }

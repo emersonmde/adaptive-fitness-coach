@@ -19,8 +19,8 @@ public enum FitnessCalibration {
         }
     }
 
-    /// The default seeds for a user with no signal at all.
-    public static let beginnerSeeds = RunSeeds(runSeconds: 90, walkSeconds: 120)
+    /// The default seeds for a user with no signal at all — the factory seeds unchanged.
+    public static let beginnerSeeds = RunSeeds.factoryDefault
     /// Some running history / decent VO2max: 5-minute intervals with short recoveries.
     public static let intermediateSeeds = RunSeeds(runSeconds: 300, walkSeconds: 90)
     /// A demonstrated regular runner: effectively continuous (the plan factory turns a run

@@ -79,8 +79,8 @@ public struct RunCard: Codable, Sendable, Hashable, Identifiable {
         durationMinutes: Int = 20,
         warmupMinutes: Int = 5,
         cooldownMinutes: Int = 5,
-        runSeconds: Int = 90,
-        walkSeconds: Int = 120,
+        runSeconds: Int = RunSeeds.factoryDefault.runSeconds,
+        walkSeconds: Int = RunSeeds.factoryDefault.walkSeconds,
         seedsCalibrated: Bool = false
     ) {
         self.id = id
@@ -94,7 +94,7 @@ public struct RunCard: Codable, Sendable, Hashable, Identifiable {
 
     /// True while the seeds are the untouched factory defaults with no evidence behind them.
     public var needsCalibration: Bool {
-        !seedsCalibrated && runSeconds == 90 && walkSeconds == 120
+        !seedsCalibrated && RunSeeds(runSeconds: runSeconds, walkSeconds: walkSeconds) == .factoryDefault
     }
 
     /// Total planned session length in minutes (warmup + run block + cooldown).
@@ -112,8 +112,8 @@ public struct RunCard: Codable, Sendable, Hashable, Identifiable {
         // both devices must keep decoding across the upgrade).
         warmupMinutes = try container.decodeIfPresent(Int.self, forKey: .warmupMinutes) ?? 5
         cooldownMinutes = try container.decodeIfPresent(Int.self, forKey: .cooldownMinutes) ?? 5
-        runSeconds = try container.decodeIfPresent(Int.self, forKey: .runSeconds) ?? 90
-        walkSeconds = try container.decodeIfPresent(Int.self, forKey: .walkSeconds) ?? 120
+        runSeconds = try container.decodeIfPresent(Int.self, forKey: .runSeconds) ?? RunSeeds.factoryDefault.runSeconds
+        walkSeconds = try container.decodeIfPresent(Int.self, forKey: .walkSeconds) ?? RunSeeds.factoryDefault.walkSeconds
         seedsCalibrated = try container.decodeIfPresent(Bool.self, forKey: .seedsCalibrated) ?? false
     }
 }

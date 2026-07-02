@@ -142,6 +142,53 @@ struct RunProgressionPolicyTests {
         }())
         #expect(next.runSeconds == 112) // plain single-notch advance
     }
+
+    @Test func snapGateComparesAgainstTheSeedTheUserRanWith() {
+        // Clean session that sustained 150s from a 90s seed: 150 ≥ 1.5×90, so the snap fires
+        // even though the post-advance seed (112) would have raised the bar to 168.
+        let next = policy.nextSeeds(current: seeds, outcome: {
+            var o = outcome(); o.longestRunSeconds = 150; return o
+        }())
+        #expect(next.runSeconds == 150)
+    }
+
+    @Test func regressNeverShortensAnAlreadyLongWalkSeed() {
+        // A walk seed legitimately above the policy cap (e.g. synced from elsewhere) must not
+        // be *reduced* by a struggle — that's the effort-raising direction.
+        let current = RunSeeds(runSeconds: 90, walkSeconds: 240)
+        let next = policy.nextSeeds(current: current, outcome: outcome(backOffs: 3))
+        #expect(next.walkSeconds == 240)
+    }
+
+    @Test func seedsStayInBandForAllOutcomes() {
+        // Property-style sweep: whatever the outcome, the policy never emits out-of-band
+        // seeds, clean never lowers the run seed, struggle never raises it.
+        for run in [30, 90, 200, 600] {
+            for walk in [60, 120, 180] {
+                let current = RunSeeds(runSeconds: run, walkSeconds: walk)
+                for backOffs in [0, 1, 3] {
+                    for completed in [0, 3, 6] {
+                        for endedEarly in [false, true] {
+                            let o = RunSessionOutcome(
+                                plannedRunIntervals: 6, completedRunIntervals: completed,
+                                runBackOffCount: backOffs, walksHitCap: 0,
+                                fastRecoveries: completed, endedEarly: endedEarly
+                            )
+                            let next = policy.nextSeeds(current: current, outcome: o)
+                            #expect(next.runSeconds >= policy.minRunSeconds)
+                            #expect(next.walkSeconds >= policy.minWalkSeconds)
+                            #expect(next.walkSeconds <= max(walk, policy.maxWalkSeconds))
+                            if backOffs >= policy.regressBackOffCount {
+                                #expect(next.runSeconds <= current.runSeconds)
+                            } else if completed >= 6, !endedEarly, backOffs == 0 {
+                                #expect(next.runSeconds >= current.runSeconds)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 // MARK: - FitnessCalibration (Health history → starting seeds)
@@ -274,6 +321,34 @@ struct RunProgressionSyncTests {
     }
 
     @MainActor
+    @Test func claudeRoundTripPreservesRunProgression() throws {
+        // Export omits run seeds by design; import must graft the existing card's identity
+        // and earned progression back on, or every round-trip wipes the product's core state.
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let store = RoutineStore(fileURL: dir.appendingPathComponent("routines.json"))
+        let card = RunCard(durationMinutes: 20, runSeconds: 210, walkSeconds: 75, seedsCalibrated: true)
+        store.add(Routine(name: "Morning Run", cards: [.run(card)]))
+
+        // Round-trip through the exchange format (what a no-edit Claude session returns).
+        let reimported = try RoutineExchange.importRoutines(fromJSON: RoutineExchange.exportJSON(store.routines))
+        store.importRoutines(reimported)
+
+        let survived = store.routines.first?.firstRunCard
+        #expect(survived?.id == card.id)                 // in-flight progression updates still route
+        #expect(survived?.runSeconds == 210)             // earned seeds intact
+        #expect(survived?.walkSeconds == 75)
+        #expect(survived?.seedsCalibrated == true)       // cold-start calibration won't re-run
+
+        // An edited SHAPE still lands: bump the block length in the exchange payload.
+        var edited = reimported
+        if case var .run(c) = edited[0].cards[0] { c.durationMinutes = 30; edited[0].cards[0] = .run(c) }
+        store.importRoutines(edited)
+        #expect(store.routines.first?.firstRunCard?.durationMinutes == 30)
+        #expect(store.routines.first?.firstRunCard?.runSeconds == 210)
+    }
+
+    @MainActor
     @Test func storeAppliesRunBatchIdempotently() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -316,9 +391,16 @@ struct RunWalkPlanTests {
     }
 
     @Test func runSeedCoveringTheBlockMeansContinuousRunning() {
+        // The continuous segment covers the BLOCK, never the raw seed — a 3600s calibration
+        // sentinel must not turn a 20-minute session into an uncompletable 60-minute segment
+        // (which would read as a bail and regress the fittest users).
         let plan = IntervalPlan.runWalk(runSeconds: 1300, walkSeconds: 90, blockDuration: 1200, warmup: 300, cooldown: 300)
         #expect(plan.runIntervalCount == 1)
-        #expect(plan.segments[1].targetDuration == 1300)
+        #expect(plan.segments[1].targetDuration == 1200)
+
+        let calibrated = IntervalPlan.plan(for: RunCard(durationMinutes: 20, runSeconds: 3600, walkSeconds: 60))
+        #expect(calibrated.runIntervalCount == 1)
+        #expect(calibrated.segments[1].targetDuration == 1200)
     }
 
     @Test func tinyBlockStillGetsOneCycle() {

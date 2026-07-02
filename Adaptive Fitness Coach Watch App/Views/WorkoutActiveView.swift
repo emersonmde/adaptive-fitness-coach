@@ -132,7 +132,7 @@ struct WorkoutActiveView: View {
                 withAnimation(.default) { switchPulse = false }
             }
         }
-        .onChange(of: manager.gaitMismatch) { _, mismatched in
+        .onChange(of: manager.gaitMismatch, initial: true) { _, mismatched in
             if mismatched && !reduceMotion {
                 withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { mismatchPulse = true }
             } else {

@@ -42,7 +42,7 @@ struct StrengthSessionContainerView: View {
                 StrengthSessionPager(manager: manager)
             case .complete:
                 if let summary = manager.summary {
-                    StrengthCompleteView(summary: summary) { manager.reset(); onFinish?() }
+                    StrengthCompleteView(summary: summary, saveState: manager.healthSaveState) { manager.reset(); onFinish?() }
                 } else {
                     ProgressView()
                 }

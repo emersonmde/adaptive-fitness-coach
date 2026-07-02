@@ -17,8 +17,11 @@ struct StrengthSessionPager: View {
 
     var body: some View {
         if manager.activity == .rest, let seconds = manager.currentRestSeconds {
-            // A rest card takes over the whole screen — nothing to do but recover.
+            // A rest card takes over the whole screen — nothing to do but recover. Keyed by
+            // card index so back-to-back rest cards get fresh state (same identity would keep
+            // the previous card's expired countdown frozen at 0:00).
             RestView(seconds: seconds) { manager.advance() }
+                .id(manager.currentIndex)
         } else {
             TabView(selection: $selection) {
                 StrengthControlsView(manager: manager).tag(Page.controls)
@@ -296,12 +299,12 @@ struct RestView: View {
                 Text("REST")
                     .font(.caption.weight(.semibold))
                     .tracking(2)
-                    .foregroundStyle(WatchTheme.walk)
+                    .foregroundStyle(WatchTheme.heat)
                 ZStack {
-                    Circle().stroke(WatchTheme.walk.opacity(0.18), lineWidth: 7)
+                    Circle().stroke(WatchTheme.heat.opacity(0.18), lineWidth: 7)
                     Circle()
                         .trim(from: 0, to: progress)
-                        .stroke(WatchTheme.walk, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                        .stroke(WatchTheme.heat, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                         .animation(.linear(duration: reduceMotion ? 0 : 1), value: remaining)
                     Text(remaining.clockString)
@@ -312,7 +315,7 @@ struct RestView: View {
                 .frame(width: 104, height: 104)
                 Button("Skip rest") { finish() }
                     .buttonStyle(.bordered)
-                    .tint(WatchTheme.walk)
+                    .tint(WatchTheme.heat)
             }
         }
         .onAppear(perform: start)

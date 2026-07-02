@@ -19,6 +19,10 @@ public enum RoutineExchange {
     public enum ExchangeError: Error, Equatable {
         case notJSON
         case unrecognizedSchema
+        /// The payload declares a schema version newer than this build understands. Rejecting
+        /// (rather than best-effort parsing) mirrors `WCMessageCodec`'s exact-version
+        /// discipline — never silently mis-decode under old rules.
+        case unsupportedVersion(Int)
         case noRoutines
     }
 
@@ -97,6 +101,7 @@ public enum RoutineExchange {
         let exchangeRoutines: [ExchangeRoutine]
         if let envelope = try? decoder.decode(Envelope.self, from: data) {
             guard envelope.schema == schemaName else { throw ExchangeError.unrecognizedSchema }
+            guard envelope.version <= schemaVersion else { throw ExchangeError.unsupportedVersion(envelope.version) }
             exchangeRoutines = envelope.routines
         } else if let bare = try? decoder.decode([ExchangeRoutine].self, from: data) {
             exchangeRoutines = bare   // tolerate a bare array (no envelope)
@@ -125,9 +130,19 @@ public enum RoutineExchange {
         }
     }
 
-    /// Pull the first top-level JSON object/array out of arbitrary text (handles ```json fences and
-    /// chatter around the payload). Returns the raw `Data` to decode.
+    /// Pull the payload JSON out of arbitrary text. A fenced ```json block is preferred when
+    /// present (prose like "here's [1] your update" would otherwise win the first-bracket
+    /// scan and sink the whole import); otherwise fall back to the first balanced object/array.
     private static func extractJSONObject(from text: String) -> Data? {
+        if let fenceRange = text.range(of: "```json"),
+           let fenced = extractFirstBalanced(from: String(text[fenceRange.upperBound...])) {
+            return fenced
+        }
+        return extractFirstBalanced(from: text)
+    }
+
+    /// The first balanced top-level JSON object/array in `text`, as `Data`.
+    private static func extractFirstBalanced(from text: String) -> Data? {
         let openers: [Character: Character] = ["{": "}", "[": "]"]
         guard let startIndex = text.firstIndex(where: { openers.keys.contains($0) }) else { return nil }
         let opener = text[startIndex]
@@ -266,11 +281,13 @@ private extension DayOfWeek {
 }
 
 private extension ScheduleTime {
-    /// Parse "HH:mm" / "H:mm" (24h), clamped to valid ranges. nil for missing/garbage.
+    /// Parse "HH:mm" / "H:mm" (24h). nil for missing or out-of-range values — a nonsense
+    /// time ("99:99") is rejected rather than clamped to a time the user never asked for.
     static func parse(_ string: String?) -> ScheduleTime? {
         guard let string else { return nil }
         let parts = string.split(separator: ":")
-        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]) else { return nil }
-        return ScheduleTime(hour: min(23, max(0, h)), minute: min(59, max(0, m)))
+        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]),
+              (0...23).contains(h), (0...59).contains(m) else { return nil }
+        return ScheduleTime(hour: h, minute: m)
     }
 }

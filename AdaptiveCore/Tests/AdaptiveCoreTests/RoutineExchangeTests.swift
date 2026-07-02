@@ -121,4 +121,30 @@ struct RoutineExchangeTests {
         #expect(md.contains("## Push Day"))
         #expect(md.contains("Dumbbell Bench Press"))
     }
+
+    @Test func rejectsNewerSchemaVersion() {
+        let json = #"{"schema":"adaptive-fitness-coach/routines","version":7,"routines":[{"name":"R","cards":[{"type":"run","minutes":20}]}]}"#
+        #expect(throws: RoutineExchange.ExchangeError.unsupportedVersion(7)) {
+            try RoutineExchange.importRoutines(fromJSON: json)
+        }
+    }
+
+    @Test func fencedPayloadWinsOverEarlierBracketsInProse() throws {
+        // Chatter containing brackets before the fence must not sink the import.
+        let text = """
+        Here's [1] your updated plan (see notes {above}):
+        ```json
+        {"schema":"adaptive-fitness-coach/routines","version":1,"routines":[{"name":"Tempo","cards":[{"type":"run","minutes":25}]}]}
+        ```
+        """
+        let routines = try RoutineExchange.importRoutines(fromJSON: text)
+        #expect(routines.first?.name == "Tempo")
+        #expect(routines.first?.firstRunCard?.durationMinutes == 25)
+    }
+
+    @Test func garbageScheduleTimeIsRejectedNotClamped() throws {
+        let json = #"{"schema":"adaptive-fitness-coach/routines","version":1,"routines":[{"name":"R","time":"99:99","cards":[{"type":"run","minutes":20}]}]}"#
+        let routines = try RoutineExchange.importRoutines(fromJSON: json)
+        #expect(routines.first?.scheduleTime == nil)
+    }
 }

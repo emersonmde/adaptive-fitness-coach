@@ -5,8 +5,10 @@ import Foundation
 /// tests. Emits a gently varying heart rate so the live readout is populated, and reports a
 /// plausible average at the end. Cannot fail.
 @MainActor
-final class SimulatedStrengthBackend: StrengthWorkoutBackend {
+final class SimulatedStrengthBackend: WorkoutBackend {
     var onHeartRate: ((Double) -> Void)?
+    var onZoneChange: ((Int?) -> Void)?   // strength emits no zones
+    var onCadence: ((Double) -> Void)?    // and no cadence
     var onFailure: (() -> Void)? // never invoked; the simulated workout cannot fail
 
     private var task: Task<Void, Never>?

@@ -23,10 +23,12 @@ public struct AdaptationConfig: Sendable, Hashable {
     public var hardBackOffZoneDelta: Int
     /// A run must last at least this long before the hard ceiling can end it.
     public var hardBackOffMinRun: TimeInterval
-    /// Whether a comfortable run may be extended past its planned end. Off by default — see above.
+    /// Whether a comfortable run may always be extended past its planned end. Off by default
+    /// (see above); independent of the per-session evidence gate the caller can pass to
+    /// `evaluateRun(extensionUnlocked:)` once demonstrated recovery has earned it.
     public var allowRunExtension: Bool
-    /// Sustained seconds at/below target zone before a run is extended (only when
-    /// `allowRunExtension` is true).
+    /// Sustained seconds at/below target zone before a run is extended (when extension is
+    /// permitted by config or by the evidence gate).
     public var extendWindow: TimeInterval
     /// Sustained seconds recovered before a walk is ended early.
     public var recoverWindow: TimeInterval

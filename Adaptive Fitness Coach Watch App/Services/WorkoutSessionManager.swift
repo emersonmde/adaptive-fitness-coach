@@ -86,6 +86,17 @@ final class WorkoutSessionManager {
     private var lastTickDate: Date?
     private var adaptationClearTask: Task<Void, Never>?
     private var isFinishing = false
+    /// Guards `begin` across its suspension points: `sessionState` stays `.idle` while the
+    /// backend starts, so without this a double-tap on Start could pass the state guard twice
+    /// and leave a second, orphaned `HKWorkoutSession` running.
+    private var isBeginning = false
+    /// Incremented on `reset()`. The background HealthKit finalize captures the generation it
+    /// belongs to, so a slow finalize from session A can never write its totals into session
+    /// B's summary after a reset-and-restart.
+    private var sessionGeneration = 0
+    /// The in-flight background finalize, exposed so tests can `await` it deterministically
+    /// instead of yield-polling.
+    private(set) var finalizeTask: Task<Void, Never>?
 
     private let haptics = HapticManager()
 
@@ -107,7 +118,9 @@ final class WorkoutSessionManager {
 
     /// Set up the backend and engine and go active. Awaitable so tests can drive ticks after.
     func begin(config: SessionConfig, routineName: String, adaptationConfig: AdaptationConfig = AdaptationConfig()) async {
-        guard sessionState == .idle else { return }
+        guard sessionState == .idle, !isBeginning else { return }
+        isBeginning = true
+        defer { isBeginning = false }
         self.routineName = routineName
 
         let backend = injectedBackend ?? HealthKitWorkoutBackend()
@@ -142,12 +155,15 @@ final class WorkoutSessionManager {
         if autoTick { startTicking() }
     }
 
-    /// The session failed after starting (sensor loss, OS termination). Stop the loop and
-    /// surface the failure rather than ticking guidance against a dead workout (N6).
+    /// The session failed after starting (sensor loss, OS termination). Stop the loop, ask
+    /// the backend to wind down whatever survives (fire-and-forget — the session may already
+    /// be dead), and surface the failure rather than ticking against a dead workout (N6).
     private func handleFailure() {
         guard sessionState == .active else { return }
         tickTask?.cancel(); tickTask = nil
+        let failedBackend = backend
         backend = nil
+        Task { _ = await failedBackend?.end() }
         sessionState = .failed
     }
 
@@ -322,13 +338,15 @@ final class WorkoutSessionManager {
         haptics.playComplete()
 
         // Finalize with the OS off the critical path. The backend is captured strongly so a
-        // reset/dismiss can't abandon HealthKit mid-finalize; the state guard keeps a late
-        // result from touching a session that has since been reset.
+        // reset/dismiss can't abandon HealthKit mid-finalize; the generation token keeps a
+        // slow finalize from a *previous* session from resurrecting its totals into a new
+        // session's summary after reset-and-restart.
         let finishingBackend = backend
+        let generation = sessionGeneration
         backend = nil
-        Task { [weak self] in
+        finalizeTask = Task { [weak self] in
             let totals = await finishingBackend?.end() ?? WorkoutTotals()
-            guard let self, self.sessionState == .complete else { return }
+            guard let self, self.sessionGeneration == generation, self.sessionState == .complete else { return }
             if var filled = self.summary {
                 filled.totalDistance = totals.distanceMeters
                 filled.averageHeartRate = totals.averageHeartRate
@@ -340,6 +358,8 @@ final class WorkoutSessionManager {
 
     /// Reset to idle so a new session can start (e.g. after dismissing the summary).
     func reset() {
+        sessionGeneration += 1
+        finalizeTask = nil
         tickTask?.cancel(); tickTask = nil
         adaptationClearTask?.cancel(); adaptationClearTask = nil
         isFinishing = false

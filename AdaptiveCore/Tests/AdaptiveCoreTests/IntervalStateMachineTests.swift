@@ -295,6 +295,17 @@ struct IntervalStateMachineTests {
         #expect(machine.walksHitCap == 1) // rode the walk all the way to the cap
     }
 
+    @Test func heartRateDropoutDuringAWalkRecordsNoRecovery() {
+        // HR present through the run, gone for the whole walk: the stale pre-walk reading
+        // proves nothing — recording a near-zero "drop" would fabricate a poor recovery (N6).
+        var machine = IntervalStateMachine(config: config([(.run, 5), (.walk, 70), (.run, 3)]))
+        _ = drive(&machine, sample: { elapsed in
+            elapsed <= 5 ? WorkoutSample(zone: 2, heartRate: 160)
+                         : WorkoutSample(zone: 2, heartRate: nil)
+        }, maxSeconds: 90)
+        #expect(machine.recoveryDrops.isEmpty)
+    }
+
     @Test func recoveryDropIsRecordedPerWalk() {
         var machine = IntervalStateMachine(config: config([(.run, 5), (.walk, 5), (.cooldownWalk, 2)]))
         _ = drive(&machine, sample: { elapsed in
