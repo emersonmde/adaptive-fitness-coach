@@ -24,7 +24,7 @@ struct AdaptationCue: View {
         }
     }
 
-    private var color: Color { pushing ? WatchTheme.run : WatchTheme.walk }
+    private var color: Color { pushing ? WatchTheme.run : WatchTheme.recover }
 
     var body: some View {
         HStack(spacing: 5) {

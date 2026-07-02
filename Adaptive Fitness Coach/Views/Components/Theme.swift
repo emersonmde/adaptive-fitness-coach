@@ -38,7 +38,8 @@ enum Theme {
 
     // Workout-state semantics (shared language with the watch)
     static let run = Color(hex: 0x34E27A)       // run / work
-    static let walk = Color(hex: 0xFFB23E)      // walk / recovery
+    static let recover = Color(hex: 0x3EC5FF)   // walk / recovery (cool blue — matches the watch)
+    static let walk = Color(hex: 0xFFB23E)      // heat amber (zone-gradient use only)
     static let strength = Color(hex: 0x4C8DFF)  // strength type
     static let hot = Color(hex: 0xFF5A4D)       // sustained-high HR / destructive
 }

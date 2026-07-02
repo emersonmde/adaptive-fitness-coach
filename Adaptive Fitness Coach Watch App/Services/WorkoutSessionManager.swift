@@ -74,6 +74,10 @@ final class WorkoutSessionManager {
     /// True while the user is demonstrably still running during a walk phase. The active
     /// screen pulses on this — the visual protest for a missed walk cue.
     private(set) var gaitMismatch = false
+    /// Walks the user ran straight through after the full nudge budget (their call —
+    /// excluded from struggle signals in progression).
+    private var walksDefied = 0
+    private var currentWalkDefied = false
     /// Set when the user ends the workout before the plan finishes — a progression signal.
     private var endedEarly = false
 
@@ -234,6 +238,7 @@ final class WorkoutSessionManager {
                 complianceMonitor.walkEnded()
             }
             gaitMismatch = false
+            currentWalkDefied = false
         }
         if let adaptation = result.adaptation {
             showAdaptation(adaptation)
@@ -243,11 +248,16 @@ final class WorkoutSessionManager {
         }
 
         // Compliance check: still running after the walk cue? Re-buzz (rate-limited, capped)
-        // and let the screen pulse until the feet agree with the plan.
+        // and let the screen pulse until the feet agree — or until the budget is spent and
+        // continued running is accepted as the user's call (screen calms, walk marked defied).
         if currentPhase == .walk {
             let assessment = complianceMonitor.assess(at: machine.sessionElapsed)
             if assessment.shouldNudge { haptics.playWalkNudge() }
             gaitMismatch = assessment.isMismatched
+            if assessment.accepted, !currentWalkDefied {
+                currentWalkDefied = true
+                walksDefied += 1
+            }
         } else if gaitMismatch {
             gaitMismatch = false
         }
@@ -301,6 +311,7 @@ final class WorkoutSessionManager {
             plannedRunIntervals: totalRunIntervals,
             runBackOffCount: machine?.runBackOffCount ?? 0,
             walksHitCap: machine?.walksHitCap ?? 0,
+            walksDefied: walksDefied,
             fastRecoveries: machine?.fastRecoveries ?? 0,
             longestRunSeconds: machine?.longestRunInterval ?? 0,
             meanRecoveryDrop: machine?.meanRecoveryDrop,
@@ -339,6 +350,8 @@ final class WorkoutSessionManager {
         cadenceDetector = RunningCadenceDetector()
         complianceMonitor = WalkComplianceMonitor()
         gaitMismatch = false
+        walksDefied = 0
+        currentWalkDefied = false
         endedEarly = false
         currentHeartRate = 0
         currentZoneIndex = nil

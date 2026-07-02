@@ -20,13 +20,22 @@ enum WatchTheme {
     static let surface1 = Color(hex: 0x121317)
 
     static let run = Color(hex: 0x34E27A)   // work / running
-    static let walk = Color(hex: 0xFFB23E)  // recover / walking
+    /// Recover / walking — a cool cyan-leaning sky blue. Deliberately the far side of the hue
+    /// wheel from `run` (green↔amber is the axis that fails first under sunlight, motion blur,
+    /// and red-green color deficiency — a real-run glance misread amber WALK as RUN). Warm =
+    /// effort, cool = recover; cyan-leaning so it never reads as `strength`'s royal blue.
+    static let recover = Color(hex: 0x3EC5FF)
+    /// Heat amber. No longer the walk-phase color — it keeps its *gradient* jobs: the zone
+    /// ladder's threshold step and the strength rest ring.
+    static let walk = Color(hex: 0xFFB23E)
     static let hot = Color(hex: 0xFF5A4D)   // sustained-high HR
     static let strength = Color(hex: 0x4C8DFF)
 
     /// Deep tinted-black fields behind the interval verb — the colored ground telegraphs state
     /// before the word is read.
     static let runField = Color(hex: 0x06180C)
+    /// Recover's colored ground — a deep cool-blue lift of true black, matching `recover`.
+    static let recoverField = Color(hex: 0x061520)
     static let walkField = Color(hex: 0x1A1206)
     /// Strength's colored ground — a deep blue lift of true black, matching `strength`.
     static let strengthField = Color(hex: 0x070E1C)

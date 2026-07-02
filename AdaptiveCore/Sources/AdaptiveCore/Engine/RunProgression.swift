@@ -11,6 +11,9 @@ public struct RunSessionOutcome: Sendable, Hashable {
     public var runBackOffCount: Int
     /// Walks that hit the max-walk cap still unrecovered.
     public var walksHitCap: Int
+    /// Walks the user chose to run through (cadence-verified). Their poor recovery numbers
+    /// are an artifact of the choice — they never count as struggle signals.
+    public var walksDefied: Int
     /// Walks that ended at the floor — recovery confirmed as early as the rules allow.
     public var fastRecoveries: Int
     /// Longest single run interval sustained this session, seconds. With extension unlocked
@@ -26,6 +29,7 @@ public struct RunSessionOutcome: Sendable, Hashable {
         completedRunIntervals: Int,
         runBackOffCount: Int,
         walksHitCap: Int,
+        walksDefied: Int = 0,
         fastRecoveries: Int = 0,
         longestRunSeconds: TimeInterval = 0,
         meanRecoveryDrop: Double? = nil,
@@ -35,6 +39,7 @@ public struct RunSessionOutcome: Sendable, Hashable {
         self.completedRunIntervals = completedRunIntervals
         self.runBackOffCount = runBackOffCount
         self.walksHitCap = walksHitCap
+        self.walksDefied = walksDefied
         self.fastRecoveries = fastRecoveries
         self.longestRunSeconds = longestRunSeconds
         self.meanRecoveryDrop = meanRecoveryDrop
@@ -47,6 +52,7 @@ public struct RunSessionOutcome: Sendable, Hashable {
             completedRunIntervals: summary.intervalsCompleted,
             runBackOffCount: summary.runBackOffCount,
             walksHitCap: summary.walksHitCap,
+            walksDefied: summary.walksDefied,
             fastRecoveries: summary.fastRecoveries,
             longestRunSeconds: summary.longestRunSeconds,
             meanRecoveryDrop: summary.meanRecoveryDrop,
@@ -167,13 +173,16 @@ public struct RunProgressionPolicy: Sendable {
 
     /// A clean session: every planned run reached, none cut short, no walk pinned at the cap.
     /// (Recovery quality is already encoded in walk behavior — a slow recoverer lengthens
-    /// walks or hits the cap, so `meanRecoveryDrop` isn't double-counted here.)
+    /// walks or hits the cap, so `meanRecoveryDrop` isn't double-counted here.) Walks the
+    /// user ran through are excluded from the cap count: running through a walk drags HR
+    /// recovery out by construction, and punishing the choice would regress a runner for
+    /// being *too* capable.
     private func isClean(_ outcome: RunSessionOutcome) -> Bool {
         !outcome.endedEarly
             && outcome.plannedRunIntervals > 0
             && outcome.completedRunIntervals >= outcome.plannedRunIntervals
             && outcome.runBackOffCount == 0
-            && outcome.walksHitCap == 0
+            && max(0, outcome.walksHitCap - outcome.walksDefied) == 0
     }
 
     /// A strong session: clean, and every planned walk ended at the recovery floor.

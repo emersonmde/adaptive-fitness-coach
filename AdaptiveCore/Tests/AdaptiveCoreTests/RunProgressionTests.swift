@@ -75,6 +75,15 @@ struct RunProgressionPolicyTests {
         #expect(next == seeds)
     }
 
+    @Test func defiedWalksDoNotCountAsCappedStruggles() {
+        // The user ran through a walk (cadence-verified choice): its capped recovery is an
+        // artifact of the choice, so an otherwise-clean session still advances.
+        var out = outcome(capped: 1)
+        out.walksDefied = 1
+        let next = policy.nextSeeds(current: seeds, outcome: out)
+        #expect(next.runSeconds == 112) // normal clean advance, not a hold
+    }
+
     @Test func runSeedNeverRegressesBelowItsFloor() {
         let current = RunSeeds(runSeconds: 30, walkSeconds: 180)
         let next = policy.nextSeeds(current: current, outcome: outcome(backOffs: 5))

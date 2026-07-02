@@ -21,28 +21,35 @@ public struct WalkComplianceMonitor: Sendable {
     public let staleAfter: TimeInterval
     /// Minimum spacing between repeated haptic nudges.
     public let nudgeInterval: TimeInterval
-    /// Haptic nudges per walk before going quiet — after that the pulsing screen carries it
-    /// alone. A cap, not a loop: the app never buzzes indefinitely at a user who has chosen
-    /// to keep running (Q5: no nagging).
+    /// Haptic nudges per walk before the monitor concedes (Q5: no nagging).
     public let maxNudges: Int
+    /// Seconds after the last nudge before continued running is *accepted*: the user has
+    /// been reminded three times and is still running — that's a decision, not a miss. The
+    /// screen calms down, the haptics stay quiet, and the walk is flagged as defied so
+    /// progression doesn't misread it as a struggle. This is what keeps the loop from ever
+    /// fighting an experienced runner who knows what they're doing.
+    public let acceptanceDelay: TimeInterval
 
     private var walkStartedAt: TimeInterval?
     private var lastCadence: (value: Double, at: TimeInterval)?
     private var nudgesSent = 0
     private var lastNudgeAt: TimeInterval?
+    private var acceptedThisWalk = false
 
     public init(
         runningThreshold: Double = 140,
         gracePeriod: TimeInterval = 8,
         staleAfter: TimeInterval = 6,
         nudgeInterval: TimeInterval = 6,
-        maxNudges: Int = 3
+        maxNudges: Int = 3,
+        acceptanceDelay: TimeInterval = 10
     ) {
         self.runningThreshold = runningThreshold
         self.gracePeriod = gracePeriod
         self.staleAfter = staleAfter
         self.nudgeInterval = nudgeInterval
         self.maxNudges = maxNudges
+        self.acceptanceDelay = acceptanceDelay
     }
 
     /// A recovery walk began (call on the transition into `.walk`).
@@ -50,6 +57,7 @@ public struct WalkComplianceMonitor: Sendable {
         walkStartedAt = time
         nudgesSent = 0
         lastNudgeAt = nil
+        acceptedThisWalk = false
     }
 
     /// The walk ended (any transition away from `.walk`).
@@ -68,6 +76,16 @@ public struct WalkComplianceMonitor: Sendable {
         public var isMismatched: Bool
         /// Fire a haptic nudge right now (already rate-limited and capped).
         public var shouldNudge: Bool
+        /// The full nudge budget was spent and the user is still running: their call. The
+        /// pulse stops (`isMismatched` goes false with it), and the caller should record the
+        /// walk as defied so progression treats its metrics as a choice, not a struggle.
+        public var accepted: Bool
+
+        public init(isMismatched: Bool = false, shouldNudge: Bool = false, accepted: Bool = false) {
+            self.isMismatched = isMismatched
+            self.shouldNudge = shouldNudge
+            self.accepted = accepted
+        }
     }
 
     /// Assess compliance at session-elapsed `time`. Mutating because a granted nudge is
@@ -78,7 +96,16 @@ public struct WalkComplianceMonitor: Sendable {
               let sample = lastCadence,
               time - sample.at <= staleAfter,
               sample.value >= runningThreshold else {
-            return Assessment(isMismatched: false, shouldNudge: false)
+            return Assessment(accepted: acceptedThisWalk)
+        }
+
+        if acceptedThisWalk {
+            return Assessment(accepted: true)
+        }
+
+        if nudgesSent >= maxNudges, let last = lastNudgeAt, time - last >= acceptanceDelay {
+            acceptedThisWalk = true
+            return Assessment(accepted: true)
         }
 
         var nudge = false

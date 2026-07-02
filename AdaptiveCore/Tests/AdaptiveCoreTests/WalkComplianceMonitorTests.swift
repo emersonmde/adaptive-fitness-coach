@@ -28,17 +28,37 @@ struct WalkComplianceMonitorTests {
         #expect(a == .init(isMismatched: false, shouldNudge: false))
     }
 
-    @Test func nudgesAreRateLimitedAndCapped() {
+    @Test func nudgesAreRateLimitedAndCappedThenAccepted() {
         var monitor = WalkComplianceMonitor()
         monitor.walkStarted(at: 0)
         var nudges = 0
+        var acceptedAt: TimeInterval?
         for t in stride(from: 8.0, through: 60.0, by: 1.0) {
             monitor.recordCadence(150, at: t)
             let a = monitor.assess(at: t)
             if a.shouldNudge { nudges += 1 }
-            #expect(a.isMismatched) // the visual pulse persists the whole time...
+            if a.accepted, acceptedAt == nil { acceptedAt = t }
+            // Pulse and acceptance are mutually exclusive: once the user's choice is
+            // accepted the screen must calm down.
+            #expect(a.isMismatched != a.accepted)
         }
-        #expect(nudges == 3) // ...but the haptic stops nagging after the cap (Q5)
+        #expect(nudges == 3) // haptics stop nagging after the cap (Q5)
+        // Nudges at 8, 14, 20; acceptance 10s after the last one.
+        #expect(acceptedAt == 30)
+    }
+
+    @Test func complyingBeforeAcceptanceIsNotDefiance() {
+        var monitor = WalkComplianceMonitor()
+        monitor.walkStarted(at: 0)
+        // Two nudges' worth of running, then the user walks.
+        for t in stride(from: 8.0, through: 16.0, by: 1.0) {
+            monitor.recordCadence(150, at: t)
+            _ = monitor.assess(at: t)
+        }
+        monitor.recordCadence(105, at: 17)
+        let a = monitor.assess(at: 20)
+        #expect(!a.accepted)
+        #expect(!a.isMismatched)
     }
 
     @Test func staleCadenceSaysNothing() {

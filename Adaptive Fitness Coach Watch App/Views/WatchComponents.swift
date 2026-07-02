@@ -9,16 +9,16 @@ extension TimeInterval {
     }
 }
 
-/// Semantic colors shared across the in-workout UI: green = work (run), amber = recover (walk).
-/// Brighter tokens (matched to the phone) so they hold at a glance on black.
+/// Semantic colors shared across the in-workout UI: green = work (run), cool blue = recover
+/// (walk). Green vs blue is glance-safe where green vs amber wasn't (sunlight, motion, CVD).
 enum WorkoutColors {
     static func tint(for phase: IntervalPhase?) -> Color {
-        (phase?.isRun ?? false) ? WatchTheme.run : WatchTheme.walk
+        (phase?.isRun ?? false) ? WatchTheme.run : WatchTheme.recover
     }
 
     /// Deep tinted-black field behind the verb — telegraphs state before the word is read.
     static func field(for phase: IntervalPhase?) -> Color {
-        (phase?.isRun ?? false) ? WatchTheme.runField : WatchTheme.walkField
+        (phase?.isRun ?? false) ? WatchTheme.runField : WatchTheme.recoverField
     }
 }
 
