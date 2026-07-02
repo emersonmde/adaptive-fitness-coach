@@ -127,12 +127,12 @@ struct ExerciseLibraryView: View {
         return "dumbbell.fill"
     }
 
-    /// A one-line default prescription, e.g. "3 × 10 · 15 lb", "3 × 12 · bodyweight", "3 × 0:30".
+    /// A one-line prescription showing the progression band, e.g. "8–12 reps · 20 lb start".
     private func prescription(_ exercise: Exercise) -> String {
         switch exercise.kind {
-        case let .reps(reps, weight):
-            let load = weight?.displayString() ?? "bodyweight"
-            return "\(reps) reps · \(load)"
+        case let .reps(range, weight):
+            let load = weight.map { "\($0.displayString()) start" } ?? "bodyweight"
+            return "\(range.lowerBound)–\(range.upperBound) reps · \(load)"
         case let .hold(seconds):
             return "\(seconds.holdLabel) hold"
         }

@@ -23,12 +23,14 @@ public enum WCMessageCodec {
     /// v4: `RunCard.durationMinutes` re-scoped from *total session* to *run block* (warmup and
     /// cooldown are now separate fields). The bump makes a stale watch keep its last-known-good
     /// routines rather than reinterpret durations under the old semantics.
-    public static let currentVersion = 4
+    /// v5: `RestCard` gained `adaptive` (heart-rate-bounded rests, default true).
+    public static let currentVersion = 5
 
     /// Version for the independent progression channel. Versioned separately from `currentVersion`
     /// so a progression-format change never forces stale peers to reject the (unchanged) routines.
     /// v2: `ProgressionBatch` gained `runUpdates` (run/walk seed progression).
-    public static let currentProgressionVersion = 2
+    /// v3: `ProgressionUpdate` gained `holdSeconds` (hold progression).
+    public static let currentProgressionVersion = 3
 
     public enum CodecError: Error, Equatable {
         case missingRoutines

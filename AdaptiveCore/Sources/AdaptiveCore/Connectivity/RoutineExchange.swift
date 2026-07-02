@@ -78,7 +78,8 @@ public enum RoutineExchange {
         - "type" is "run", "exercise", or "rest". Runs use "minutes" (the adaptive run block) plus \
         optional "warmupMinutes"/"cooldownMinutes" (walking, default 5 each); exercises use \
         "exercise" (an id above) plus "reps" and "weightLb", or "holdSeconds" for holds; rests use \
-        "seconds".
+        "seconds" plus optional "adaptive" (default true: rest ends early once heart rate \
+        recovers, never below 3/4 of "seconds").
         - "rounds" repeats the whole card list (that's how sets work). "days" are lowercase weekday \
         names; "time" is "HH:mm" (24h). Keep a routine's "name" stable if you're editing it.
 
@@ -225,6 +226,7 @@ private struct ExchangeCard: Codable {
     var weightLb: Double?
     var holdSeconds: Double?
     var seconds: Double?    // rest
+    var adaptive: Bool?     // rest: HR-bounded (default true)
 
     /// Export: a `WorkoutCard` → its exchange form.
     init(_ card: WorkoutCard) {
@@ -236,7 +238,7 @@ private struct ExchangeCard: Codable {
             type = "exercise"; exercise = item.exerciseId
             reps = item.reps; weightLb = item.seedWeight?.pounds; holdSeconds = item.holdSeconds
         case let .rest(c):
-            type = "rest"; seconds = c.seconds
+            type = "rest"; seconds = c.seconds; adaptive = c.adaptive
         }
     }
 
@@ -254,7 +256,7 @@ private struct ExchangeCard: Codable {
                 cooldownMinutes: max(0, cooldownMinutes ?? 5)
             ))
         case "rest":
-            return .rest(RestCard(seconds: max(1, seconds ?? 30)))
+            return .rest(RestCard(seconds: max(1, seconds ?? 30), adaptive: adaptive ?? true))
         case "exercise":
             guard let id = exercise, let entry = ExerciseLibrary.exercise(id: id) else { return nil }
             // Seed from the library (gets the right reps/weight/hold shape), then apply provided

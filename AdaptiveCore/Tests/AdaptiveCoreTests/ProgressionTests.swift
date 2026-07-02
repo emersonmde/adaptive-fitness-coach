@@ -140,6 +140,18 @@ struct ProgressionTests {
         #expect(!store.applyProgressions(updates, toRoutineId: routine.id, broadcast: false)) // already converged
     }
 
+    @Test func holdProgressionAppliesOnlyToHoldCards() {
+        let plank = StrengthExerciseItem(exerciseId: "plank", holdSeconds: 30)
+        let squat = StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))
+        let routine = Routine(name: "Core", cards: [.exercise(plank), .exercise(squat)])
+        let updated = routine.applyingProgressions([
+            ProgressionUpdate(exerciseId: "plank", holdSeconds: 35),
+            ProgressionUpdate(exerciseId: "goblet_squat", holdSeconds: 35), // shape-guarded no-op
+        ])
+        #expect(updated.exerciseItems.first { $0.exerciseId == "plank" }?.holdSeconds == 35)
+        #expect(updated.exerciseItems.first { $0.exerciseId == "goblet_squat" }?.holdSeconds == nil)
+    }
+
     @MainActor
     @Test func storeApplyBroadcastFiresOnce() {
         var broadcasts = 0

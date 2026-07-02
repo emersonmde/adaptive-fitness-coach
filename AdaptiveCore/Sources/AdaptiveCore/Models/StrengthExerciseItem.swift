@@ -35,8 +35,10 @@ public struct StrengthExerciseItem: Codable, Sendable, Hashable, Identifiable {
         self.id = id
         self.exerciseId = exercise.id
         switch exercise.kind {
-        case let .reps(defaultReps, seedWeight):
-            self.reps = defaultReps
+        case let .reps(repRange, seedWeight):
+            // Seed at the bottom of the double-progression band — reps climb from here,
+            // one per clean session, converting to a load step at the top (ACSM 2009).
+            self.reps = repRange.lowerBound
             self.seedWeight = seedWeight
             self.holdSeconds = nil
         case let .hold(defaultSeconds):

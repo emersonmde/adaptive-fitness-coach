@@ -13,17 +13,27 @@ final class SimulatedStrengthBackend: WorkoutBackend {
 
     private var task: Task<Void, Never>?
 
-    /// A short loop of believable lifting heart rates (rises under load, recovers between sets).
-    private let script: [Double] = [108, 118, 126, 132, 124, 114, 121, 130]
+    /// A session-shaped HR curve at 2s cadence, matched to the self-driving demo's timeline:
+    /// climbs during each ~7s "set", then decays and *stays low* through the 25s rests so the
+    /// recovery ring fills, sustains the recovered window, and hits READY at the seed — the
+    /// Simulator's only way to watch P2's adaptive rest work. Holds the last value once the
+    /// script ends (no loop — a loop climbs mid-rest and flaps the recovery signal).
+    private let script: [Double] = [
+        112, 124, 133, 138,                                              // set 1 → peak 138
+        134, 128, 121, 114, 108, 105, 104, 104, 104, 104, 104, 104,     // rest 1: recovered
+        118, 130, 138, 142,                                              // set 2 → peak 142
+        136, 128, 120, 112, 106, 104, 104, 104, 104, 104, 104, 104,     // rest 2: recovered
+        108,                                                             // hold / summary
+    ]
 
     func start() async throws {
         let script = self.script
         task = Task { [weak self] in
             var i = 0
             while !Task.isCancelled {
-                self?.onHeartRate?(script[i % script.count])
+                self?.onHeartRate?(script[min(i, script.count - 1)])
                 i += 1
-                try? await Task.sleep(for: .seconds(3))
+                try? await Task.sleep(for: .seconds(2))
             }
         }
     }

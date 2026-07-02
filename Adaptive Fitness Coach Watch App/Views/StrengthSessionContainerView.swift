@@ -59,6 +59,27 @@ struct StrengthSessionContainerView: View {
         .task {
             manager.onProgressions = recordProgressions
             if (simulate || forcedRoutine != nil), manager.sessionState == .idle { start() }
+            if simulate { await autoDrive() }
+        }
+    }
+
+    /// Under `-simulateStrength` the whole adaptive loop plays unattended (like the run demo):
+    /// each set auto-completes after a few seconds, holds auto-start, and the adaptive rest —
+    /// the recovery ring — runs off the scripted HR curve. The only way to *see* P2's strength
+    /// adaptation in the Simulator, and what the UI smoke test drives through.
+    private func autoDrive() async {
+        while manager.sessionState == .idle { await Task.yield() }
+        while manager.sessionState == .active {
+            try? await Task.sleep(for: .seconds(1))
+            switch manager.activity {
+            case .exercise where manager.currentItem?.isHold == true:
+                if !manager.holdRunning { manager.startHold() }
+            case .exercise:
+                try? await Task.sleep(for: .seconds(5)) // "doing the set"
+                if manager.activity == .exercise { manager.completeSet() }
+            case .rest:
+                break // the adaptive rest drives itself (READY → auto-advance)
+            }
         }
     }
 
@@ -98,13 +119,13 @@ struct StrengthSessionContainerView: View {
     /// A short scripted strength session for the Simulator: two exercises with a brief rest
     /// between (to show the rest ring) and a plank, so the whole flow plays out quickly.
     static var demoCards: [WorkoutCard] {
-        // Rests are long enough that a (slow) UITest reliably taps "Skip rest" before they elapse;
-        // the demo is meant to be skipped through, so this doesn't slow a real run-through.
+        // Adaptive rests sized so the scripted HR curve visibly fills the recovery ring and
+        // hits READY before the seed elapses (the whole demo self-drives to the summary).
         [
             .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
-            .rest(RestCard(seconds: 30)),
+            .rest(RestCard(seconds: 25)),
             .exercise(StrengthExerciseItem(exerciseId: "db_bench_press", reps: 10, seedWeight: .lb(15))),
-            .rest(RestCard(seconds: 30)),
+            .rest(RestCard(seconds: 25)),
             .exercise(StrengthExerciseItem(exerciseId: "plank", holdSeconds: 10)),
         ]
     }
