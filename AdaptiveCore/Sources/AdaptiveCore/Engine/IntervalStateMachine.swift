@@ -75,11 +75,18 @@ public struct IntervalStateMachine: Sendable {
     private var peakRunHeartRate: Double?
     /// Most recent heart rate seen, for recovery recording on ticks without a fresh sample.
     private var lastHeartRate: Double?
+    /// Whether any HR sample arrived during the current walk. Gates recovery recording: a
+    /// drop computed purely from a pre-walk reading would fabricate a "poor recovery" out of
+    /// a sensor gap (N6).
+    private var heartRateSeenThisWalk = false
     /// Whether the current walk's recovery drop has been recorded yet.
     private var recoveryRecordedThisWalk = false
     /// Set while the current walk sits at `maxWalkDuration` unrecovered; folded into
     /// `walksHitCap` when the segment advances.
     private var walkHitCapPending = false
+    /// True while the current segment is being force-ended by `skipCurrentSegment` — skipped
+    /// segments don't earn interval credit or record recovery (nothing was demonstrated).
+    private var skippingSegment = false
 
     /// Non-transition adaptations (extend/lengthen) already surfaced for the current segment,
     /// used to show each banner at most once per segment.
@@ -178,11 +185,15 @@ public struct IntervalStateMachine: Sendable {
 
     /// End the current segment now and move to the next, exactly as a natural transition would
     /// (same `TickResult`, so the caller's haptic/UI path is unchanged). Used to cut the warmup
-    /// short when running is detected or the user taps "Start Run"; valid for any segment.
+    /// short when running is detected or the user taps "Start Run". Valid for any segment, but
+    /// a skipped segment earns no interval credit and records no recovery — nothing was
+    /// demonstrated, so nothing is counted (N6).
     public mutating func skipCurrentSegment() -> TickResult {
         guard !isComplete, !segments.isEmpty else {
             return TickResult(isComplete: true)
         }
+        skippingSegment = true
+        defer { skippingSegment = false }
         let transition = advance()
         return TickResult(transition: transition, isComplete: isComplete)
     }
@@ -193,6 +204,8 @@ public struct IntervalStateMachine: Sendable {
             lastHeartRate = heartRate
             if phase == .run {
                 peakRunHeartRate = max(peakRunHeartRate ?? heartRate, heartRate)
+            } else if phase == .walk {
+                heartRateSeenThisWalk = true
             }
         }
 
@@ -202,9 +215,11 @@ public struct IntervalStateMachine: Sendable {
         }
     }
 
-    /// Record the current walk's HRR drop once, if peak and current HR are both known.
+    /// Record the current walk's HRR drop once — only when the peak is known AND at least one
+    /// HR sample actually arrived during this walk. A stale pre-walk reading proves nothing
+    /// about recovery and would fabricate a near-zero drop across a sensor gap (N6).
     private mutating func recordRecoveryDrop() {
-        guard let peak = peakRunHeartRate, let hr = lastHeartRate else { return }
+        guard heartRateSeenThisWalk, let peak = peakRunHeartRate, let hr = lastHeartRate else { return }
         recoveryDrops.append(max(0, peak - hr))
         recoveryRecordedThisWalk = true
     }
@@ -228,8 +243,10 @@ public struct IntervalStateMachine: Sendable {
                 let transition = advance()
                 return TickResult(transition: transition, adaptation: event, isComplete: isComplete)
             case .extend:
-                // Only reachable with `allowRunExtension` (off by default — HR lag reads as
-                // comfort in deconditioned runners). The target keeps growing each qualifying
+                // Reachable via `allowRunExtension` (config, off by default — HR lag reads as
+                // comfort in deconditioned runners) or the in-session evidence gate
+                // (`fastRecoveries > 0`: a walk that ended at the recovery floor proved the
+                // user is fitter than the seeds). The target keeps growing each qualifying
                 // tick, but the banner is announced only once per run so the change never
                 // nags (Q5).
                 segments[currentIndex].targetDuration = target + policy.config.runExtendIncrement
@@ -284,14 +301,15 @@ public struct IntervalStateMachine: Sendable {
     /// or nil when the session completes (signaled via `isComplete`).
     private mutating func advance() -> TransitionEvent? {
         let fromPhase = segments[currentIndex].phase
-        if fromPhase.isRun {
+        if fromPhase.isRun, !skippingSegment {
             intervalsCompleted += 1
         }
-        if fromPhase == .walk {
+        if fromPhase == .walk, !skippingSegment {
             // A short walk ends before the 60s HRR mark — record its drop at exit instead.
             if !recoveryRecordedThisWalk { recordRecoveryDrop() }
             if walkHitCapPending { walksHitCap += 1 }
         }
+        heartRateSeenThisWalk = false
         recoveryRecordedThisWalk = false
         walkHitCapPending = false
 

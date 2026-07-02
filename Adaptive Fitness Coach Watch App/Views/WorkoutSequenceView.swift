@@ -48,11 +48,11 @@ struct WorkoutSequenceView: View {
         case .run:
             RunBlockView(card: block.cards.firstRunCard ?? RunCard(), simulate: simulate,
                          routineId: routineId, recordRunProgression: recordRunProgression,
-                         onComplete: onComplete)
+                         onComplete: onComplete, onExit: onExit)
         case .strength:
             StrengthBlockView(cards: block.cards, simulate: simulate,
                               routineId: routineId, recordProgressions: recordProgressions,
-                              onComplete: onComplete)
+                              onComplete: onComplete, onExit: onExit)
         }
     }
 }
@@ -73,18 +73,20 @@ private struct RunBlockView: View {
     let routineId: UUID?
     let recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?
     let onComplete: () -> Void
+    var onExit: (() -> Void)?
     @State private var manager: WorkoutSessionManager
     /// Seeds actually used (defaults → possibly calibrated at start).
     @State private var activeCard: RunCard?
 
     init(card: RunCard, simulate: Bool, routineId: UUID?,
          recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?,
-         onComplete: @escaping () -> Void) {
+         onComplete: @escaping () -> Void, onExit: (() -> Void)? = nil) {
         self.card = card
         self.simulate = simulate
         self.routineId = routineId
         self.recordRunProgression = recordRunProgression
         self.onComplete = onComplete
+        self.onExit = onExit
         _manager = State(initialValue: simulate
             ? WorkoutSessionManager(backend: SimulatedWorkoutBackend())
             : WorkoutSessionManager())
@@ -96,7 +98,7 @@ private struct RunBlockView: View {
             case .idle: ProgressView().tint(WatchTheme.run)
             case .active: WorkoutSessionPager(manager: manager)
             case .complete: Color.clear.onAppear { recordOutcome(); onComplete() }
-            case .failed: BlockFailedView()
+            case .failed: BlockFailedView(onSkip: onComplete, onExit: onExit)
             }
         }
         .task {
@@ -140,16 +142,18 @@ private struct StrengthBlockView: View {
     let routineId: UUID?
     let recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
     let onComplete: () -> Void
+    var onExit: (() -> Void)?
     @State private var manager: StrengthSessionManager
 
     init(cards: [WorkoutCard], simulate: Bool, routineId: UUID?,
          recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?,
-         onComplete: @escaping () -> Void) {
+         onComplete: @escaping () -> Void, onExit: (() -> Void)? = nil) {
         self.cards = cards
         self.simulate = simulate
         self.routineId = routineId
         self.recordProgressions = recordProgressions
         self.onComplete = onComplete
+        self.onExit = onExit
         _manager = State(initialValue: simulate
             ? StrengthSessionManager(backend: SimulatedStrengthBackend())
             : StrengthSessionManager())
@@ -161,7 +165,7 @@ private struct StrengthBlockView: View {
             case .idle: ProgressView().tint(WatchTheme.strength)
             case .active: StrengthSessionPager(manager: manager)
             case .complete: Color.clear.onAppear(perform: onComplete)
-            case .failed: BlockFailedView()
+            case .failed: BlockFailedView(onSkip: onComplete, onExit: onExit)
             }
         }
         .task {
@@ -173,12 +177,21 @@ private struct StrengthBlockView: View {
     }
 }
 
+/// A block failed to start (or died mid-way). Never a dead end: the user can skip to the next
+/// part or leave the sequence — being wedged mid-workout with no way out is the one failure
+/// mode worse than the failure itself.
 private struct BlockFailedView: View {
+    var onSkip: (() -> Void)?
+    var onExit: (() -> Void)?
+
     var body: some View {
         ContentUnavailableView {
             Label("Couldn't start", systemImage: "exclamationmark.triangle")
         } description: {
             Text("That part of the workout couldn't start. Nothing was saved.")
+        } actions: {
+            if let onSkip { Button("Skip this part", action: onSkip) }
+            if let onExit { Button("End workout", role: .cancel, action: onExit) }
         }
     }
 }
@@ -221,9 +234,9 @@ private struct SequenceDoneView: View {
                     .foregroundStyle(WatchTheme.run)
                     .symbolEffect(.bounce, options: .nonRepeating)
                 Text("Done").font(.title3.bold())
-                Text("Saved to Health")
-                    .font(.caption2).foregroundStyle(WatchTheme.run)
-                Text("Each part was saved as its own workout.")
+                // No per-block save tracking here, so no blanket "Saved" claim (N6) — each
+                // block's own summary already reported its save state honestly.
+                Text("Each part was recorded as its own workout in Health.")
                     .font(.caption2).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Button("Done", action: onDone).tint(WatchTheme.run).padding(.top, 4)

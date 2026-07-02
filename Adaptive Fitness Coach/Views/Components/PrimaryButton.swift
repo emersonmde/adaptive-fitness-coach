@@ -37,18 +37,3 @@ struct PrimaryButton: View {
         .shadow(color: Theme.accent.opacity(glow && !reduceMotion ? 0.18 : 0), radius: 12, y: 4)
     }
 }
-
-/// A quiet secondary text link (e.g. "Let AI draft a week"), accent-colored, no fill.
-struct SecondaryLink: View {
-    let title: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(Theme.accent)
-        }
-        .buttonStyle(.plain)
-    }
-}

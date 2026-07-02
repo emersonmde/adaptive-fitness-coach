@@ -70,6 +70,12 @@ public struct RunSeeds: Sendable, Hashable {
         self.runSeconds = runSeconds
         self.walkSeconds = walkSeconds
     }
+
+    /// The factory seeds a brand-new run card starts with — the single source of truth used
+    /// by `RunCard` defaults/decoding, `needsCalibration`, and `FitnessCalibration`. If these
+    /// drift apart the cold-start calibration gate silently breaks, so they must not be
+    /// duplicated as literals.
+    public static let factoryDefault = RunSeeds(runSeconds: 90, walkSeconds: 120)
 }
 
 public extension RunSeeds {
@@ -111,8 +117,16 @@ public struct RunProgressionPolicy: Sendable {
     public var minWalkSeconds: Int
     public var maxWalkSeconds: Int
     public var walkShrinkThreshold: Int
+    /// Seconds the walk seed shrinks per advance notch past the threshold.
+    public var walkShrinkStep: Int
     /// Back-offs at/above this count regress (2+ cut-short runs is a pattern, not a blip).
     public var regressBackOffCount: Int
+    /// Snap fires when the longest sustained run reached this multiple of the seed
+    /// (demonstrated capacity clearly beyond a notch's worth).
+    public var snapRatio: Double
+    /// The walk seed a snapped (long-run) plan is capped at — long runs pair with short
+    /// recoveries.
+    public var snapWalkCeiling: Int
 
     public init(
         maxAdvanceStep: Int = 60,
@@ -121,7 +135,10 @@ public struct RunProgressionPolicy: Sendable {
         minWalkSeconds: Int = 60,
         maxWalkSeconds: Int = 180,
         walkShrinkThreshold: Int = 180,
-        regressBackOffCount: Int = 2
+        walkShrinkStep: Int = 15,
+        regressBackOffCount: Int = 2,
+        snapRatio: Double = 1.5,
+        snapWalkCeiling: Int = 90
     ) {
         self.maxAdvanceStep = maxAdvanceStep
         self.regressStep = regressStep
@@ -129,7 +146,10 @@ public struct RunProgressionPolicy: Sendable {
         self.minWalkSeconds = minWalkSeconds
         self.maxWalkSeconds = maxWalkSeconds
         self.walkShrinkThreshold = walkShrinkThreshold
+        self.walkShrinkStep = walkShrinkStep
         self.regressBackOffCount = regressBackOffCount
+        self.snapRatio = snapRatio
+        self.snapWalkCeiling = snapWalkCeiling
     }
 
     /// Next session's seeds given this session's outcome.
@@ -138,7 +158,9 @@ public struct RunProgressionPolicy: Sendable {
 
         if isStruggle(outcome) {
             seeds.runSeconds = max(minRunSeconds, current.runSeconds - regressStep)
-            seeds.walkSeconds = min(maxWalkSeconds, current.walkSeconds + regressStep)
+            // A struggle only ever *eases*: lengthen the walk toward the cap, but never pull
+            // an already-longer walk seed down (that would raise effort on a struggle signal).
+            seeds.walkSeconds = max(current.walkSeconds, min(maxWalkSeconds, current.walkSeconds + regressStep))
         } else if isClean(outcome) {
             // A strong session — every walk ended at the floor, i.e. the user out-recovered
             // the plan everywhere — jumps two notches instead of one, so a mis-seeded fit
@@ -148,7 +170,7 @@ public struct RunProgressionPolicy: Sendable {
                 let step = min(maxAdvanceStep, max(15, seeds.runSeconds / 4))
                 seeds.runSeconds += step
                 if seeds.runSeconds >= walkShrinkThreshold {
-                    seeds.walkSeconds = max(minWalkSeconds, seeds.walkSeconds - 15)
+                    seeds.walkSeconds = max(minWalkSeconds, seeds.walkSeconds - walkShrinkStep)
                 }
             }
         }
@@ -157,13 +179,15 @@ public struct RunProgressionPolicy: Sendable {
         // Snap to demonstrated capacity: a run sustained well past the seed (extension
         // unlocked by fast recovery) is direct evidence of the user's real level — start
         // there next time instead of climbing notch by notch. Never on a struggle (a long
-        // run that ended in repeated back-offs isn't capacity), and never downward.
+        // run that ended in repeated back-offs isn't capacity), and never downward. The
+        // gate compares against the seed the user *ran with* (not the post-advance one) —
+        // demonstrated capacity is relative to what was asked of them.
         if !isStruggle(outcome) {
             let demonstrated = Int(outcome.longestRunSeconds / 15) * 15
-            if demonstrated >= seeds.runSeconds * 3 / 2 {
-                seeds.runSeconds = demonstrated
+            if Double(demonstrated) >= Double(current.runSeconds) * snapRatio {
+                seeds.runSeconds = max(seeds.runSeconds, demonstrated)
                 if seeds.runSeconds >= walkShrinkThreshold {
-                    seeds.walkSeconds = max(minWalkSeconds, min(seeds.walkSeconds, 90))
+                    seeds.walkSeconds = max(minWalkSeconds, min(seeds.walkSeconds, snapWalkCeiling))
                 }
             }
         }

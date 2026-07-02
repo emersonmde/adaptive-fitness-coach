@@ -9,7 +9,7 @@ A watch-first adaptive running app (iOS + watchOS, SwiftUI). For current status,
 **Critical toolchain gotcha:** the watch target's minimum is **watchOS 27**, which ships only in the **watchOS 27 SDK → Xcode 27 beta** at `/Applications/Xcode-beta.app`. The default `xcode-select` is Xcode 26.5. Any `xcodebuild` for a device target (watch, or the iOS scheme — it embeds the watch app) **must** prefix `DEVELOPER_DIR`:
 
 ```bash
-# Pure logic — the fast loop. Default toolchain, no simulator. ~62 tests.
+# Pure logic — the fast loop. Default toolchain, no simulator. ~194 tests.
 cd AdaptiveCore && swift test
 cd AdaptiveCore && swift test --filter AdaptationPolicyTests          # one suite
 cd AdaptiveCore && swift test --filter IntervalStateMachineTests/nonPositiveDeltaIsInert  # one test
@@ -28,7 +28,7 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
 
 **Simulator launch args** (the sim generates no HR/zone data and `simctl` can't grant HealthKit/notification auth, so use these to demo/test):
 - Watch `-simulateWorkout` — scripted HR/zones via `SimulatedWorkoutBackend`, compressed plan, auto-starts, skips the HealthKit prompt. **The only way to see the adaptive loop in the simulator.**
-- Phone `-uiTesting` — throwaway store, skips the notification prompt (used by the XCUITests).
+- Phone `-uiTesting` — throwaway store so runs start clean (used by the XCUITests).
 - Phone `-seedDemo` — throwaway store seeded with demo routines (QA/screenshots).
 
 Adding a new `.swift` file under a target's folder auto-compiles it — the project uses **file-system-synchronized groups** (objectVersion 77), so no `project.pbxproj` edits are needed to add sources. Adding a *non-source* file to a target (e.g. the watch `Info.plist`) requires a `membershipExceptions` entry in the pbxproj.

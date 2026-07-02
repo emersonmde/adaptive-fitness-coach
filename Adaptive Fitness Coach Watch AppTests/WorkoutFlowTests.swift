@@ -72,6 +72,39 @@ struct WorkoutFlowTests {
         #expect(manager.currentPhase == .warmupWalk)
     }
 
+    @Test func concurrentBeginsStartExactlyOneSession() async {
+        // A double-tap on Start races two begins across the backend-start suspension point;
+        // only one may win or two HKWorkoutSessions would be left running.
+        let manager = makeManager()
+        async let first: Void = manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "A")
+        async let second: Void = manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "B")
+        _ = await (first, second)
+        #expect(manager.sessionState == .active)
+        // The loser's routine name never lands: whichever begin won set its name and the
+        // other bailed at the guard (names differ so we can observe exactly one winner).
+        #expect(manager.routineName == "A" || manager.routineName == "B")
+        tick(manager, seconds: 2)
+        #expect(manager.currentPhase == .run) // a single coherent session is progressing
+    }
+
+    @Test func staleFinalizeCannotTouchTheNextSession() async {
+        // Session A ends against a stalled finalize; the user resets and runs session B.
+        // A's finalize must never resurrect its totals into B's summary.
+        let manager = WorkoutSessionManager(backend: StallingBackend(), autoTick: false)
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "A")
+        tick(manager, seconds: 3)
+        manager.endManually()
+        await waitUntilComplete(manager)
+        #expect(manager.healthSaveState == .saving) // A's finalize is stalled forever
+
+        manager.reset()
+        #expect(manager.sessionState == .idle)
+        // B would normally use a fresh manager/backend; reusing this one is fine for the
+        // generation check — even if A's finalize eventually returned, the token mismatch
+        // (generation bumped by reset) blocks the write. Verify state stays clean.
+        #expect(manager.summary == nil)
+    }
+
     @Test func fixedIntervalsProgressWithoutZoneData() async {
         let manager = makeManager()
         await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
@@ -95,12 +128,9 @@ struct WorkoutFlowTests {
 
         #expect(manager.sessionState == .complete)
         let summary = try? #require(manager.summary)
-        // Totals come from the backend read-back, which now finalizes in the background —
-        // yield until it lands (instant with the simulated backend).
-        for _ in 0..<200 {
-            if manager.healthSaveState == .saved { break }
-            await Task.yield()
-        }
+        // Totals come from the backend read-back, which finalizes in the background —
+        // await the exposed finalize task (the deterministic seam).
+        await manager.finalizeTask?.value
         #expect(manager.summary?.totalDistance == 2400)
         #expect(manager.summary?.averageHeartRate == 138)
         #expect((manager.summary?.intervalsCompleted ?? 0) >= 2)
@@ -184,11 +214,8 @@ struct WorkoutFlowTests {
         tick(manager, seconds: 40)
         await waitUntilComplete(manager)
 
-        // Let the background finalize task land.
-        for _ in 0..<200 {
-            if manager.healthSaveState == .saved { break }
-            await Task.yield()
-        }
+        // Await the background finalize deterministically.
+        await manager.finalizeTask?.value
         #expect(manager.healthSaveState == .saved)
         #expect(manager.summary?.totalDistance == 2400)
         #expect(manager.summary?.averageHeartRate == 138)

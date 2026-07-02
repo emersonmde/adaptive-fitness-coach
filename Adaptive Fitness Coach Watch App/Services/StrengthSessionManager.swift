@@ -10,9 +10,9 @@ struct StrengthSummary: Sendable, Hashable {
 }
 
 /// Drives one **strength block** — a flat run of exercise and rest cards (already expanded by the
-/// routine's rounds) — over a `StrengthWorkoutBackend`. User-driven, not ticked: the user does
+/// routine's rounds) — over the shared `WorkoutBackend`. User-driven, not ticked: the user does
 /// each exercise bout and taps "Done set" to advance; rest cards show a countdown the view drives.
-/// Reuses the run side's `SessionState` and `WorkoutTotals`.
+/// Reuses the run side's `SessionState`, `WorkoutTotals`, and `HealthSaveState`.
 ///
 /// Testability mirrors `WorkoutSessionManager`: inject a backend, call `begin`, then drive
 /// `advance()` directly — no clock, no HealthKit.
@@ -31,6 +31,9 @@ final class StrengthSessionManager {
     private(set) var currentHeartRate: Double = 0
     private(set) var sessionStartDate: Date?
     private(set) var summary: StrengthSummary?
+    /// Where HealthKit finalization stands after the session ends (same contract as the run
+    /// side: never claim "Saved" before the OS confirms it, never freeze the UI waiting).
+    private(set) var healthSaveState: HealthSaveState = .saving
 
     /// The block's cards (exercise/rest), with unknown-id exercise cards dropped (N6).
     private(set) var cards: [WorkoutCard] = []
@@ -46,14 +49,20 @@ final class StrengthSessionManager {
     /// manager stays free of WatchConnectivity/store (same purity discipline as the run manager).
     var onProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
 
-    private let injectedBackend: StrengthWorkoutBackend?
-    private var backend: StrengthWorkoutBackend?
+    private let injectedBackend: WorkoutBackend?
+    private var backend: WorkoutBackend?
     private let now: () -> Date
     private var isFinishing = false
+    /// Guards `begin` across its suspension points (see `WorkoutSessionManager.isBeginning`).
+    private var isBeginning = false
+    /// Generation token for the background finalize (see `WorkoutSessionManager`).
+    private var sessionGeneration = 0
+    /// The in-flight background finalize — the deterministic test seam.
+    private(set) var finalizeTask: Task<Void, Never>?
 
     private let haptics = HapticManager()
 
-    init(backend: StrengthWorkoutBackend? = nil, now: @escaping () -> Date = Date.init) {
+    init(backend: WorkoutBackend? = nil, now: @escaping () -> Date = Date.init) {
         self.injectedBackend = backend
         self.now = now
     }
@@ -102,7 +111,9 @@ final class StrengthSessionManager {
     /// Resolve the block, start the backend, go active. A block with no coachable exercise fails
     /// rather than starting an empty workout (N6).
     func begin(cards: [WorkoutCard], routineId: UUID? = nil, routineName: String) async {
-        guard sessionState == .idle else { return }
+        guard sessionState == .idle, !isBeginning else { return }
+        isBeginning = true
+        defer { isBeginning = false }
         self.routineId = routineId
         self.routineName = routineName
 
@@ -149,7 +160,9 @@ final class StrengthSessionManager {
 
     private func handleFailure() {
         guard sessionState == .active else { return }
+        let failedBackend = backend
         backend = nil
+        Task { _ = await failedBackend?.end() } // wind down whatever survives (fire-and-forget)
         sessionState = .failed
     }
 
@@ -224,22 +237,28 @@ final class StrengthSessionManager {
             onProgressions?(routineId, progressions)
         }
 
+        healthSaveState = .saving
         sessionState = .complete
         haptics.playComplete()
 
         let finishingBackend = backend
+        let generation = sessionGeneration
         backend = nil
-        Task { [weak self] in
+        finalizeTask = Task { [weak self] in
             let totals = await finishingBackend?.end() ?? WorkoutTotals()
-            guard let self, self.sessionState == .complete else { return }
+            guard let self, self.sessionGeneration == generation, self.sessionState == .complete else { return }
             if var filled = self.summary {
                 filled.averageHeartRate = totals.averageHeartRate
                 self.summary = filled
             }
+            self.healthSaveState = totals.savedToHealth ? .saved : .unconfirmed
         }
     }
 
     func reset() {
+        sessionGeneration += 1
+        finalizeTask = nil
+        healthSaveState = .saving
         isFinishing = false
         backend = nil
         cards = []

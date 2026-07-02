@@ -17,9 +17,4 @@ public struct SessionConfig: Codable, Sendable, Hashable {
         self.plan = plan
         self.targetZone = targetZone
     }
-
-    /// The default P0 session: the beginner run/walk seed plan targeting Zone 2.
-    public static var beginnerRun: SessionConfig {
-        SessionConfig(plan: .beginnerRunWalk(), targetZone: 2)
-    }
 }

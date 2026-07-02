@@ -132,19 +132,6 @@ struct ModelTests {
         #expect(routine.expandedCards.count == 6) // (exercise + rest) × 3
     }
 
-    @Test func scaledPlanTracksTargetDuration() {
-        for minutes in [10, 20, 30, 45, 60] {
-            let total = TimeInterval(minutes * 60)
-            let plan = IntervalPlan.beginnerRunWalk(totalDuration: total)
-            #expect(plan.runIntervalCount >= 1)                 // never a runless run
-            // Lands within one run/walk cycle (150s) of the requested length — it's a seed.
-            #expect(abs(plan.plannedDuration - total) <= 150)
-            // Warmup & cooldown are capped at 5 minutes.
-            #expect(plan.segments.first!.targetDuration <= 300)
-            #expect(plan.segments.last!.targetDuration <= 300)
-        }
-    }
-
     // MARK: - AdaptationEvent copy
 
     @Test func adaptationMessagesAreDistinct() {

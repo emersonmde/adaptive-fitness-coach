@@ -4,10 +4,14 @@ import HealthKit
 /// The production strength backend: a real Apple Traditional Strength Training workout via
 /// `HKWorkoutSession` + `HKLiveWorkoutBuilder` (N2). It records the session to Health — including
 /// heart rate, which the data source collects automatically — and reads the average HR back for
-/// the summary. No live signal is surfaced mid-session; the card sequence is the guidance.
+/// the summary. Shares the run side's `WorkoutBackend` protocol; the zone/cadence callbacks are
+/// simply never fired (strength guidance is the card sequence, not a live HR band — N3), which
+/// leaves the door open for P2's HR-informed rest adaptation without another protocol.
 @MainActor
-final class HealthKitStrengthBackend: NSObject, StrengthWorkoutBackend {
+final class HealthKitStrengthBackend: NSObject, WorkoutBackend {
     var onHeartRate: ((Double) -> Void)?
+    var onZoneChange: ((Int?) -> Void)?
+    var onCadence: ((Double) -> Void)?
     var onFailure: (() -> Void)?
 
     private let healthStore = HealthKitAuthorization.healthStore
@@ -37,15 +41,18 @@ final class HealthKitStrengthBackend: NSObject, StrengthWorkoutBackend {
     func end() async -> WorkoutTotals {
         let endDate = Date()
         session?.end()
+        var saved = true
         do {
             try await builder?.endCollection(at: endDate)
             _ = try await builder?.finishWorkout()
         } catch {
-            // Fall through to whatever stats the builder gathered; never fabricate a value (N6).
+            // Fall through to whatever stats the builder gathered; never fabricate a value —
+            // and never claim the workout saved when the finalize errored (N6).
+            saved = false
         }
         let hr = builder?.statistics(for: HKQuantityType(.heartRate))?
             .averageQuantity()?.doubleValue(for: heartRateUnit)
-        return WorkoutTotals(distanceMeters: nil, averageHeartRate: hr)
+        return WorkoutTotals(distanceMeters: nil, averageHeartRate: hr, savedToHealth: saved)
     }
 }
 

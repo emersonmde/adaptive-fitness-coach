@@ -26,9 +26,12 @@ struct Adaptive_Fitness_Coach_Watch_AppApp: App {
                                  recordProgressions: connectivity.recordProgressions,
                                  recordRunProgression: connectivity.recordRunProgression)
                 .task {
-                    // Simulate mode uses a scripted backend and never touches HealthKit, so skip
-                    // the authorization prompt (it would otherwise block the scripted run).
-                    if !ProcessInfo.processInfo.arguments.contains("-simulateWorkout") {
+                    // Simulate modes use scripted backends and never touch HealthKit, so skip
+                    // the authorization prompt for ALL of them (it would otherwise block the
+                    // scripted flows — simctl can't grant HealthKit auth).
+                    let args = ProcessInfo.processInfo.arguments
+                    let simulated = args.contains { $0.hasPrefix("-simulate") }
+                    if !simulated {
                         await HealthKitAuthorization.requestAuthorization()
                     }
                     connectivity.activate()

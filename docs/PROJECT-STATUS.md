@@ -4,7 +4,7 @@ The single entry point for picking up this project. Read this, then `docs/adapti
 
 _Last updated: P0 + dark/neon redesign + TestFlight (build 2 live) + P1 strength sequencing + **generic card-based routines (run/exercise/rest cards, rounds; run+strength unified)**. Sim-verified; device pending._
 
-> **Routines are now a generic card stack.** A `Routine` is `cards: [WorkoutCard]` (`.run` / `.exercise` / `.rest`) plus a `rounds` count that repeats the whole list (= sets; a trailing rest card becomes rest between rounds). The phone builds it from a typed card list; the watch walks it and starts/stops the right Apple workout per card type automatically (`workoutBlocks()`), reusing the existing run and strength screens. The old `type`/`durationMinutes`/`exercises` fields are gone (migrated on decode). WC payload is **v3**. This supersedes the type-branched descriptions below — treat them as history.
+> **Routines are now a generic card stack.** A `Routine` is `cards: [WorkoutCard]` (`.run` / `.exercise` / `.rest`) plus a `rounds` count that repeats the whole list (= sets; a trailing rest card becomes rest between rounds). The phone builds it from a typed card list; the watch walks it and starts/stops the right Apple workout per card type automatically (`workoutBlocks()`), reusing the existing run and strength screens. The old `type`/`durationMinutes`/`exercises` fields are gone (migrated on decode). WC payload is **v4** (progression channel v2). This supersedes the type-branched descriptions below — treat them as history.
 
 ---
 
@@ -15,7 +15,7 @@ _Last updated: P0 + dark/neon redesign + TestFlight (build 2 live) + P1 strength
 - **Watch (watchOS, the in-workout product):** a real Apple `HKWorkoutSession` — an outdoor run/walk that adapts intervals to the user's **Apple-native HR zone**, **or** (P1) a Traditional Strength Training session that walks the user **card by card** through the exercise sequence with a form diagram, a proposed weight (± adjust), and per-set/hold progression. Haptic-first, ending as a native workout in Apple Health. The app records nothing of its own.
 - **Engine:** all logic is in the pure `AdaptiveCore` Swift package (no HealthKit/SwiftUI), consumed identically by both apps. P1 adds the `Exercise`/`ExerciseLibrary`/`StrengthPlan` model; **strength has no real-time adaptation yet (P2)** — it's a static authored sequence with seed weights.
 
-**Tests green** — 87 `AdaptiveCore` (logic, incl. card model / workout-block grouping / migration), watch integration (`WorkoutFlowTests` + `StrengthFlowTests` walking a card block), 3 phone UI (`RoutineFlowUITests`, create run + strength from cards).
+**Tests green** — 194 `AdaptiveCore` (logic, incl. card model / workout-block grouping / migration), watch integration (`WorkoutFlowTests` + `StrengthFlowTests` walking a card block), 3 phone UI (`RoutineFlowUITests`, create run + strength from cards).
 
 ---
 
@@ -25,7 +25,7 @@ The watch target's minimum is **watchOS 27**, because it uses Apple's native Hea
 
 ```bash
 # Pure logic (default toolchain, no simulator) — fastest feedback loop
-cd AdaptiveCore && swift test            # 84 tests
+cd AdaptiveCore && swift test            # ~194 tests
 
 # Watch / iOS (need the beta; target a watchOS 27 sim by UDID, name collides with 26.5)
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
@@ -41,7 +41,7 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
 
 **Simulator launch args** (the sim can't generate HR/zone data, and `simctl` can't grant HealthKit/notification auth, so these make the apps demoable/testable):
 - Watch `-simulateWorkout` → scripted HR/zones via `SimulatedWorkoutBackend`, short plan, auto-starts, skips the HealthKit prompt. The only way to see the adaptive loop in the sim.
-- Phone `-uiTesting` → throwaway store, skips the notification prompt (used by the XCUITests).
+- Phone `-uiTesting` → throwaway store so runs start clean (used by the XCUITests).
 - Phone `-seedDemo` → throwaway store seeded with demo routines (QA/screenshots).
 
 Real HR/zone adaptation only runs on a **physical Apple Watch** (verified by construction + the engine's tests, not yet observed on-device).
@@ -51,7 +51,7 @@ Real HR/zone adaptation only runs on a **physical Apple Watch** (verified by con
 ## Architecture & key files
 
 ```
-AdaptiveCore/                      local Swift package — pure logic, 84 tests, no HealthKit/SwiftUI
+AdaptiveCore/                      local Swift package — pure logic, ~194 tests, no HealthKit/SwiftUI
   Models/                          Routine (now carries `exercises`), IntervalPlan, SessionConfig,
                                    SessionSummary, AdaptationEvent
   Models/ (P1 strength)            Exercise + ExerciseKind, ExerciseLibrary (curated catalog),
@@ -124,6 +124,10 @@ Redesign after the first real-world run (user's HR sat *in* the target zone whil
 
 **P1.5b — zero-config adaptation + instant end (build 6):** No experience selector, ever — the app observes: (1) **cold start** — an uncalibrated run card silently reads 90d of running workouts + latest VO2max at first session start (`FitnessCalibration` pure mapping / `HealthFitnessCalibrator` HK plumbing; `RunCard.seedsCalibrated` one-shot flag) → continuous / 5-min-interval / 90-120 default seeds; (2) **in-session evidence gate** — a walk ending at the recovery floor (`fastRecoveries`) unlocks run extension for the rest of the session (comfort alone never extends under HR lag; demonstrated recovery does); (3) **progression** — strong sessions jump two notches, a run sustained ≥1.5× the seed *snaps* the next seed to `longestRunSeconds`, and ending during an extended run isn't a bail. **Instant end:** the summary appears the moment the workout stops (engine data); HealthKit finalizes in the background, distance/avg HR fill in, and `HealthSaveState` drives an honest "Saving… → Saved to Health" line (same fix in the strength manager). The summary shows a quiet "Next run: …" line when seeds move.
 
+**P1.6 — cleanup / launch-prep (senior review pass):** Fixed before P2: (1) **Claude round-trip no longer wipes run progression** — `RoutineStore.importRoutines` grafts existing run-card id/seeds/`seedsCalibrated` onto imported cards (the exchange schema still deliberately omits seeds); (2) **continuous plans target the block, not the raw seed** (a 3600s calibration sentinel made every continuous run read as a bail and regress the fittest tier); (3) manager races hardened — `isBeginning` reentrancy guard (double-tap Start can't spawn two HKWorkoutSessions), `sessionGeneration` token (a slow HealthKit finalize can't resurrect old totals into a new session), `finalizeTask` exposed as the deterministic test seam (yield-loops deleted); (4) `StrengthWorkoutBackend` merged into `WorkoutBackend` (one protocol, P2 gets HR signals for free); strength gained `HealthSaveState` (honest Saving→Saved) and the RestView back-to-back identity fix; `BlockFailedView` is no longer a dead end (Skip/End); (5) phone: activation-complete re-sync (first-install watch emptiness), CalendarService re-anchors only on schedule *change* (was erasing series history every launch), RoutineDetail commits against the store copy (stale-draft revert), MiniStepper is a VoiceOver-adjustable element with test identifiers; (6) progression polish — snap gate compares the seed the user *ran with*, regress never shortens a long walk seed, stale-HR walks record no recovery (N6), `RunSeeds.factoryDefault` is the single seed constant. **Design system captured in `docs/DESIGN-PRINCIPLES.md`** — hold every new screen (P2 strength redesign first) to it.
+
+**Known deferred (P2 kickoff list):** move strength rest/hold timers from view `@State` into `StrengthSessionManager` (tick-driven, adaptable, testable — the P2 rest-adaptation enabler); `StrengthSessionOutcome` + `StrengthProgressionPolicy` mirroring the run three-layer pattern (engine counters → summary → outcome → policy); sequence-block handoff still starts the next `HKWorkoutSession` while the previous finalizes (recoverable now via BlockFailedView, but await the finalize handoff properly); extract the duplicated calibration+outcome code in `RunSessionContainerView`/`RunBlockView` into a shared launcher.
+
 ### P2 — Deterministic strength adaptation — no trained model
 Session-to-session progression from **set outcome** (toward ~1–3 RIR) + deterministic **IMU heuristics** grouped by archetype (velocity-loss for wrist-tracks-load; stability-envelope for isometric/plank), set-outcome-only fallback where the wrist has no clean read (N6). Self-labeling, no surveys.
 
@@ -136,7 +140,7 @@ Fatigue/effort model on a HAR-encoder backbone, trained overnight on the phone f
 
 - **Device-only verification:** real HR→zone→adapt loop, haptics feel, Action Button auto-start, run **and now the strength `HKWorkoutSession`** appearing in Apple Health (Traditional Strength Training), and the **Calendar event flow** (`CalendarService` needs full calendar access — the sim can't grant it reliably). The sim can't cover these.
 - **Strength form demos** are SF Symbol placeholders (`FormDemo.symbol`). Replace with real static diagrams / tap-to-play animations later — purely a data + render swap, no model change (`FormDemo` already has `.diagram`/`.animation` cases).
-- **TestFlight:** build **1.0 (3)** (the card-model rearchitecture) is **live for internal testing** (export compliance cleared; `internalBuildState: IN_BETA_TESTING`). The whole headless pipeline — archive → API-key export/upload → compliance — is documented in **`docs/TESTFLIGHT.md`**. Credentials live in the **git-ignored `.env`** (issuer id, key id, the *path* to the `.p8`, app/team ids); the key material is never committed or read. **Release only significant milestones** (a redesign, the end of a phase), not every commit. New builds now declare `ITSAppUsesNonExemptEncryption = NO`, so they skip the "Missing Compliance" stall.
+- **TestFlight:** build **1.0 (6)** (zero-config adaptation + instant end) is **live for internal testing** (export compliance cleared; `internalBuildState: IN_BETA_TESTING`). The whole headless pipeline — archive → API-key export/upload → compliance — is documented in **`docs/TESTFLIGHT.md`**. Credentials live in the **git-ignored `.env`** (issuer id, key id, the *path* to the `.p8`, app/team ids); the key material is never committed or read. **Release only significant milestones** (a redesign, the end of a phase), not every commit. New builds now declare `ITSAppUsesNonExemptEncryption = NO`, so they skip the "Missing Compliance" stall.
 - **`StartRunIntent`** opens the app to A1 but does not auto-start the session (documented stub) — finish the Action Button flow on device.
 - **HealthKit end sequence** uses `session.end()` → `endCollection` → `finishWorkout` in sequence (common pattern); consider driving finalize off the `.ended` state on device.
 - **Phone UI tests are parallel-flaky** — pin `-parallel-testing-enabled NO` (or a test plan) for CI.
@@ -149,6 +153,6 @@ Fatigue/effort model on a HAR-encoder backbone, trained overnight on the phone f
 ## Resuming in a fresh session
 1. Read this file, then the PRD (`docs/adaptive-fitness-coach-spec.md`) and design handoffs (`docs/design/`).
 2. Confirm Xcode 27 beta is installed; build the watch scheme with `DEVELOPER_DIR=…Xcode-beta…` against a watchOS 27 sim. Demo: `-simulateWorkout` (run), `-simulateStrength` (strength), `-simulateMixed` (run→strength sequence). Phone: `-seedDemo`.
-3. `cd AdaptiveCore && swift test` should be 87 green instantly.
+3. `cd AdaptiveCore && swift test` should be ~194 green instantly.
 4. **Next: a planning session for Phase 3** (PRD §5 — learned/personalized adaptation). Note **P2** (deterministic strength adaptation: set-outcome progression + IMU heuristics keyed by `MovementArchetype`) is still open per the PRD — confirm P2-vs-P3 sequencing at the start of that session. Also open: P1 device-only checks (real strength workout in Health, real form-demo assets) and the post-P2 watch snapshot tests (see TODOs).
 5. Releasing to TestFlight (significant milestones only): see **`docs/TESTFLIGHT.md`**.

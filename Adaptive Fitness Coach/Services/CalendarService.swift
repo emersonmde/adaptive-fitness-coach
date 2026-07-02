@@ -91,25 +91,45 @@ final class CalendarService {
     }
 
     /// Populate an event from the routine: title, next start, duration, weekly recurrence, alarm.
+    ///
+    /// The series is **re-anchored only when the schedule actually changed** (or the event is
+    /// new). Saving with `.futureEvents` from a moved `startDate` erases past occurrences of
+    /// the series, so the launch-path `syncAll` must never re-anchor an unchanged event —
+    /// otherwise the user's calendar history quietly evaporates one launch at a time.
     private func apply(_ routine: Routine, to event: EKEvent) {
         event.title = routine.name
         event.calendar = event.calendar ?? store.defaultCalendarForNewEvents
-        if let start = nextStart(for: routine) {
+
+        let needsAnchor = event.startDate == nil || !schedule(of: event, matches: routine)
+        if needsAnchor, let start = nextStart(for: routine) {
             event.startDate = start
             event.endDate = start.addingTimeInterval(TimeInterval(routine.estimatedMinutes * 60))
+            // Replace any prior recurrence so an edit doesn't accumulate rules.
+            (event.recurrenceRules ?? []).forEach { event.removeRecurrenceRule($0) }
+            let days = routine.repeatDays
+                .sorted()
+                .map { EKRecurrenceDayOfWeek(EKWeekday(rawValue: $0.rawValue)!) }
+            event.addRecurrenceRule(EKRecurrenceRule(
+                recurrenceWith: .weekly, interval: 1,
+                daysOfTheWeek: days,
+                daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil,
+                daysOfTheYear: nil, setPositions: nil, end: nil
+            ))
+        } else if let start = event.startDate {
+            // Schedule unchanged: keep the anchor (and the series' past), refresh duration only.
+            event.endDate = start.addingTimeInterval(TimeInterval(routine.estimatedMinutes * 60))
         }
-        // Replace any prior recurrence/alarms so an edit doesn't accumulate them.
-        (event.recurrenceRules ?? []).forEach { event.removeRecurrenceRule($0) }
-        let days = routine.repeatDays
-            .sorted()
-            .map { EKRecurrenceDayOfWeek(EKWeekday(rawValue: $0.rawValue)!) }
-        event.addRecurrenceRule(EKRecurrenceRule(
-            recurrenceWith: .weekly, interval: 1,
-            daysOfTheWeek: days,
-            daysOfTheMonth: nil, monthsOfTheYear: nil, weeksOfTheYear: nil,
-            daysOfTheYear: nil, setPositions: nil, end: nil
-        ))
         event.alarms = [EKAlarm(relativeOffset: 0)]
+    }
+
+    /// Whether the event's existing series already encodes the routine's schedule
+    /// (same time of day, same weekly recurrence days).
+    private func schedule(of event: EKEvent, matches routine: Routine, calendar: Calendar = .current) -> Bool {
+        guard let start = event.startDate, let time = routine.scheduleTime else { return false }
+        let comps = calendar.dateComponents([.hour, .minute], from: start)
+        guard comps.hour == time.hour, comps.minute == time.minute else { return false }
+        let ruleDays = Set((event.recurrenceRules?.first?.daysOfTheWeek ?? []).map { $0.dayOfTheWeek.rawValue })
+        return ruleDays == Set(routine.repeatDays.map(\.rawValue))
     }
 
     /// The soonest upcoming start among the routine's days at its scheduled time — anchors the

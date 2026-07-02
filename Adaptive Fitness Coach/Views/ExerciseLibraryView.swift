@@ -132,9 +132,9 @@ struct ExerciseLibraryView: View {
         switch exercise.kind {
         case let .reps(reps, weight):
             let load = weight?.displayString() ?? "bodyweight"
-            return "\(exercise.defaultSets) × \(reps) · \(load)"
+            return "\(reps) reps · \(load)"
         case let .hold(seconds):
-            return "\(exercise.defaultSets) × \(seconds.holdLabel) hold"
+            return "\(seconds.holdLabel) hold"
         }
     }
 }

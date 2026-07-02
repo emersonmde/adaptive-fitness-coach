@@ -51,9 +51,14 @@ public final class RoutineStore {
     }
 
     /// Persist to disk and notify the sync hook. Called after every mutation.
+    /// A write failure keeps the in-memory copy authoritative and is logged rather than
+    /// swallowed — silent persistence loss is the worst kind.
     private func save(broadcast: Bool) {
-        if let data = try? JSONEncoder().encode(routines) {
-            try? data.write(to: fileURL, options: [.atomic])
+        do {
+            let data = try JSONEncoder().encode(routines)
+            try data.write(to: fileURL, options: [.atomic])
+        } catch {
+            NSLog("RoutineStore: failed to persist routines: %@", String(describing: error))
         }
         if broadcast { onChange?(routines) }
     }
@@ -122,15 +127,28 @@ public final class RoutineStore {
     /// Merge imported routines by **name**: a routine whose name matches an existing one replaces
     /// that one's contents (keeping its id, so schedules/calendar links survive); a new name is
     /// added. Broadcasts so the watch picks up the changes. Returns (updated, added) counts.
+    ///
+    /// **Run progression survives the round trip.** The exchange schema deliberately omits run
+    /// seeds (they're the user's demonstrated fitness, not routine design), so imported run
+    /// cards arrive factory-fresh with new ids. The merge grafts each existing run card's
+    /// identity and progression state (`id`, `runSeconds`, `walkSeconds`, `seedsCalibrated`)
+    /// onto the imported card in the same ordinal position — otherwise every Claude round-trip
+    /// would silently wipe earned progression and orphan in-flight watch updates keyed by
+    /// `cardId`. Imported *shape* (durations) still wins; only earned state carries over.
     @discardableResult
     public func importRoutines(_ incoming: [Routine]) -> (updated: Int, added: Int) {
         var updated = 0, added = 0
-        for routine in incoming {
+        // De-duplicate incoming by name (last wins) so two same-named payload entries can't
+        // both merge into one existing routine and inflate the counts.
+        var seenNames = Set<String>()
+        let deduped = incoming.reversed().filter { seenNames.insert($0.name).inserted }.reversed()
+
+        for routine in deduped {
             if let index = routines.firstIndex(where: { $0.name == routine.name }) {
                 let existing = routines[index]
                 // Preserve identity + scheduling; take the imported cards/rounds (and days/time if set).
                 var merged = existing
-                merged.cards = routine.cards
+                merged.cards = Self.graftingRunProgression(from: existing.cards, onto: routine.cards)
                 merged.rounds = routine.rounds
                 if !routine.repeatDays.isEmpty { merged.repeatDays = routine.repeatDays }
                 if routine.scheduleTime != nil { merged.scheduleTime = routine.scheduleTime }
@@ -143,6 +161,33 @@ public final class RoutineStore {
         }
         if updated + added > 0 { save(broadcast: true) }
         return (updated, added)
+    }
+
+    /// Carry run-card identity + earned progression from `existing` onto `imported`, matching
+    /// run cards by ordinal position among the run cards (routines rarely have more than one).
+    private static func graftingRunProgression(from existing: [WorkoutCard], onto imported: [WorkoutCard]) -> [WorkoutCard] {
+        let existingRunCards = existing.compactMap { card -> RunCard? in
+            if case let .run(c) = card { return c }
+            return nil
+        }
+        guard !existingRunCards.isEmpty else { return imported }
+
+        var runOrdinal = 0
+        return imported.map { card in
+            guard case let .run(importedCard) = card else { return card }
+            defer { runOrdinal += 1 }
+            guard runOrdinal < existingRunCards.count else { return card }
+            let donor = existingRunCards[runOrdinal]
+            return .run(RunCard(
+                id: donor.id,
+                durationMinutes: importedCard.durationMinutes,
+                warmupMinutes: importedCard.warmupMinutes,
+                cooldownMinutes: importedCard.cooldownMinutes,
+                runSeconds: donor.runSeconds,
+                walkSeconds: donor.walkSeconds,
+                seedsCalibrated: donor.seedsCalibrated
+            ))
+        }
     }
 
     // MARK: - Queries
