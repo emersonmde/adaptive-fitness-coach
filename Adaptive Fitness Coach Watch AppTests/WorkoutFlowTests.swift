@@ -12,6 +12,7 @@ import AdaptiveCore
 private final class FailingBackend: WorkoutBackend {
     var onHeartRate: ((Double) -> Void)?
     var onZoneChange: ((Int?) -> Void)?
+    var onCadence: ((Double) -> Void)?
     var onFailure: (() -> Void)?
     let failOnStart: Bool
 
@@ -136,6 +137,77 @@ struct WorkoutFlowTests {
         await waitUntilComplete(manager)
         #expect(manager.sessionState == .complete)
         #expect(manager.summary != nil)
+        // Ending before the plan finished is recorded — the progression policy's bail signal.
+        #expect(manager.summary?.endedEarly == true)
+    }
+
+    @Test func naturalCompletionIsNotMarkedEndedEarly() async {
+        let manager = makeManager()
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        manager.receiveZone(nil)
+        tick(manager, seconds: 40)
+        await waitUntilComplete(manager)
+        #expect(manager.summary?.endedEarly == false)
+        #expect(manager.summary?.plannedRunIntervals == 2)
+    }
+
+    // MARK: - Warmup run-detection / skip
+
+    @Test func sustainedRunningCadenceEndsTheWarmup() async {
+        let manager = makeManager()
+        // Long warmup so only cadence (not the timer) can end it.
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 300, runDuration: 5, walkDuration: 5, cycles: 2, cooldown: 2)
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test")
+        #expect(manager.currentPhase == .warmupWalk)
+
+        // Running cadence sustained past the detector's 10s window (samples every 2.5s of
+        // session time, advanced by ticks).
+        for _ in 0..<6 {
+            manager.receiveCadence(155)
+            tick(manager, seconds: 3)
+        }
+        #expect(manager.currentPhase == .run)
+        #expect(manager.intervalElapsed < 20) // the run started fresh, not fast-forwarded
+    }
+
+    @Test func walkingCadenceNeverEndsTheWarmup() async {
+        let manager = makeManager()
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 300, runDuration: 5, walkDuration: 5, cycles: 1, cooldown: 2)
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test")
+        for _ in 0..<20 {
+            manager.receiveCadence(115) // strolling
+            tick(manager, seconds: 3)
+        }
+        #expect(manager.currentPhase == .warmupWalk)
+    }
+
+    @Test func cadenceOutsideTheWarmupIsIgnored() async {
+        let manager = makeManager()
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 2, runDuration: 60, walkDuration: 60, cycles: 1, cooldown: 2)
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test")
+        tick(manager, seconds: 2) // warmup elapses naturally
+        #expect(manager.currentPhase == .run)
+
+        // A flood of running cadence mid-run must not skip anything.
+        for _ in 0..<10 {
+            manager.receiveCadence(160)
+            tick(manager, seconds: 2)
+        }
+        #expect(manager.currentPhase == .run)
+    }
+
+    @Test func manualSkipEndsTheWarmupImmediately() async {
+        let manager = makeManager()
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 300, runDuration: 5, walkDuration: 5, cycles: 1, cooldown: 2)
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test")
+        tick(manager, seconds: 3)
+        manager.skipWarmup()
+        #expect(manager.currentPhase == .run)
+        #expect(manager.intervalElapsed == 0)
+
+        // Skip is warmup-only: calling it again mid-run is a no-op.
+        manager.skipWarmup()
+        #expect(manager.currentPhase == .run)
     }
 
     // MARK: - Reset

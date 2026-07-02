@@ -63,7 +63,7 @@ struct ImportRoutinesSheet: View {
     private func cardSummary(_ card: WorkoutCard) -> String {
         switch card {
         case let .run(c):
-            return "Run \(c.durationMinutes) min"
+            return "Run \(c.durationMinutes) min (+\(c.warmupMinutes)+\(c.cooldownMinutes) walk)"
         case let .exercise(item):
             let name = ExerciseLibrary.exercise(id: item.exerciseId)?.name ?? item.exerciseId
             if let hold = item.holdSeconds { return "\(name) — \(Int(hold))s hold" }

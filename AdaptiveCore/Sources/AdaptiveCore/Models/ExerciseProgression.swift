@@ -40,14 +40,52 @@ public struct ProgressionUpdate: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
+/// A recorded change to a run card's interval seeds — the session outcome moved the run/walk
+/// durations (see `RunProgressionPolicy`) and the new values should stick for next time.
+///
+/// Latest-value-only, like `ProgressionUpdate` (P1); `date` is carried for a future P2 history.
+/// Routing is by the run card's `id` (stable across sync, unlike anything derived).
+public struct RunProgressionUpdate: Codable, Sendable, Hashable, Identifiable {
+    public let id: UUID
+    /// The `RunCard.id` this applies to.
+    public let cardId: UUID
+    /// New seed run-interval length, seconds.
+    public let runSeconds: Int
+    /// New seed walk-interval length, seconds.
+    public let walkSeconds: Int
+    /// When the session that produced this ended.
+    public let date: Date
+
+    public init(id: UUID = UUID(), cardId: UUID, runSeconds: Int, walkSeconds: Int, date: Date = Date()) {
+        self.id = id
+        self.cardId = cardId
+        self.runSeconds = runSeconds
+        self.walkSeconds = walkSeconds
+        self.date = date
+    }
+}
+
 /// One routine's worth of progressions — the unit that travels watch → phone over WatchConnectivity.
-/// `routineId` is the routing key: the receiver applies the `updates` to the matching routine.
+/// `routineId` is the routing key: the receiver applies the updates to the matching routine.
+/// Strength (`updates`) and run (`runUpdates`) progressions share the batch so one workout's
+/// results travel as one message.
 public struct ProgressionBatch: Codable, Sendable, Hashable {
     public let routineId: UUID
     public let updates: [ProgressionUpdate]
+    public let runUpdates: [RunProgressionUpdate]
 
-    public init(routineId: UUID, updates: [ProgressionUpdate]) {
+    public init(routineId: UUID, updates: [ProgressionUpdate] = [], runUpdates: [RunProgressionUpdate] = []) {
         self.routineId = routineId
         self.updates = updates
+        self.runUpdates = runUpdates
+    }
+
+    private enum CodingKeys: String, CodingKey { case routineId, updates, runUpdates }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        routineId = try c.decode(UUID.self, forKey: .routineId)
+        updates = try c.decodeIfPresent([ProgressionUpdate].self, forKey: .updates) ?? []
+        runUpdates = try c.decodeIfPresent([RunProgressionUpdate].self, forKey: .runUpdates) ?? []
     }
 }

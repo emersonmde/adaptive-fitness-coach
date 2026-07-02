@@ -71,8 +71,10 @@ public enum RoutineExchange {
         schema so I can import it back into the app. Rules:
         - Use only these exercise ids (the app can't add new movements yet):
         \(vocab)
-        - "type" is "run", "exercise", or "rest". Runs use "minutes"; exercises use "exercise" (an \
-        id above) plus "reps" and "weightLb", or "holdSeconds" for holds; rests use "seconds".
+        - "type" is "run", "exercise", or "rest". Runs use "minutes" (the adaptive run block) plus \
+        optional "warmupMinutes"/"cooldownMinutes" (walking, default 5 each); exercises use \
+        "exercise" (an id above) plus "reps" and "weightLb", or "holdSeconds" for holds; rests use \
+        "seconds".
         - "rounds" repeats the whole card list (that's how sets work). "days" are lowercase weekday \
         names; "time" is "HH:mm" (24h). Keep a routine's "name" stable if you're editing it.
 
@@ -112,7 +114,7 @@ public enum RoutineExchange {
     private static func describe(_ card: WorkoutCard) -> String {
         switch card {
         case let .run(c):
-            return "Run \(c.durationMinutes) min (adaptive)"
+            return "Run \(c.durationMinutes) min (adaptive, +\(c.warmupMinutes) warmup / +\(c.cooldownMinutes) cooldown)"
         case let .exercise(item):
             let name = ExerciseLibrary.exercise(id: item.exerciseId)?.name ?? item.exerciseId
             if let hold = item.holdSeconds { return "\(name) — \(Int(hold))s hold" }
@@ -200,7 +202,9 @@ private struct ExchangeRoutine: Codable {
 
 private struct ExchangeCard: Codable {
     var type: String
-    var minutes: Int?       // run
+    var minutes: Int?          // run: the adaptive run block, minutes
+    var warmupMinutes: Int?    // run: walking warmup (default 5)
+    var cooldownMinutes: Int?  // run: walking cooldown (default 5)
     var exercise: String?   // exercise slug
     var reps: Int?
     var weightLb: Double?
@@ -212,6 +216,7 @@ private struct ExchangeCard: Codable {
         switch card {
         case let .run(c):
             type = "run"; minutes = c.durationMinutes
+            warmupMinutes = c.warmupMinutes; cooldownMinutes = c.cooldownMinutes
         case let .exercise(item):
             type = "exercise"; exercise = item.exerciseId
             reps = item.reps; weightLb = item.seedWeight?.pounds; holdSeconds = item.holdSeconds
@@ -224,7 +229,15 @@ private struct ExchangeCard: Codable {
     func toWorkoutCard() -> WorkoutCard? {
         switch type.lowercased() {
         case "run":
-            return .run(RunCard(durationMinutes: max(1, minutes ?? 30)))
+            // Run/walk seeds are deliberately NOT in the exchange schema — they're the user's
+            // demonstrated fitness (progression state), not routine design, so Claude edits
+            // never touch them. Import keeps the card's defaults; RoutineStore's name-merge
+            // preserves ids only per-routine, so seeds reset on an edited run card — acceptable.
+            return .run(RunCard(
+                durationMinutes: max(1, minutes ?? 20),
+                warmupMinutes: max(0, warmupMinutes ?? 5),
+                cooldownMinutes: max(0, cooldownMinutes ?? 5)
+            ))
         case "rest":
             return .rest(RestCard(seconds: max(1, seconds ?? 30)))
         case "exercise":

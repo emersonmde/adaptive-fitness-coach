@@ -62,9 +62,10 @@ struct UpNextCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(Theme.accent.opacity(0.35), lineWidth: 1)
+                .strokeBorder(Theme.accent.opacity(0.25), lineWidth: 1)
         )
-        .shadow(color: Theme.accent.opacity(reduceMotion ? 0 : 0.22), radius: 24, y: 8)
+        // Kept subtle: at higher opacity/radius the halo reads as a gradient wash, not a glow.
+        .shadow(color: Theme.accent.opacity(reduceMotion ? 0 : 0.10), radius: 14, y: 6)
         .accessibilityElement(children: .combine)
     }
 

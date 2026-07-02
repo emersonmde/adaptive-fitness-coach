@@ -1,3 +1,4 @@
+import CoreMotion
 import Foundation
 import HealthKit
 
@@ -8,6 +9,7 @@ import HealthKit
 final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
     var onHeartRate: ((Double) -> Void)?
     var onZoneChange: ((Int?) -> Void)?
+    var onCadence: ((Double) -> Void)?
     /// Called if the session fails after starting (sensor loss, OS termination). Drives the
     /// manager out of the active state instead of ticking against a dead session (N6).
     var onFailure: (() -> Void)?
@@ -15,6 +17,11 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
     private let healthStore = HealthKitAuthorization.healthStore
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
+    /// Live cadence source for warmup run-detection. CMPedometer over the HK live builder's
+    /// stepCount because the pedometer reports `currentCadence` every ~2.5s while builder
+    /// samples batch far too slowly for a 10s detection window. Unavailable/denied → no
+    /// callbacks, warmup keeps its fixed timer (N6).
+    private var pedometer: CMPedometer?
 
     private var heartRateUnit: HKUnit { HKUnit.count().unitDivided(by: .minute()) }
 
@@ -34,9 +41,23 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
         let startDate = Date()
         session.startActivity(with: startDate)
         try await builder.beginCollection(at: startDate)
+        startCadenceUpdates(from: startDate)
+    }
+
+    private func startCadenceUpdates(from startDate: Date) {
+        guard CMPedometer.isCadenceAvailable() else { return }
+        let pedometer = CMPedometer()
+        self.pedometer = pedometer
+        pedometer.startUpdates(from: startDate) { [weak self] data, error in
+            // currentCadence is steps/second; the detector speaks steps/minute.
+            guard error == nil, let cadence = data?.currentCadence?.doubleValue else { return }
+            Task { @MainActor in self?.onCadence?(cadence * 60) }
+        }
     }
 
     func end() async -> WorkoutTotals {
+        pedometer?.stopUpdates()
+        pedometer = nil
         let endDate = Date()
         session?.end()
         do {

@@ -34,7 +34,7 @@ struct Adaptive_Fitness_CoachApp: App {
             store.add(Routine(name: "Morning Run",
                               repeatDays: [.tuesday, .friday], scheduleTime: ScheduleTime(hour: 7, minute: 0),
                               reminderEnabled: true,
-                              cards: [.run(RunCard(durationMinutes: 30))]))
+                              cards: [.run(RunCard())]))
             let circuit: [WorkoutCard] = ["goblet_squat", "db_bench_press", "one_arm_row", "plank"]
                 .compactMap { ExerciseLibrary.exercise(id: $0) }
                 .flatMap { [WorkoutCard.exercise(StrengthExerciseItem(from: $0)), .rest(RestCard(seconds: 30))] }

@@ -64,7 +64,7 @@ extension PhoneConnectivityManager: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
         Task { @MainActor in
             guard let batch = try? WCMessageCodec.decodeProgression(from: userInfo) else { return }
-            self.store?.applyProgressions(batch.updates, toRoutineId: batch.routineId, broadcast: true)
+            self.store?.applyProgressions(batch, broadcast: true)
         }
     }
 }

@@ -182,8 +182,10 @@ private struct RunCardEditor: View {
             Text("Adaptive Run")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.textPrimary)
-            MiniStepper(label: "Minutes", value: $card.durationMinutes, range: 5...90, step: 5)
-            Text("Builds run/walk intervals from your heart rate.")
+            MiniStepper(label: "Warm-up min", value: $card.warmupMinutes, range: 0...15, step: 1)
+            MiniStepper(label: "Run min", value: $card.durationMinutes, range: 5...90, step: 5)
+            MiniStepper(label: "Cool-down min", value: $card.cooldownMinutes, range: 0...15, step: 1)
+            Text("Warm-up and cool-down are walking. The run block alternates run/walk intervals that grow as your recovery improves.")
                 .font(.caption2)
                 .foregroundStyle(Theme.textTertiary)
         }

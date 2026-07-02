@@ -100,8 +100,17 @@ public final class RoutineStore {
     /// - A missing routine (deleted/never present) is a graceful no-op returning `false` (N6).
     @discardableResult
     public func applyProgressions(_ updates: [ProgressionUpdate], toRoutineId id: Routine.ID, broadcast: Bool) -> Bool {
-        guard let index = routines.firstIndex(where: { $0.id == id }) else { return false }
-        let updated = routines[index].applyingProgressions(updates)
+        applyProgressions(ProgressionBatch(routineId: id, updates: updates), broadcast: broadcast)
+    }
+
+    /// Apply a full progression batch (strength + run seeds) in one pass. Same fixed-point
+    /// contract as above: idempotent apply + no-op short-circuit, so a round trip converges.
+    @discardableResult
+    public func applyProgressions(_ batch: ProgressionBatch, broadcast: Bool) -> Bool {
+        guard let index = routines.firstIndex(where: { $0.id == batch.routineId }) else { return false }
+        let updated = routines[index]
+            .applyingProgressions(batch.updates)
+            .applyingRunProgressions(batch.runUpdates)
         guard updated != routines[index] else { return false } // already converged → no write, no echo
         routines[index] = updated
         save(broadcast: broadcast)

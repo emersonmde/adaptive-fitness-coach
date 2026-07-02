@@ -94,6 +94,20 @@ struct WorkoutActiveView: View {
                     Color.clear.frame(height: 20)
                     if let event = manager.adaptationEvent {
                         AdaptationCue(event: event)
+                    } else if phase == .warmupWalk {
+                        // Warmup never shows adaptation cues, so the slot hosts the skip
+                        // control: cadence detection usually ends the warmup by itself, but a
+                        // tap works when motion data isn't available (N6) or the user just
+                        // wants to go. Gone once the first run starts — the glance stays clean.
+                        Button(action: manager.skipWarmup) {
+                            Text("Start Run")
+                                .font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(WatchTheme.run.opacity(0.2)))
+                                .foregroundStyle(WatchTheme.run)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.top, 3)

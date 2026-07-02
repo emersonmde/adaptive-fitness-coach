@@ -40,6 +40,14 @@ final class WatchConnectivityManager: NSObject {
         sendProgression(ProgressionBatch(routineId: routineId, updates: updates))
     }
 
+    /// Record a finished run session's new interval seeds. Same contract as
+    /// `recordProgressions`: apply locally without broadcasting, queue to the phone.
+    func recordRunProgression(routineId: UUID, _ updates: [RunProgressionUpdate]) {
+        let batch = ProgressionBatch(routineId: routineId, runUpdates: updates)
+        store.applyProgressions(batch, broadcast: false)
+        sendProgression(batch)
+    }
+
     /// Apply a received context if it carries routines. Tolerates malformed payloads by
     /// keeping the last-known set (N6).
     private func apply(context: [String: Any]) {

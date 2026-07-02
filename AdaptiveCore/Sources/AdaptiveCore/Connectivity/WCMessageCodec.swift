@@ -19,13 +19,16 @@ public enum WCMessageCodec {
 
     /// Current payload schema version. Bump when the routine encoding changes incompatibly.
     /// v3: `Routine` moved to a generic `cards` + `rounds` model (run/exercise/rest cards),
-    /// replacing the v2 `type`/`durationMinutes`/`exercises` shape. The bump makes a stale watch
-    /// reject a payload it can't model rather than mis-decode it.
-    public static let currentVersion = 3
+    /// replacing the v2 `type`/`durationMinutes`/`exercises` shape.
+    /// v4: `RunCard.durationMinutes` re-scoped from *total session* to *run block* (warmup and
+    /// cooldown are now separate fields). The bump makes a stale watch keep its last-known-good
+    /// routines rather than reinterpret durations under the old semantics.
+    public static let currentVersion = 4
 
     /// Version for the independent progression channel. Versioned separately from `currentVersion`
     /// so a progression-format change never forces stale peers to reject the (unchanged) routines.
-    public static let currentProgressionVersion = 1
+    /// v2: `ProgressionBatch` gained `runUpdates` (run/walk seed progression).
+    public static let currentProgressionVersion = 2
 
     public enum CodecError: Error, Equatable {
         case missingRoutines

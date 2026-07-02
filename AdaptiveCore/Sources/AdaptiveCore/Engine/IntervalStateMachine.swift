@@ -29,12 +29,13 @@ public struct TickResult: Sendable, Equatable {
 /// Drives a run/walk session forward one tick at a time, applying live adaptation.
 ///
 /// Pure value type: it owns a *working copy* of the plan's segments (so adaptation never
-/// mutates the seed plan) and an `AdaptationPolicy`. It takes the classified heart-rate
-/// zone as input and emits transitions/adaptations as output. No HealthKit, no clock —
-/// the caller supplies `deltaTime`, which makes the whole engine deterministic and testable.
+/// mutates the seed plan) and an `AdaptationPolicy`. It takes a `WorkoutSample` (zone +
+/// raw heart rate) as input and emits transitions/adaptations as output. No HealthKit, no
+/// clock — the caller supplies `deltaTime`, which makes the whole engine deterministic and
+/// testable.
 ///
-/// Passing `currentZone: nil` (zone data unavailable) runs the plan as fixed intervals with
-/// no adaptation — the graceful-degradation path (N6).
+/// Signal degradation is per-field (N6): no zone → runs hold their planned duration; no
+/// heart rate → walks hold theirs; neither → the plan runs as fixed intervals.
 public struct IntervalStateMachine: Sendable {
     public private(set) var segments: [IntervalSegment]
     public let targetZone: Int
@@ -51,9 +52,34 @@ public struct IntervalStateMachine: Sendable {
     public private(set) var intervalsCompleted: Int
     public private(set) var adaptationsApplied: Int
 
+    /// Runs the policy cut short (either back-off window) — the session's struggle signal.
+    public private(set) var runBackOffCount: Int
+    /// Walks that reached `maxWalkDuration` still unrecovered — the "never trap the user
+    /// walking forever" cap fired, a strong struggle signal.
+    public private(set) var walksHitCap: Int
+    /// Per-walk heart-rate recovery: bpm dropped from the preceding run's peak within the
+    /// first 60 seconds of the walk (Cole et al., NEJM 1999 — the standard HRR window), or
+    /// at walk end for walks shorter than that. Empty when heart rate was unavailable.
+    public private(set) var recoveryDrops: [Double]
+
+    /// Peak heart rate observed during the current/most recent run segment. Reset when a new
+    /// run begins; carried through the following walk for recovery math.
+    private var peakRunHeartRate: Double?
+    /// Most recent heart rate seen, for recovery recording on ticks without a fresh sample.
+    private var lastHeartRate: Double?
+    /// Whether the current walk's recovery drop has been recorded yet.
+    private var recoveryRecordedThisWalk = false
+    /// Set while the current walk sits at `maxWalkDuration` unrecovered; folded into
+    /// `walksHitCap` when the segment advances.
+    private var walkHitCapPending = false
+
     /// Non-transition adaptations (extend/lengthen) already surfaced for the current segment,
     /// used to show each banner at most once per segment.
     private var announcedThisSegment: Set<AdaptationAction> = []
+
+    /// Seconds into a walk after which the recovery drop is sampled. Fixed at the clinical
+    /// HRR definition's one-minute mark (Cole et al., NEJM 1999), not a tunable.
+    private static let recoverySampleTime: TimeInterval = 60
 
     public init(config: SessionConfig, adaptationConfig: AdaptationConfig = AdaptationConfig()) {
         self.segments = config.plan.segments
@@ -67,6 +93,9 @@ public struct IntervalStateMachine: Sendable {
         self.totalWalkDuration = 0
         self.intervalsCompleted = 0
         self.adaptationsApplied = 0
+        self.runBackOffCount = 0
+        self.walksHitCap = 0
+        self.recoveryDrops = []
     }
 
     /// The phase currently in progress, or nil once the session is complete.
@@ -79,11 +108,20 @@ public struct IntervalStateMachine: Sendable {
         isComplete || segments.isEmpty ? nil : segments[currentIndex].targetDuration
     }
 
-    /// Advance the session by `deltaTime` seconds given the live `currentZone` (a 1-based zone
-    /// position; see the watch backend's normalization), or nil if zone data is unavailable.
-    /// Returns what changed this tick. Callers should tick at roughly ≤1s granularity and clamp
-    /// `deltaTime` against background catch-up; a non-positive delta is ignored.
+    /// Mean heart-rate recovery drop across the session's walks, or nil if never measurable.
+    public var meanRecoveryDrop: Double? {
+        recoveryDrops.isEmpty ? nil : recoveryDrops.reduce(0, +) / Double(recoveryDrops.count)
+    }
+
+    /// Zone-only convenience over `tick(deltaTime:sample:)` (no heart rate → no recovery math).
     public mutating func tick(deltaTime: TimeInterval, currentZone: Int?) -> TickResult {
+        tick(deltaTime: deltaTime, sample: WorkoutSample(zone: currentZone))
+    }
+
+    /// Advance the session by `deltaTime` seconds given the live `sample`. Returns what changed
+    /// this tick. Callers should tick at roughly ≤1s granularity and clamp `deltaTime` against
+    /// background catch-up; a non-positive delta is ignored.
+    public mutating func tick(deltaTime: TimeInterval, sample: WorkoutSample) -> TickResult {
         guard !isComplete, !segments.isEmpty else {
             return TickResult(isComplete: true)
         }
@@ -99,10 +137,12 @@ public struct IntervalStateMachine: Sendable {
             totalWalkDuration += deltaTime
         }
 
-        // Adaptation only applies to the repeating run/walk intervals, and only when we have
-        // a live zone. Warmup/cooldown walks run their fixed seed duration.
-        if let zone = currentZone, phase == .run || phase == .walk {
-            if let result = adapt(phase: phase, zone: zone, deltaTime: deltaTime) {
+        observeHeartRate(sample.heartRate, phase: phase)
+
+        // Adaptation only applies to the repeating run/walk intervals. Warmup/cooldown walks
+        // run their fixed seed duration.
+        if phase == .run || phase == .walk {
+            if let result = adapt(phase: phase, sample: sample, deltaTime: deltaTime) {
                 return result
             }
         }
@@ -116,25 +156,61 @@ public struct IntervalStateMachine: Sendable {
         return TickResult()
     }
 
+    /// End the current segment now and move to the next, exactly as a natural transition would
+    /// (same `TickResult`, so the caller's haptic/UI path is unchanged). Used to cut the warmup
+    /// short when running is detected or the user taps "Start Run"; valid for any segment.
+    public mutating func skipCurrentSegment() -> TickResult {
+        guard !isComplete, !segments.isEmpty else {
+            return TickResult(isComplete: true)
+        }
+        let transition = advance()
+        return TickResult(transition: transition, isComplete: isComplete)
+    }
+
+    /// Track peak run HR and sample the walk's recovery drop at the 60s HRR mark.
+    private mutating func observeHeartRate(_ heartRate: Double?, phase: IntervalPhase) {
+        if let heartRate {
+            lastHeartRate = heartRate
+            if phase == .run {
+                peakRunHeartRate = max(peakRunHeartRate ?? heartRate, heartRate)
+            }
+        }
+
+        if phase == .walk, !recoveryRecordedThisWalk,
+           intervalElapsed >= Self.recoverySampleTime {
+            recordRecoveryDrop()
+        }
+    }
+
+    /// Record the current walk's HRR drop once, if peak and current HR are both known.
+    private mutating func recordRecoveryDrop() {
+        guard let peak = peakRunHeartRate, let hr = lastHeartRate else { return }
+        recoveryDrops.append(max(0, peak - hr))
+        recoveryRecordedThisWalk = true
+    }
+
     /// Apply the adaptation policy for the current run/walk phase. Returns a `TickResult` if
     /// the policy acted this tick, or nil to fall through to the natural-transition check.
-    private mutating func adapt(phase: IntervalPhase, zone: Int, deltaTime: TimeInterval) -> TickResult? {
+    private mutating func adapt(phase: IntervalPhase, sample: WorkoutSample, deltaTime: TimeInterval) -> TickResult? {
         let target = segments[currentIndex].targetDuration
 
         switch phase {
         case .run:
+            // Run adaptation is zone-driven; without a zone the run holds its plan (N6).
+            guard let zone = sample.zone else { return nil }
             switch policy.evaluateRun(currentZone: zone, targetZone: targetZone,
                                       intervalElapsed: intervalElapsed, segmentTarget: target, deltaTime: deltaTime) {
             case .shorten:
                 let event = AdaptationEvent(action: .shortenedRun, atSessionTime: sessionElapsed, zone: zone)
                 adaptationsApplied += 1
+                runBackOffCount += 1
                 let transition = advance()
                 return TickResult(transition: transition, adaptation: event, isComplete: isComplete)
             case .extend:
-                // Keep extending the run while the user stays comfortable — a fit runner may
-                // run continuously and never reach a walk (per the PRD's vision). The target
-                // keeps growing each qualifying tick, but the banner is announced only once per
-                // run so the change never nags (Q5).
+                // Only reachable with `allowRunExtension` (off by default — HR lag reads as
+                // comfort in deconditioned runners). The target keeps growing each qualifying
+                // tick, but the banner is announced only once per run so the change never
+                // nags (Q5).
                 segments[currentIndex].targetDuration = target + policy.config.runExtendIncrement
                 return announceOnce(.extendedRun, zone: zone)
             case .keepGoing:
@@ -142,17 +218,23 @@ public struct IntervalStateMachine: Sendable {
             }
 
         case .walk:
-            switch policy.evaluateWalk(currentZone: zone, targetZone: targetZone,
+            switch policy.evaluateWalk(currentZone: sample.zone, heartRate: sample.heartRate,
+                                       peakRunHeartRate: peakRunHeartRate, targetZone: targetZone,
                                        intervalElapsed: intervalElapsed, segmentTarget: target, deltaTime: deltaTime) {
             case .shorten:
-                let event = AdaptationEvent(action: .shortenedWalk, atSessionTime: sessionElapsed, zone: zone)
+                let event = AdaptationEvent(action: .shortenedWalk, atSessionTime: sessionElapsed, zone: sample.zone)
                 adaptationsApplied += 1
                 let transition = advance()
                 return TickResult(transition: transition, adaptation: event, isComplete: isComplete)
             case .lengthen:
-                guard target < policy.config.maxWalkDuration else { return nil } // at cap → let it transition
+                guard target < policy.config.maxWalkDuration else {
+                    // At cap and still unrecovered: let the natural transition end the walk
+                    // (never trap the user walking forever) and remember the cap fired.
+                    walkHitCapPending = true
+                    return nil
+                }
                 segments[currentIndex].targetDuration = min(target + policy.config.walkLengthenIncrement, policy.config.maxWalkDuration)
-                return announceOnce(.lengthenedWalk, zone: zone)
+                return announceOnce(.lengthenedWalk, zone: sample.zone)
             case .keepGoing:
                 return nil
             }
@@ -165,7 +247,7 @@ public struct IntervalStateMachine: Sendable {
     /// Record a non-transition adaptation (extend/lengthen) and surface its banner at most once
     /// per segment. Subsequent qualifying ticks still adjust the plan but stay silent, so the
     /// run/walk can keep stretching without the banner re-appearing every increment.
-    private mutating func announceOnce(_ action: AdaptationAction, zone: Int) -> TickResult {
+    private mutating func announceOnce(_ action: AdaptationAction, zone: Int?) -> TickResult {
         guard !announcedThisSegment.contains(action) else { return TickResult() }
         announcedThisSegment.insert(action)
         adaptationsApplied += 1
@@ -179,6 +261,13 @@ public struct IntervalStateMachine: Sendable {
         if fromPhase.isRun {
             intervalsCompleted += 1
         }
+        if fromPhase == .walk {
+            // A short walk ends before the 60s HRR mark — record its drop at exit instead.
+            if !recoveryRecordedThisWalk { recordRecoveryDrop() }
+            if walkHitCapPending { walksHitCap += 1 }
+        }
+        recoveryRecordedThisWalk = false
+        walkHitCapPending = false
 
         let nextIndex = currentIndex + 1
         guard nextIndex < segments.count else {
@@ -187,6 +276,10 @@ public struct IntervalStateMachine: Sendable {
         }
 
         currentIndex = nextIndex
+        if segments[currentIndex].phase == .run {
+            // New run: peak tracking starts fresh (the previous walk's recovery math is done).
+            peakRunHeartRate = nil
+        }
         intervalElapsed = 0
         policy.resetAccumulators()
         announcedThisSegment.removeAll()

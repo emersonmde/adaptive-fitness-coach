@@ -18,6 +18,7 @@ struct WorkoutSequenceView: View {
     /// `nil` under simulate (a scripted demo isn't a saved routine).
     var routineId: UUID?
     var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
+    var recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?
     /// Skip this view's own launch screen and start immediately — the crown picker already launched.
     var autostart = false
     /// Called from the done screen when launched by the picker, to return to it.
@@ -45,7 +46,9 @@ struct WorkoutSequenceView: View {
     @ViewBuilder private func blockView(_ block: WorkoutBlock, onComplete: @escaping () -> Void) -> some View {
         switch block.kind {
         case .run:
-            RunBlockView(durationMinutes: block.cards.firstRunDurationMinutes ?? 30, simulate: simulate, onComplete: onComplete)
+            RunBlockView(card: block.cards.firstRunCard ?? RunCard(), simulate: simulate,
+                         routineId: routineId, recordRunProgression: recordRunProgression,
+                         onComplete: onComplete)
         case .strength:
             StrengthBlockView(cards: block.cards, simulate: simulate,
                               routineId: routineId, recordProgressions: recordProgressions,
@@ -55,8 +58,8 @@ struct WorkoutSequenceView: View {
 }
 
 private extension Sequence where Element == WorkoutCard {
-    var firstRunDurationMinutes: Int? {
-        for case let .run(c) in self { return c.durationMinutes }
+    var firstRunCard: RunCard? {
+        for case let .run(c) in self { return c }
         return nil
     }
 }
@@ -65,14 +68,20 @@ private extension Sequence where Element == WorkoutCard {
 /// hands back when it finishes (each block is already its own saved Apple workout, so the sequence
 /// shows the shared "done", not a per-block summary).
 private struct RunBlockView: View {
-    let durationMinutes: Int
+    let card: RunCard
     let simulate: Bool
+    let routineId: UUID?
+    let recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?
     let onComplete: () -> Void
     @State private var manager: WorkoutSessionManager
 
-    init(durationMinutes: Int, simulate: Bool, onComplete: @escaping () -> Void) {
-        self.durationMinutes = durationMinutes
+    init(card: RunCard, simulate: Bool, routineId: UUID?,
+         recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?,
+         onComplete: @escaping () -> Void) {
+        self.card = card
         self.simulate = simulate
+        self.routineId = routineId
+        self.recordRunProgression = recordRunProgression
         self.onComplete = onComplete
         _manager = State(initialValue: simulate
             ? WorkoutSessionManager(backend: SimulatedWorkoutBackend())
@@ -84,7 +93,7 @@ private struct RunBlockView: View {
             switch manager.sessionState {
             case .idle: ProgressView().tint(WatchTheme.run)
             case .active: WorkoutSessionPager(manager: manager)
-            case .complete: Color.clear.onAppear(perform: onComplete)
+            case .complete: Color.clear.onAppear { recordOutcome(); onComplete() }
             case .failed: BlockFailedView()
             }
         }
@@ -96,10 +105,21 @@ private struct RunBlockView: View {
                 manager.start(config: SessionConfig(plan: plan), routineName: "Run",
                               adaptationConfig: AdaptationConfig(backOffWindow: 3, minRunDuration: 2))
             } else {
-                let plan = IntervalPlan.beginnerRunWalk(totalDuration: TimeInterval(durationMinutes * 60))
-                manager.start(config: SessionConfig(plan: plan), routineName: "Run")
+                manager.start(config: SessionConfig(plan: IntervalPlan.plan(for: card)), routineName: "Run")
             }
         }
+    }
+
+    /// Persist the block's outcome as next time's seeds — same rule as the standalone run flow.
+    /// Fires exactly once, on the `.complete` transition, before handing to the next block.
+    private func recordOutcome() {
+        guard !simulate,
+              let record = recordRunProgression, let routineId,
+              let summary = manager.summary else { return }
+        let current = RunSeeds(runSeconds: card.runSeconds, walkSeconds: card.walkSeconds)
+        let next = RunProgressionPolicy().nextSeeds(current: current, outcome: RunSessionOutcome(summary: summary))
+        guard next != current else { return }
+        record(routineId, [RunProgressionUpdate(cardId: card.id, runSeconds: next.runSeconds, walkSeconds: next.walkSeconds)])
     }
 }
 

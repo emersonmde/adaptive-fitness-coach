@@ -12,8 +12,10 @@ import AdaptiveCore
 struct SessionContainerView: View {
     let store: RoutineStore
     /// Records a finished session's weight/rep bumps against a routine (local apply + sync to phone).
-    /// `nil` in previews/tests. Threaded to the strength flows; runs don't have a seed to persist.
+    /// `nil` in previews/tests. Threaded to the strength flows.
     var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
+    /// Records a finished run session's new run/walk interval seeds (local apply + sync to phone).
+    var recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?
 
     private let simulateRun: Bool
     private let simulateStrength: Bool
@@ -22,9 +24,12 @@ struct SessionContainerView: View {
     /// The routine the user picked to run (via the crown launch picker). `nil` = still picking.
     @State private var chosen: Routine?
 
-    init(store: RoutineStore, recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil) {
+    init(store: RoutineStore,
+         recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil,
+         recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)? = nil) {
         self.store = store
         self.recordProgressions = recordProgressions
+        self.recordRunProgression = recordRunProgression
         let args = ProcessInfo.processInfo.arguments
         self.simulateRun = args.contains("-simulateWorkout")
         self.simulateStrength = args.contains("-simulateStrength")
@@ -56,12 +61,14 @@ struct SessionContainerView: View {
         if blocks.count > 1 {
             WorkoutSequenceView(routineName: routine.name, blocks: blocks,
                                 routineId: routine.id, recordProgressions: recordProgressions,
+                                recordRunProgression: recordRunProgression,
                                 autostart: true, onExit: { chosen = nil })
         } else if routine.type == .strength {
             StrengthSessionContainerView(store: store, simulate: false, forcedRoutine: routine,
                                          recordProgressions: recordProgressions, onFinish: { chosen = nil })
         } else {
             RunSessionContainerView(store: store, simulate: false, forcedRoutine: routine,
+                                    recordRunProgression: recordRunProgression,
                                     onFinish: { chosen = nil })
         }
     }
@@ -113,15 +120,20 @@ struct RunSessionContainerView: View {
     /// When set (from the launch picker), run this routine and auto-start — skipping this
     /// container's own launch screen, which the picker has replaced.
     var forcedRoutine: Routine?
+    /// Persists the session outcome's new run/walk seeds (local apply + sync to phone).
+    var recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?
     /// Called when the user finishes/dismisses a forced session, to return to the picker.
     var onFinish: (() -> Void)?
     @State private var manager: WorkoutSessionManager
     private let simulate: Bool
 
-    init(store: RoutineStore, simulate: Bool, forcedRoutine: Routine? = nil, onFinish: (() -> Void)? = nil) {
+    init(store: RoutineStore, simulate: Bool, forcedRoutine: Routine? = nil,
+         recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)? = nil,
+         onFinish: (() -> Void)? = nil) {
         self.store = store
         self.simulate = simulate
         self.forcedRoutine = forcedRoutine
+        self.recordRunProgression = recordRunProgression
         self.onFinish = onFinish
         _manager = State(initialValue: simulate
             ? WorkoutSessionManager(backend: SimulatedWorkoutBackend())
@@ -143,6 +155,7 @@ struct RunSessionContainerView: View {
             case .complete:
                 if let summary = manager.summary {
                     WorkoutCompleteView(summary: summary) { manager.reset(); onFinish?() }
+                        .task { recordOutcome(summary) }
                 } else {
                     ProgressView()
                 }
@@ -166,9 +179,23 @@ struct RunSessionContainerView: View {
 
     private var plannedDuration: TimeInterval { sessionPlan.plannedDuration }
 
-    private var sessionPlan: IntervalPlan {
-        let minutes = effectiveRoutine?.firstRunCard?.durationMinutes ?? 30
-        return IntervalPlan.beginnerRunWalk(totalDuration: TimeInterval(minutes * 60))
+    /// The card driving this session: shape (warmup/block/cooldown) and seeds (run/walk) both
+    /// come from it; the default card covers the no-routine "just run" case.
+    private var sessionCard: RunCard { effectiveRoutine?.firstRunCard ?? RunCard() }
+
+    private var sessionPlan: IntervalPlan { IntervalPlan.plan(for: sessionCard) }
+
+    /// Turn the finished session into next time's seeds and persist them if they moved —
+    /// the cross-session half of "adaptive" (N7). Once per completion (`.task` on the
+    /// summary screen); simulate sessions never persist.
+    private func recordOutcome(_ summary: SessionSummary) {
+        guard !simulate,
+              let record = recordRunProgression,
+              let routine = effectiveRoutine, let card = routine.firstRunCard else { return }
+        let current = RunSeeds(runSeconds: card.runSeconds, walkSeconds: card.walkSeconds)
+        let next = RunProgressionPolicy().nextSeeds(current: current, outcome: RunSessionOutcome(summary: summary))
+        guard next != current else { return }
+        record(routine.id, [RunProgressionUpdate(cardId: card.id, runSeconds: next.runSeconds, walkSeconds: next.walkSeconds)])
     }
 
     /// The next adaptive-run routine to surface on the launch screen, based on the current
@@ -190,13 +217,15 @@ struct RunSessionContainerView: View {
     private func start() {
         let name = effectiveRoutine?.name ?? "Adaptive Run"
         if simulate {
-            // Compressed plan + small adaptation windows so a full adaptive run plays out quickly
-            // for testing/demo (~25s of plan).
+            // Compressed plan + small adaptation windows so a full adaptive run plays out
+            // quickly for testing/demo (~45s of plan). The 25s warmup exists to demo cadence
+            // run-detection: the script's sustained running cadence cuts it short ~13s in.
             let plan = IntervalPlan.beginnerRunWalk(
-                warmup: 2, runDuration: 6, walkDuration: 5, cycles: 2, cooldown: 2
+                warmup: 25, runDuration: 6, walkDuration: 5, cycles: 2, cooldown: 2
             )
             let adaptation = AdaptationConfig(
-                backOffWindow: 3, extendWindow: 4, recoverWindow: 3,
+                backOffWindow: 3, hardBackOffWindow: 2, hardBackOffMinRun: 2,
+                extendWindow: 4, recoverWindow: 3, recoveryDropBPM: 20,
                 minRunDuration: 2, minWalkDuration: 2,
                 runExtendIncrement: 6, walkLengthenIncrement: 4, maxWalkDuration: 30
             )

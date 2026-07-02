@@ -26,6 +26,11 @@ protocol WorkoutBackend: AnyObject {
     var onHeartRate: ((Double) -> Void)? { get set }
     /// Called when the live zone changes; carries a 1-based zone position (see the type doc).
     var onZoneChange: ((Int?) -> Void)? { get set }
+    /// Called with each new cadence sample (steps per minute), used to detect that the user
+    /// started running during the warmup. Optional signal: a backend that can't measure
+    /// cadence (denied motion permission, old hardware) simply never calls it, and warmup
+    /// falls back to its fixed timer (N6).
+    var onCadence: ((Double) -> Void)? { get set }
     /// Called if the workout fails *after* starting, so the manager can stop rather than tick
     /// against a dead session (N6). Never called by the simulated backend.
     var onFailure: (() -> Void)? { get set }

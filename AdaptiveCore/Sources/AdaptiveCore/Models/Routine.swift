@@ -70,7 +70,7 @@ public struct Routine: Codable, Sendable, Identifiable, Hashable {
     public var estimatedMinutes: Int {
         let perCard: (WorkoutCard) -> Double = { card in
             switch card {
-            case let .run(c): Double(c.durationMinutes)
+            case let .run(c): Double(c.totalMinutes)
             case let .exercise(item): (item.holdSeconds ?? 45) / 60
             case let .rest(c): c.seconds / 60
             }
@@ -149,6 +149,24 @@ public struct Routine: Codable, Sendable, Identifiable, Hashable {
             if let weight = update.weight, item.seedWeight != nil { updated.seedWeight = weight }
             if let reps = update.reps, item.reps != nil { updated.reps = reps }
             return .exercise(updated)
+        }
+        return copy
+    }
+
+    /// Return a copy with the latest-value run-seed `updates` applied to matching `.run` cards.
+    ///
+    /// Values are clamped to sane bounds rather than trusted blindly, so a bad payload can never
+    /// produce a degenerate plan (N6). Idempotent — applying the same values again yields an
+    /// equal routine. A `cardId` with no matching card is a graceful no-op.
+    public func applyingRunProgressions(_ updates: [RunProgressionUpdate]) -> Routine {
+        guard !updates.isEmpty else { return self }
+        let byCard = Dictionary(updates.map { ($0.cardId, $0) }, uniquingKeysWith: { _, latest in latest })
+        var copy = self
+        copy.cards = cards.map { card in
+            guard case var .run(runCard) = card, let update = byCard[runCard.id] else { return card }
+            runCard.runSeconds = min(max(update.runSeconds, 15), 3600)
+            runCard.walkSeconds = min(max(update.walkSeconds, 0), 600)
+            return .run(runCard)
         }
         return copy
     }

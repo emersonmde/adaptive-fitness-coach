@@ -108,7 +108,7 @@ private struct RoutineKind {
             field = WatchTheme.strengthField
             summary = "Strength · \(n) exercise\(n == 1 ? "" : "s")"
         } else {
-            let mins = routine.firstRunCard?.durationMinutes ?? routine.estimatedMinutes
+            let mins = routine.firstRunCard?.totalMinutes ?? routine.estimatedMinutes
             icon = "figure.run"
             tint = WatchTheme.run
             field = WatchTheme.runField

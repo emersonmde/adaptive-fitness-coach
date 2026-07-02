@@ -97,7 +97,7 @@ struct RoutineDetailView: View {
 
     private func cardDetail(_ card: WorkoutCard) -> String {
         switch card {
-        case let .run(c): return "~\(c.durationMinutes) min"
+        case let .run(c): return "~\(c.totalMinutes) min · \(c.warmupMinutes)/\(c.durationMinutes)/\(c.cooldownMinutes)"
         case let .exercise(item):
             if item.isHold { return "\(Int(item.holdSeconds ?? 0))s hold" }
             let load = item.seedWeight.map { " · \($0.displayString())" } ?? ""
