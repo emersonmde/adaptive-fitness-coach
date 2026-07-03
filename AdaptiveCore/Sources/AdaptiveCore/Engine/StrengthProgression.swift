@@ -86,10 +86,14 @@ public struct StrengthExerciseOutcome: Sendable, Hashable {
 public struct StrengthSessionOutcome: Sendable, Hashable {
     public var exercises: [StrengthExerciseOutcome]
     public var endedEarly: Bool
+    /// Post-session perceived effort 1–10 (build 9), nil when unrated. Session-level: it
+    /// applies to every exercise's decision. Only ever holds an advance, never eases.
+    public var perceivedEffort: Int?
 
-    public init(exercises: [StrengthExerciseOutcome], endedEarly: Bool = false) {
+    public init(exercises: [StrengthExerciseOutcome], endedEarly: Bool = false, perceivedEffort: Int? = nil) {
         self.exercises = exercises
         self.endedEarly = endedEarly
+        self.perceivedEffort = perceivedEffort
     }
 
     /// Aggregate a raw set log into per-exercise outcomes.
@@ -103,8 +107,10 @@ public struct StrengthSessionOutcome: Sendable, Hashable {
         loweredWeight: Set<String> = [],
         raisedWeight: Set<String> = [],
         changedReps: Set<String> = [],
-        endedEarly: Bool = false
+        endedEarly: Bool = false,
+        perceivedEffort: Int? = nil
     ) {
+        self.perceivedEffort = perceivedEffort
         var byExercise: [String: StrengthExerciseOutcome] = [:]
         for (id, planned) in plannedSetsByExercise {
             byExercise[id] = StrengthExerciseOutcome(
@@ -155,6 +161,9 @@ public struct StrengthProgressionConfig: Sendable, Hashable {
     public var holdCap: TimeInterval
     /// Easing never produces a load below the smallest real dumbbell.
     public var minWeightPounds: Double
+    /// A perceived-effort rating at/above this (1–10) downgrades an otherwise-clean advance to
+    /// hold — same "block advance without easing" philosophy as `suspicionUnrecoveredRests`.
+    public var highEffortThreshold: Int
 
     public init(
         shortfallReps: Int = 2,
@@ -163,7 +172,8 @@ public struct StrengthProgressionConfig: Sendable, Hashable {
         holdStep: TimeInterval = 5,
         holdFloor: TimeInterval = 15,
         holdCap: TimeInterval = 120,
-        minWeightPounds: Double = 2.5
+        minWeightPounds: Double = 2.5,
+        highEffortThreshold: Int = 8
     ) {
         self.shortfallReps = shortfallReps
         self.struggleShortSets = struggleShortSets
@@ -172,6 +182,7 @@ public struct StrengthProgressionConfig: Sendable, Hashable {
         self.holdFloor = holdFloor
         self.holdCap = holdCap
         self.minWeightPounds = minWeightPounds
+        self.highEffortThreshold = highEffortThreshold
     }
 }
 
@@ -207,10 +218,15 @@ public struct StrengthProgressionPolicy: Sendable {
 
     public enum Decision: Sendable, Hashable { case advance, hold, ease }
 
-    /// Classify the session for one exercise.
-    public func decision(for outcome: StrengthExerciseOutcome, endedEarly: Bool) -> Decision {
+    /// Classify the session for one exercise. `perceivedEffort` (session-level, 1–10, nil when
+    /// unrated) only ever *holds* an advance — a high rating means near-ceiling even when the
+    /// sets looked clean.
+    public func decision(for outcome: StrengthExerciseOutcome, endedEarly: Bool, perceivedEffort: Int? = nil) -> Decision {
         if isStruggle(outcome, endedEarly: endedEarly) { return .ease }
-        if isClean(outcome, endedEarly: endedEarly) { return .advance }
+        if isClean(outcome, endedEarly: endedEarly) {
+            if (perceivedEffort ?? 0) >= config.highEffortThreshold { return .hold }
+            return .advance
+        }
         return .hold
     }
 
@@ -221,7 +237,8 @@ public struct StrengthProgressionPolicy: Sendable {
         current: StrengthPrescription,
         exercise: Exercise,
         outcome: StrengthExerciseOutcome,
-        endedEarly: Bool
+        endedEarly: Bool,
+        perceivedEffort: Int? = nil
     ) -> StrengthPrescription {
         var next = current
 
@@ -233,7 +250,7 @@ public struct StrengthProgressionPolicy: Sendable {
             next.holdSeconds = min(max(next.holdSeconds!, config.holdFloor), config.holdCap)
         }
 
-        switch decision(for: outcome, endedEarly: endedEarly) {
+        switch decision(for: outcome, endedEarly: endedEarly, perceivedEffort: perceivedEffort) {
         case .hold:
             return next
 

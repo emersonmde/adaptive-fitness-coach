@@ -23,6 +23,11 @@ public struct RunSessionOutcome: Sendable, Hashable {
     public var meanRecoveryDrop: Double?
     /// True when the user ended the workout before the plan finished.
     public var endedEarly: Bool
+    /// The user's post-run perceived effort, 1 (easy) – 10 (all-out); nil when unrated
+    /// (build 9). The subjective signal the objective ones miss — HR can sit in-zone while
+    /// the runner is gassed (the fatigue-blindness that drove run v2). It only ever *lowers*
+    /// aggressiveness: a high rating holds an otherwise-clean advance.
+    public var perceivedEffort: Int?
 
     public init(
         plannedRunIntervals: Int,
@@ -33,7 +38,8 @@ public struct RunSessionOutcome: Sendable, Hashable {
         fastRecoveries: Int = 0,
         longestRunSeconds: TimeInterval = 0,
         meanRecoveryDrop: Double? = nil,
-        endedEarly: Bool = false
+        endedEarly: Bool = false,
+        perceivedEffort: Int? = nil
     ) {
         self.plannedRunIntervals = plannedRunIntervals
         self.completedRunIntervals = completedRunIntervals
@@ -44,6 +50,7 @@ public struct RunSessionOutcome: Sendable, Hashable {
         self.longestRunSeconds = longestRunSeconds
         self.meanRecoveryDrop = meanRecoveryDrop
         self.endedEarly = endedEarly
+        self.perceivedEffort = perceivedEffort
     }
 
     public init(summary: SessionSummary) {
@@ -56,7 +63,8 @@ public struct RunSessionOutcome: Sendable, Hashable {
             fastRecoveries: summary.fastRecoveries,
             longestRunSeconds: summary.longestRunSeconds,
             meanRecoveryDrop: summary.meanRecoveryDrop,
-            endedEarly: summary.endedEarly
+            endedEarly: summary.endedEarly,
+            perceivedEffort: summary.perceivedEffort
         )
     }
 }
@@ -127,6 +135,11 @@ public struct RunProgressionPolicy: Sendable {
     /// The walk seed a snapped (long-run) plan is capped at — long runs pair with short
     /// recoveries.
     public var snapWalkCeiling: Int
+    /// A perceived-effort rating at/above this (1–10) blocks advancing an otherwise-clean
+    /// session and suppresses the demonstrated-capacity snap — a run that *felt* all-out
+    /// isn't sustainable capacity to build on, regardless of what the objective counters say.
+    /// Effort only ever holds; it never eases (that would punish a hard clean session).
+    public var highEffortThreshold: Int
 
     public init(
         maxAdvanceStep: Int = 60,
@@ -138,7 +151,8 @@ public struct RunProgressionPolicy: Sendable {
         walkShrinkStep: Int = 15,
         regressBackOffCount: Int = 2,
         snapRatio: Double = 1.5,
-        snapWalkCeiling: Int = 90
+        snapWalkCeiling: Int = 90,
+        highEffortThreshold: Int = 8
     ) {
         self.maxAdvanceStep = maxAdvanceStep
         self.regressStep = regressStep
@@ -150,6 +164,12 @@ public struct RunProgressionPolicy: Sendable {
         self.regressBackOffCount = regressBackOffCount
         self.snapRatio = snapRatio
         self.snapWalkCeiling = snapWalkCeiling
+        self.highEffortThreshold = highEffortThreshold
+    }
+
+    /// Whether the user rated this session at or above the high-effort threshold.
+    private func isHighEffort(_ outcome: RunSessionOutcome) -> Bool {
+        (outcome.perceivedEffort ?? 0) >= highEffortThreshold
     }
 
     /// Next session's seeds given this session's outcome.
@@ -161,7 +181,11 @@ public struct RunProgressionPolicy: Sendable {
             // A struggle only ever *eases*: lengthen the walk toward the cap, but never pull
             // an already-longer walk seed down (that would raise effort on a struggle signal).
             seeds.walkSeconds = max(current.walkSeconds, min(maxWalkSeconds, current.walkSeconds + regressStep))
-        } else if isClean(outcome) {
+        } else if isClean(outcome) && !isHighEffort(outcome) {
+            // Advance only when the session was clean AND didn't feel all-out. A clean session
+            // rated high effort falls through to hold — the runner is near their ceiling even
+            // though the objective counters looked good (the fatigue-blindness run v2 exists
+            // to catch, now with the missing subjective signal).
             // A strong session — every walk ended at the floor, i.e. the user out-recovered
             // the plan everywhere — jumps two notches instead of one, so a mis-seeded fit
             // runner reaches their real level in a couple of sessions, not a month.
@@ -182,7 +206,9 @@ public struct RunProgressionPolicy: Sendable {
         // run that ended in repeated back-offs isn't capacity), and never downward. The
         // gate compares against the seed the user *ran with* (not the post-advance one) —
         // demonstrated capacity is relative to what was asked of them.
-        if !isStruggle(outcome) {
+        // Also suppress the snap when the session felt all-out: a long run that was maximal
+        // isn't repeatable capacity to start from next time.
+        if !isStruggle(outcome) && !isHighEffort(outcome) {
             let demonstrated = Int(outcome.longestRunSeconds / 15) * 15
             if Double(demonstrated) >= Double(current.runSeconds) * snapRatio {
                 seeds.runSeconds = max(seeds.runSeconds, demonstrated)

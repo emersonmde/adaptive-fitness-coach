@@ -32,6 +32,9 @@ public struct SessionSummary: Sendable, Hashable {
     public var meanRecoveryDrop: Double?
     /// True when the user ended the workout before the plan finished.
     public var endedEarly: Bool
+    /// Post-run perceived effort 1–10, set when the user rates on the complete screen
+    /// (build 9); nil when unrated/skipped. Carried into `RunSessionOutcome` for progression.
+    public var perceivedEffort: Int?
 
     public init(
         totalDuration: TimeInterval,
@@ -48,7 +51,8 @@ public struct SessionSummary: Sendable, Hashable {
         fastRecoveries: Int = 0,
         longestRunSeconds: TimeInterval = 0,
         meanRecoveryDrop: Double? = nil,
-        endedEarly: Bool = false
+        endedEarly: Bool = false,
+        perceivedEffort: Int? = nil
     ) {
         self.totalDuration = totalDuration
         self.totalDistance = totalDistance
@@ -65,5 +69,6 @@ public struct SessionSummary: Sendable, Hashable {
         self.longestRunSeconds = longestRunSeconds
         self.meanRecoveryDrop = meanRecoveryDrop
         self.endedEarly = endedEarly
+        self.perceivedEffort = perceivedEffort
     }
 }
