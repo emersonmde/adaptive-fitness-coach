@@ -161,6 +161,16 @@ was reserved for this). First spike: CQ1 — how the web lookup runs (app-side f
 extraction vs a web-search-capable backend). Supersedes the original PRD's nutrition non-goal
 (annotated there).
 
+### Platform integration backlog (Apple-API leverage — researched at WWDC26/iOS 27, 2026-07-02)
+Candidates for riding the OS instead of building UI. Roughly ordered by value; the first two are effectively part of P4, the rest are their own mini-milestones:
+- **App Intents (iOS 27) as the P4 capture spine** — a `CaptureMealIntent` gives widget / Lock-Screen / Action-Button / Siri entry for free; **`LongRunningIntent`** runs the post-confirm lookup past the 30s intent limit and **auto-presents progress as a Live Activity**. Part of P4 proper (see `calorie-tracking-spec.md` §7).
+- **Live Activities (iOS 27)** — now propagate automatically to the **watch Smart Stack**, StandBy, macOS menu bar, CarPlay. P4 lookup progress first; later a pre-workout "Up next: Morning Run · starts 7:00" activity on scheduled days (quiet, dismissible — N-goals still bar in-workout chat).
+- **Siri entity/intent schemas (iOS 27)** — contribute routines and logged meals to the **Spotlight semantic index** so the new Siri can answer "what's my workout today" / "log this salad" with attribution into our app, no phrase registration. Natural P5 candidate; pairs with the coach.
+- **WorkoutKit scheduled compositions** — sync our scheduled routines into Apple's Workout app / watch Smart Stack as *launch surfaces* (deep-linking into our session, keeping our adaptive engine in-session — N2/N3 untouched). Would replace nothing; adds discoverability where users already look.
+- **HealthKit workout-zone APIs (WWDC26)** — we already ride HR zones; the same surface now does **cycling power zones** → the cheapest path to a future cycling mode (the interval engine is already zone-generic: it consumes an `Int?` position).
+- **watchOS 27 FoundationModels (PCC on watch)** — enables future on-wrist *setup-phase* intelligence (e.g. post-workout summary phrasing). In-workout AI persona remains a PRD non-goal; nothing here changes that.
+- **Watch: monitor Workout Buddy** — Apple's own coaching layer gained pace/duration insights; no third-party API yet. If one appears, evaluate whether our haptic cues can register with it rather than compete.
+
 ---
 
 ## Open items / TODOs (carried forward)
