@@ -25,6 +25,13 @@ struct Adaptive_Fitness_Coach_Watch_AppApp: App {
             SessionContainerView(store: store,
                                  recordProgressions: connectivity.recordProgressions,
                                  recordRunProgression: connectivity.recordRunProgression)
+                .onOpenURL { url in
+                    // Complication / Smart Stack deep link: afcoach://start/<routineId> →
+                    // route the session container straight into that routine (build 9).
+                    guard url.scheme == "afcoach", url.host == "start" else { return }
+                    let id = url.lastPathComponent
+                    if !id.isEmpty { WorkoutLaunchRequest.shared.request(routineId: id) }
+                }
                 .task {
                     // Simulate modes use scripted backends and never touch HealthKit, so skip
                     // the authorization prompt for ALL of them (it would otherwise block the
