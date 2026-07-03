@@ -26,12 +26,16 @@ struct DailyIntakeLine: View {
             if everUsed || !intake.entries.isEmpty || isWorking {
                 line
             } else {
-                // First-run entry point: a quiet secondary row, not a hero.
-                Button(action: onCapture) {
+                // First-run entry point: opens the FOOD SCREEN (Scan/Type/target live there) —
+                // camera-direct entry belongs to the widget/Siri, not the discovery path
+                // (build 8.1 fix: camera-direct here hid the food screen from new installs).
+                Button(action: onShowEntries) {
                     HStack(spacing: 8) {
-                        Image(systemName: "camera.viewfinder")
-                        Text("Log a meal")
+                        Image(systemName: "fork.knife")
+                        Text("Food")
                         Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
                     }
                     .font(.subheadline)
                     .foregroundStyle(Theme.textSecondary)
