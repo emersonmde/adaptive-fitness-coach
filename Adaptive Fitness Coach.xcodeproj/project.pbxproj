@@ -12,9 +12,8 @@
 		FACE000000000000000000C1 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B1 /* AdaptiveCore */; };
 		FACE000000000000000000C2 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B2 /* AdaptiveCore */; };
 		FACE000000000000000000C3 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B3 /* SwiftSoup */; };
-/* End PBXBuildFile section */
-
 		FACE0000000000000000D007 /* AdaptiveFitnessWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		34704E1C2FECD82000C28688 /* PBXContainerItemProxy */ = {
@@ -93,24 +92,24 @@
 		34704E312FECD82000C28688 /* Adaptive Fitness Coach Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Adaptive Fitness Coach Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E402FECD82100C28688 /* Adaptive Fitness Coach Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Adaptive Fitness Coach Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E4A2FECD82100C28688 /* Adaptive Fitness Coach Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Adaptive Fitness Coach Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AdaptiveFitnessWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E822FECDA6200C28688 /* WorkoutKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WorkoutKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.5.sdk/System/Library/Frameworks/WorkoutKit.framework; sourceTree = DEVELOPER_DIR; };
+		FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AdaptiveFitnessWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		FACE000000000000000000E2 /* Exceptions for "Adaptive Fitness Coach" folder in "Adaptive Fitness Coach" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 34704E0D2FECD81F00C28688 /* Adaptive Fitness Coach */;
-		};
 		FACE000000000000000000E1 /* Exceptions for "Adaptive Fitness Coach Watch App" folder in "Adaptive Fitness Coach Watch App" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
 			);
 			target = 34704E302FECD82000C28688 /* Adaptive Fitness Coach Watch App */;
+		};
+		FACE000000000000000000E2 /* Exceptions for "Adaptive Fitness Coach" folder in "Adaptive Fitness Coach" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 34704E0D2FECD81F00C28688 /* Adaptive Fitness Coach */;
 		};
 		FACE0000000000000000D00E /* Exceptions for "AdaptiveFitnessWidgets" folder in "AdaptiveFitnessWidgets" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -832,10 +831,10 @@
 				CURRENT_PROJECT_VERSION = 8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Adaptive Fitness Coach/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
-				INFOPLIST_FILE = "Adaptive Fitness Coach/Info.plist";
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera scans receipts, barcodes, and nutrition labels so meals log in seconds.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Reads today's logged meals from Apple Health to show your daily intake.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Saves meals you log to Apple Health as dietary energy and macros.";
@@ -876,10 +875,10 @@
 				CURRENT_PROJECT_VERSION = 8;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Adaptive Fitness Coach/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
-				INFOPLIST_FILE = "Adaptive Fitness Coach/Info.plist";
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera scans receipts, barcodes, and nutrition labels so meals log in seconds.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Reads today's logged meals from Apple Health to show your daily intake.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Saves meals you log to Apple Health as dietary energy and macros.";

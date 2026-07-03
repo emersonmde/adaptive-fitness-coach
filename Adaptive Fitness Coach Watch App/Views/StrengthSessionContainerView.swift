@@ -42,7 +42,19 @@ struct StrengthSessionContainerView: View {
                 StrengthSessionPager(manager: manager)
             case .complete:
                 if let summary = manager.summary {
-                    StrengthCompleteView(summary: summary, saveState: manager.healthSaveState) { manager.reset(); onFinish?() }
+                    StrengthCompleteView(
+                        summary: summary,
+                        saveState: manager.healthSaveState,
+                        notePreview: { effort in manager.previewNotes(perceivedEffort: effort) },
+                        onDone: { effort in
+                            // Finalize (re-emit with effort + write Health) BEFORE reset, which
+                            // clears the retained backend the effort write needs.
+                            Task {
+                                await manager.finalizeProgression(perceivedEffort: effort)
+                                manager.reset(); onFinish?()
+                            }
+                        }
+                    )
                 } else {
                     ProgressView()
                 }

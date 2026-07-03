@@ -4,14 +4,21 @@ import AdaptiveCore
 /// A5 — done. Shown the instant the session ends: everything the engine tracked itself
 /// (time, splits, intervals) is here immediately; distance and average HR fill in when the
 /// OS finishes finalizing the workout in the background. The one status line tracks that
-/// finalize honestly — "Saving…" → "Saved to Health" — and this stays an acknowledgement,
-/// not a logging step: nothing to confirm or rate (N1). Optional `nextRunNote` is the single
-/// quiet line that makes cross-session adaptation perceivable ("Next run: 2 min intervals").
+/// finalize honestly — "Saving…" → "Saved to Health".
+///
+/// Build 9 adds an optional **effort rating** (crown, 1–10, skippable): the app's one
+/// deliberate post-workout question, matching Apple's Workout "Effort". It's post-effort
+/// (never mid-work — N5) and optional, and `notePreview` shows its effect on next session's
+/// plan live as the crown turns — the adaptation Apple's rating can't do. `onDone(effort)`
+/// carries the rating (nil = skipped) out to write Health + gate progression.
 struct WorkoutCompleteView: View {
     let summary: SessionSummary
     var saveState: HealthSaveState = .saved
-    var nextRunNote: String?
-    let onDone: () -> Void
+    /// The "Next run" note for a given effort — recomputed live as the crown turns.
+    var notePreview: (Int?) -> String?
+    let onDone: (Int?) -> Void
+
+    @State private var effort: Int?
 
     private var distanceText: String? {
         guard let meters = summary.totalDistance, meters > 0 else { return nil }
@@ -54,20 +61,19 @@ struct WorkoutCompleteView: View {
                 }
                 .padding(.top, 4)
 
-                if let nextRunNote {
-                    Text(nextRunNote)
+                EffortRatingControl(effort: $effort, tint: WatchTheme.run)
+                    .padding(.top, 6)
+
+                if let note = notePreview(effort) {
+                    Text(note)
                         .font(.caption2)
                         .foregroundStyle(WatchTheme.run)
                         .multilineTextAlignment(.center)
                         .padding(.top, 2)
-                } else {
-                    Text("Nothing to log")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 2)
+                        .animation(.easeInOut(duration: 0.25), value: note)
                 }
 
-                Button("Done", action: onDone)
+                Button("Done") { onDone(effort) }
                     .tint(.green)
                     .padding(.top, 4)
             }

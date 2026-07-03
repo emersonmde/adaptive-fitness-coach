@@ -2,11 +2,18 @@ import SwiftUI
 import AdaptiveCore
 
 /// The strength analogue of `WorkoutCompleteView` (A5). The session is already a native Apple
-/// strength workout in Health; this is acknowledgement, not a logging step (N1/N2).
+/// strength workout in Health; this is acknowledgement plus build 9's optional **effort
+/// rating** (crown 1–10, skippable). Strength gets no Apple-estimated effort at all, so the
+/// rating is the only Training-Load signal — and it holds an otherwise-clean advance. The
+/// "NEXT TIME" notes update live via `notePreview` as the crown turns.
 struct StrengthCompleteView: View {
     let summary: StrengthSummary
     var saveState: HealthSaveState = .saved
-    let onDone: () -> Void
+    /// The "next time" notes for a given effort — recomputed live as the crown turns.
+    var notePreview: (Int?) -> [String]
+    let onDone: (Int?) -> Void
+
+    @State private var effort: Int?
 
     private var saveLine: (text: String, color: Color) {
         switch saveState {
@@ -41,12 +48,11 @@ struct StrengthCompleteView: View {
                 }
                 .padding(.top, 4)
 
-                if summary.progressionNotes.isEmpty {
-                    Text("Nothing to log")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 2)
-                } else {
+                EffortRatingControl(effort: $effort, tint: WatchTheme.strength)
+                    .padding(.top, 6)
+
+                let notes = notePreview(effort)
+                if !notes.isEmpty {
                     // The quietly-perceivable adaptation moment: what the app learned and
                     // what next session prescribes because of it (Q5 — one calm section).
                     VStack(alignment: .leading, spacing: 4) {
@@ -54,7 +60,7 @@ struct StrengthCompleteView: View {
                             .font(.caption2.weight(.semibold))
                             .tracking(1.5)
                             .foregroundStyle(WatchTheme.textSecondary)
-                        ForEach(summary.progressionNotes.prefix(3), id: \.self) { note in
+                        ForEach(notes.prefix(3), id: \.self) { note in
                             HStack(spacing: 5) {
                                 Image(systemName: "arrow.up.right")
                                     .font(.caption2.weight(.bold))
@@ -66,8 +72,8 @@ struct StrengthCompleteView: View {
                                     .minimumScaleFactor(0.7)
                             }
                         }
-                        if summary.progressionNotes.count > 3 {
-                            Text("+\(summary.progressionNotes.count - 3) more")
+                        if notes.count > 3 {
+                            Text("+\(notes.count - 3) more")
                                 .font(.caption2)
                                 .foregroundStyle(WatchTheme.textSecondary)
                         }
@@ -76,7 +82,7 @@ struct StrengthCompleteView: View {
                     .padding(.top, 4)
                 }
 
-                Button("Done", action: onDone)
+                Button("Done") { onDone(effort) }
                     .tint(WatchTheme.strength)
                     .padding(.top, 4)
             }

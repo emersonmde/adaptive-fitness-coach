@@ -55,6 +55,9 @@ final class WorkoutSessionManager {
     private let injectedBackend: WorkoutBackend?
     private let autoTick: Bool
     private var backend: WorkoutBackend?
+    /// The finished backend, retained past `end()` so a post-summary effort rating can relate
+    /// its score to the saved workout. Cleared on `reset()`.
+    private var finishedBackend: WorkoutBackend?
 
     /// Largest time step credited to the engine in one tick. Caps background catch-up so a
     /// resume after suspension can't fast-forward through whole intervals in a single step.
@@ -344,6 +347,7 @@ final class WorkoutSessionManager {
         let finishingBackend = backend
         let generation = sessionGeneration
         backend = nil
+        finishedBackend = finishingBackend   // survives for the effort rating
         finalizeTask = Task { [weak self] in
             let totals = await finishingBackend?.end() ?? WorkoutTotals()
             guard let self, self.sessionGeneration == generation, self.sessionState == .complete else { return }
@@ -356,6 +360,13 @@ final class WorkoutSessionManager {
         }
     }
 
+    /// Write the user's perceived-effort rating (1–10) to the finished workout in Health.
+    /// Waits for the OS finalize so the workout exists before relating the score.
+    func writeEffort(_ score: Int) async {
+        await finalizeTask?.value
+        await finishedBackend?.writeEffortScore(score)
+    }
+
     /// Reset to idle so a new session can start (e.g. after dismissing the summary).
     func reset() {
         sessionGeneration += 1
@@ -364,6 +375,7 @@ final class WorkoutSessionManager {
         adaptationClearTask?.cancel(); adaptationClearTask = nil
         isFinishing = false
         backend = nil
+        finishedBackend = nil
         machine = nil
         latestZone = nil
         latestHeartRate = nil

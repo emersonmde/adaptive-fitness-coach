@@ -18,6 +18,8 @@ enum HealthKitAuthorization {
             HKQuantityType(.heartRate),
             HKQuantityType(.activeEnergyBurned),
             HKQuantityType(.distanceWalkingRunning),
+            // Post-workout perceived-effort rating → Training Load (build 9).
+            HKQuantityType(.workoutEffortScore),
         ]
     }
 

@@ -100,6 +100,9 @@ final class StrengthSessionManager {
 
     private let injectedBackend: WorkoutBackend?
     private var backend: WorkoutBackend?
+    /// Retained past `end()` so a post-summary effort rating can relate its score to the saved
+    /// workout (build 9). Cleared on `reset()`.
+    private var finishedBackend: WorkoutBackend?
     private let now: () -> Date
     private var isFinishing = false
     /// Guards `begin` across its suspension points (see `WorkoutSessionManager.isBeginning`).
@@ -444,20 +447,17 @@ final class StrengthSessionManager {
         let duration = sessionStartDate.map { now().timeIntervalSince($0) } ?? 0
         let exercisesDone = min(currentIndex, cards.count).reduceExerciseCount(in: cards)
 
-        // Progression: session outcome → policy → next prescriptions, with manual overrides
-        // folded into the base (a manual change IS that dimension's progression — the policy
-        // freezes advance on it and treats lowering as struggle evidence).
-        let (progressions, notes) = computeProgressions()
+        // Progression is NOT computed/emitted here — it's deferred to `finalizeProgression`
+        // on Done so the effort rating can actually gate it. (Emitting an advance here and a
+        // "hold" later can't retract the advance, since a hold produces no update — build 9.)
+        // The complete screen previews notes live via `previewNotes(effort:)`.
         summary = StrengthSummary(
             totalDuration: duration,
             exercisesCompleted: exercisesDone,
             setsCompleted: setLog.count,
             averageHeartRate: nil,
-            progressionNotes: notes
+            progressionNotes: []
         )
-        if let routineId, !progressions.isEmpty {
-            onProgressions?(routineId, progressions)
-        }
 
         healthSaveState = .saving
         sessionState = .complete
@@ -466,6 +466,7 @@ final class StrengthSessionManager {
         let finishingBackend = backend
         let generation = sessionGeneration
         backend = nil
+        finishedBackend = finishingBackend   // survives for the effort rating
         finalizeTask = Task { [weak self] in
             let totals = await finishingBackend?.end() ?? WorkoutTotals()
             guard let self, self.sessionGeneration == generation, self.sessionState == .complete else { return }
@@ -480,7 +481,29 @@ final class StrengthSessionManager {
     /// Run every logged exercise through the progression policy and produce both the sync
     /// updates and the summary's "next time" notes. When nothing was logged (a bailed or
     /// legacy-style session) manual overrides still persist via the fallback path.
-    private func computeProgressions() -> (updates: [ProgressionUpdate], notes: [String]) {
+    /// Compute progression with the user's effort rating, emit it (the session's *only*
+    /// emission — deferred from `end()` so the rating gates it), refresh the summary notes,
+    /// and write the effort score to Health (build 9). Called from the complete screen on
+    /// Done (rate or skip → nil effort).
+    func finalizeProgression(perceivedEffort: Int?) async {
+        let (progressions, notes) = computeProgressions(perceivedEffort: perceivedEffort)
+        if var filled = summary { filled.progressionNotes = notes; summary = filled }
+        if let routineId, !progressions.isEmpty {
+            onProgressions?(routineId, progressions)
+        }
+        if let perceivedEffort {
+            await finalizeTask?.value   // the workout must be finalized before relating a score
+            await finishedBackend?.writeEffortScore(perceivedEffort)
+        }
+    }
+
+    /// The "next time" notes a given effort rating would produce — for the live preview on the
+    /// complete screen (pure; no emit).
+    func previewNotes(perceivedEffort: Int?) -> [String] {
+        computeProgressions(perceivedEffort: perceivedEffort).notes
+    }
+
+    private func computeProgressions(perceivedEffort: Int?) -> (updates: [ProgressionUpdate], notes: [String]) {
         guard !setLog.isEmpty else { return (pendingProgressions(now: now()), []) }
 
         // Manual-change signals derive from overrides vs the original card seeds.
@@ -505,7 +528,8 @@ final class StrengthSessionManager {
             loweredWeight: lowered,
             raisedWeight: raised,
             changedReps: repsChanged,
-            endedEarly: endedEarly
+            endedEarly: endedEarly,
+            perceivedEffort: perceivedEffort
         )
 
         let policy = StrengthProgressionPolicy()
@@ -522,7 +546,8 @@ final class StrengthSessionManager {
             if let reps = repsOverrides[id] { base.reps = reps }
 
             let next = policy.nextPrescription(current: base, exercise: exercise,
-                                               outcome: exerciseOutcome, endedEarly: endedEarly)
+                                               outcome: exerciseOutcome, endedEarly: endedEarly,
+                                               perceivedEffort: perceivedEffort)
             guard next != seed else { continue }
             updates.append(ProgressionUpdate(
                 exerciseId: id,
@@ -546,6 +571,7 @@ final class StrengthSessionManager {
         tickTask?.cancel(); tickTask = nil
         lastTickDate = nil
         backend = nil
+        finishedBackend = nil
         cards = []
         exerciseMeta = [:]
         weightOverrides = [:]

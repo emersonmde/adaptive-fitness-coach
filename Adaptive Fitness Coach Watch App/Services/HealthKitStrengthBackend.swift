@@ -38,13 +38,16 @@ final class HealthKitStrengthBackend: NSObject, WorkoutBackend {
         try await builder.beginCollection(at: startDate)
     }
 
+    /// Retained after `finishWorkout` so a post-summary effort rating can be related to it.
+    private var finishedWorkout: HKWorkout?
+
     func end() async -> WorkoutTotals {
         let endDate = Date()
         session?.end()
         var saved = true
         do {
             try await builder?.endCollection(at: endDate)
-            _ = try await builder?.finishWorkout()
+            finishedWorkout = try await builder?.finishWorkout()
         } catch {
             // Fall through to whatever stats the builder gathered; never fabricate a value —
             // and never claim the workout saved when the finalize errored (N6).
@@ -53,6 +56,12 @@ final class HealthKitStrengthBackend: NSObject, WorkoutBackend {
         let hr = builder?.statistics(for: HKQuantityType(.heartRate))?
             .averageQuantity()?.doubleValue(for: heartRateUnit)
         return WorkoutTotals(distanceMeters: nil, averageHeartRate: hr, savedToHealth: saved)
+    }
+
+    func writeEffortScore(_ score: Int) async {
+        // Strength gets no Apple-estimated effort at all, so this rating is the only
+        // Training-Load signal the workout carries.
+        await HealthKitWorkoutBackend.relateEffort(score, to: finishedWorkout, store: healthStore)
     }
 }
 

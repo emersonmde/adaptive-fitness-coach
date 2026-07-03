@@ -127,8 +127,6 @@ struct RunSessionContainerView: View {
     /// is wall-clock-derived and can point at a *different* routine by the time a long run
     /// completes, which would attribute the outcome to the wrong card.
     @State private var activeRoutineId: UUID?
-    /// The quiet "Next run: …" line for the summary — how the user perceives adaptation.
-    @State private var nextRunNote: String?
     private let simulate: Bool
 
     init(store: RoutineStore, simulate: Bool, forcedRoutine: Routine? = nil,
@@ -158,10 +156,21 @@ struct RunSessionContainerView: View {
                 WorkoutSessionPager(manager: manager)
             case .complete:
                 if let summary = manager.summary {
-                    WorkoutCompleteView(summary: summary,
-                                        saveState: manager.healthSaveState,
-                                        nextRunNote: nextRunNote) { manager.reset(); onFinish?() }
-                        .task { recordOutcome(summary) }
+                    WorkoutCompleteView(
+                        summary: summary,
+                        saveState: manager.healthSaveState,
+                        notePreview: { effort in progressionNote(for: summary, effort: effort) },
+                        onDone: { effort in
+                            // Emit progression ONCE, on Done, with the rating (so a high rating
+                            // holds rather than advances). Then write Health and tear down —
+                            // reset clears the backend the write needs.
+                            recordOutcome(summary, effort: effort)
+                            Task {
+                                if let effort { await manager.writeEffort(effort) }
+                                manager.reset(); onFinish?()
+                            }
+                        }
+                    )
                 } else {
                     ProgressView()
                 }
@@ -194,16 +203,28 @@ struct RunSessionContainerView: View {
     /// Turn the finished session into next time's seeds and persist them if they moved —
     /// the cross-session half of "adaptive" (N7). Once per completion (`.task` on the
     /// summary screen); simulate sessions never persist.
-    private func recordOutcome(_ summary: SessionSummary) {
+    private func recordOutcome(_ summary: SessionSummary, effort: Int? = nil) {
         guard !simulate,
               let record = recordRunProgression,
               let routineId = activeRoutineId else { return }
         let card = sessionCard
+        var outcome = RunSessionOutcome(summary: summary)
+        outcome.perceivedEffort = effort
         let current = RunSeeds(runSeconds: card.runSeconds, walkSeconds: card.walkSeconds)
-        let next = RunProgressionPolicy().nextSeeds(current: current, outcome: RunSessionOutcome(summary: summary))
+        let next = RunProgressionPolicy().nextSeeds(current: current, outcome: outcome)
         guard next != current || !card.seedsCalibrated else { return }
-        nextRunNote = RunSeeds.progressionNote(from: current, to: next, blockSeconds: card.durationMinutes * 60)
         record(routineId, [RunProgressionUpdate(cardId: card.id, runSeconds: next.runSeconds, walkSeconds: next.walkSeconds)])
+    }
+
+    /// Live preview of the "Next run" note as the user turns the effort crown — shows the
+    /// rating's effect on next session before they leave (what Apple's rating can't do).
+    private func progressionNote(for summary: SessionSummary, effort: Int?) -> String? {
+        let card = sessionCard
+        var outcome = RunSessionOutcome(summary: summary)
+        outcome.perceivedEffort = effort
+        let current = RunSeeds(runSeconds: card.runSeconds, walkSeconds: card.walkSeconds)
+        let next = RunProgressionPolicy().nextSeeds(current: current, outcome: outcome)
+        return RunSeeds.progressionNote(from: current, to: next, blockSeconds: card.durationMinutes * 60)
     }
 
     /// The next adaptive-run routine to surface on the launch screen, based on the current

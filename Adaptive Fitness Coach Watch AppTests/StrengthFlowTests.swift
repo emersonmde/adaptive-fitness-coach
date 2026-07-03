@@ -217,6 +217,8 @@ struct StrengthFlowTests {
         manager.adjustWeight(byPounds: 5)
         manager.endManually()
         await waitUntilComplete(manager)
+        // Emission is on Done (build 9), not end() — skip = nil effort.
+        await manager.finalizeProgression(perceivedEffort: nil)
         #expect(captured?.routineId == routineId)
         #expect(captured?.updates.first?.exerciseId == "goblet_squat")
         #expect(captured?.updates.first?.weight == .lb(25))
@@ -230,7 +232,8 @@ struct StrengthFlowTests {
         manager.adjustWeight(byPounds: 5)
         manager.endManually()
         await waitUntilComplete(manager)
-        #expect(!fired)
+        await manager.finalizeProgression(perceivedEffort: nil)
+        #expect(!fired)   // an adjustment exists, but no routineId → nothing syncs
     }
 
     @Test func noProgressionsWhenNothingAdjusted() async {
@@ -240,7 +243,8 @@ struct StrengthFlowTests {
         await manager.begin(cards: sampleCards(), routineId: UUID(), routineName: "Push Day")
         manager.endManually()
         await waitUntilComplete(manager)
-        #expect(!fired)
+        await manager.finalizeProgression(perceivedEffort: nil)
+        #expect(!fired)   // nothing adjusted, bailed immediately → nothing to sync
     }
 
     @Test func resetClearsRepOverrides() async {
@@ -444,6 +448,9 @@ struct StrengthFlowTests {
         manager.completeSet()
         await waitUntilComplete(manager)
 
+        // Progression emits on Done (build 9), not at end() — skip = nil effort.
+        #expect(fired.isEmpty)
+        await manager.finalizeProgression(perceivedEffort: nil)
         #expect(fired.count == 1)
         #expect(fired.first?.exerciseId == "goblet_squat")
         #expect(fired.first?.reps == 11) // clean double progression: +1 rep
@@ -463,7 +470,38 @@ struct StrengthFlowTests {
         manager.repsPending = 7; manager.completeSet()
         manager.repsPending = 7; manager.completeSet()
         await waitUntilComplete(manager)
+        await manager.finalizeProgression(perceivedEffort: nil)
         #expect(fired.first?.reps == 9) // two short sets → ease one rep
+    }
+
+    @Test func highEffortHoldsAnOtherwiseCleanSession() async {
+        // Build 9: the same clean squat block that advances at low/unrated effort holds when
+        // the user rates it all-out (finalizeProgression re-emits with the rating, latest-wins).
+        var fired: [ProgressionUpdate] = []
+        let routineId = UUID()
+        let manager = makeManager()
+        manager.onProgressions = { _, updates in fired = updates }
+        let cards: [WorkoutCard] = [
+            .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
+            .rest(RestCard(seconds: 30)),
+            .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
+        ]
+        await manager.begin(cards: cards, routineId: routineId, routineName: "Squats")
+        manager.completeSet(); manager.skipRest(); manager.completeSet()
+        await waitUntilComplete(manager)
+        #expect(fired.isEmpty)   // nothing emitted until Done
+
+        // Low/unrated effort on this clean session advances (+1 rep)…
+        await manager.finalizeProgression(perceivedEffort: 5)
+        #expect(fired.first?.reps == 11)
+
+        // …but a 9/10 rating holds — the emitted set is empty (nothing to change).
+        fired = []
+        await manager.finalizeProgression(perceivedEffort: 9)
+        #expect(fired.isEmpty)
+        // The live preview mirrors it: high effort produces no advance note; low does.
+        #expect(manager.previewNotes(perceivedEffort: 9).isEmpty)
+        #expect(manager.previewNotes(perceivedEffort: 5).contains { $0.contains("11 reps") })
     }
 
     @Test func manualAdjustmentBeatsPolicy() async {
@@ -477,6 +515,7 @@ struct StrengthFlowTests {
         manager.adjustWeight(byPounds: 5) // manual raise: 20 → 25 (this IS the progression)
         manager.completeSet()             // clean set at the prescription
         await waitUntilComplete(manager)
+        await manager.finalizeProgression(perceivedEffort: nil)
         #expect(fired.first?.weight == .lb(25)) // the manual value, not a policy stack on top
         #expect(fired.first?.reps == nil)       // reps frozen — no +1 on a manually-raised session
     }

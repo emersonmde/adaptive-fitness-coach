@@ -43,4 +43,14 @@ protocol WorkoutBackend: AnyObject {
 
     /// Stop the workout and return read-back totals.
     func end() async -> WorkoutTotals
+
+    /// Relate a perceived-effort score (1–10) to the finished workout in Health
+    /// (`HKWorkoutEffortScore`), called after `end()` when the user rates on the complete
+    /// screen (build 9). No-op for backends that don't persist to Health.
+    func writeEffortScore(_ score: Int) async
+}
+
+extension WorkoutBackend {
+    /// Default: simulated backends and test doubles don't write to Health.
+    func writeEffortScore(_ score: Int) async {}
 }

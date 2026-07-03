@@ -55,6 +55,9 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
         }
     }
 
+    /// Retained after `finishWorkout` so a post-summary effort rating can be related to it.
+    private var finishedWorkout: HKWorkout?
+
     func end() async -> WorkoutTotals {
         pedometer?.stopUpdates()
         pedometer = nil
@@ -63,9 +66,34 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
         do {
             try await builder?.endCollection(at: endDate)
             let workout = try await builder?.finishWorkout()
+            finishedWorkout = workout
             return readTotals(workout: workout, saved: true)
         } catch {
             return readTotals(workout: nil, saved: false)
+        }
+    }
+
+    func writeEffortScore(_ score: Int) async {
+        await Self.relateEffort(score, to: finishedWorkout, store: healthStore)
+    }
+
+    /// Write an `HKWorkoutEffortScore` (1–10) sample and relate it to the workout — the same
+    /// field Apple's Fitness "Effort" writes, feeding Training Load (N2: the OS is the record).
+    static func relateEffort(_ score: Int, to workout: HKWorkout?, store: HKHealthStore) async {
+        guard let workout else { return }
+        let clamped = min(max(score, 1), 10)
+        let type = HKQuantityType(.workoutEffortScore)
+        let sample = HKQuantitySample(
+            type: type,
+            quantity: HKQuantity(unit: .appleEffortScore(), doubleValue: Double(clamped)),
+            start: workout.startDate,
+            end: workout.endDate
+        )
+        do {
+            try await store.save(sample)
+            try await store.relateWorkoutEffortSample(sample, with: workout, activity: nil)
+        } catch {
+            // Best-effort: a failed effort write never blocks the summary (N6).
         }
     }
 
