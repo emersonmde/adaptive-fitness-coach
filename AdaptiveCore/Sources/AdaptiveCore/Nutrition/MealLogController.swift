@@ -41,6 +41,16 @@ public final class MealLogController {
     /// Honest, user-facing error for identify/auth failures (retryable; never a dead end).
     public private(set) var error: String?
 
+    // The when-row's state (build 8): when the entries happened and which meal they belong
+    // to. Prefilled from the capture (receipt's printed date, a typed "yesterday"), always
+    // user-editable on the confirmation screen.
+    public private(set) var loggedDate = Date()
+    public private(set) var mealSlot: MealSlot = .snack
+    /// True when `loggedDate` came from the capture itself (receipt date / typed phrase) —
+    /// the when-row labels it honestly ("From receipt").
+    public private(set) var prefilledFromCapture = false
+    private var slotWasManuallyChosen = false
+
     private let pipeline: any MealPipeline
     private let resolver: MealResolver
     private let recorder: any NutritionRecorder
@@ -82,6 +92,10 @@ public final class MealLogController {
                 return
             }
             self.draft = draft
+            loggedDate = draft.capturedAt ?? Date()
+            prefilledFromCapture = draft.capturedAt != nil
+            slotWasManuallyChosen = false
+            mealSlot = draft.suggestedSlot ?? MealSlot.suggested(for: loggedDate)
             phase = .confirming
         } catch {
             guard token == generation else { return }
@@ -126,6 +140,22 @@ public final class MealLogController {
         answers[itemID] = answer
     }
 
+    // MARK: - The when-row (build 8)
+
+    public func setMealSlot(_ slot: MealSlot) {
+        mealSlot = slot
+        slotWasManuallyChosen = true
+    }
+
+    /// Changing the day re-suggests the slot from the new time — unless the user already
+    /// picked one (their choice outranks the heuristic).
+    public func setLoggedDate(_ date: Date) {
+        loggedDate = min(date, Date())   // meals aren't logged into the future
+        if !slotWasManuallyChosen {
+            mealSlot = MealSlot.suggested(for: loggedDate)
+        }
+    }
+
     // MARK: - Commit (the Log tap)
 
     /// Records every checked item. Returns immediately in spirit — the phase flips to
@@ -163,7 +193,7 @@ public final class MealLogController {
             let pendingID = UUID()
             queue?.enqueue(PendingMealQueue.PendingItem(
                 id: pendingID,
-                date: Date(),
+                date: loggedDate,
                 item: PendingMealQueue.PendingDraft(from: item),
                 seller: draft.seller,
                 answers: itemAnswers
@@ -178,11 +208,12 @@ public final class MealLogController {
             guard token == generation else { return }
 
             let entry = MealEntry(
-                date: Date(),
+                date: loggedDate,
                 name: item.name,
                 quantity: item.quantity,
                 facts: resolved.facts,
-                provenance: resolved.provenance
+                provenance: resolved.provenance,
+                meal: mealSlot
             )
             do {
                 try await recorder.record(entry)

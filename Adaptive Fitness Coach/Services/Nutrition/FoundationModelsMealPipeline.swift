@@ -31,6 +31,13 @@ struct FoundationModelsMealPipeline: MealPipeline {
 
     func identify(_ capture: MealCapture) async throws -> MealDraft {
         // Deterministic pre-passes first — no model call when the capture decides itself.
+        // Typed entry: strip the calorie clause and date words BEFORE the model sees the
+        // text (the stated number and the day are guarantees, not model behavior); the model
+        // only normalizes the name/seller.
+        if let typed = capture.typedText?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !typed.isEmpty {
+            return await identifyTyped(typed)
+        }
         if let barcode = capture.barcodes.first {
             return MealDraft(
                 classification: .barcode,
@@ -66,7 +73,42 @@ struct FoundationModelsMealPipeline: MealPipeline {
             to: MealPromptBuilder.extractionPrompt(ocrLines: capture.ocrLines),
             generating: GenerableMealDraft.self
         )
-        return response.content.toPackage(classification: .receipt)
+        var draft = response.content.toPackage(classification: .receipt)
+        // Receipts print their transaction date — prefill the when-row (deterministic,
+        // clamped; a miss costs one tap, a hallucination would be a wrong record).
+        draft.capturedAt = ReceiptDateParser.parse(ocrLines: capture.ocrLines)
+        return draft
+    }
+
+    /// The typed path: deterministic clause-stripping, then one model call to normalize.
+    private func identifyTyped(_ typed: String) async -> MealDraft {
+        let dated = TypedDatePhraseParser.parse(typed)
+        let (strippedName, statedKcal) = StatedCalorieParser.parse(dated.cleanText)
+        let statedFacts = statedKcal.map { NutritionFacts(energy: .exact(kcal: $0)) }
+
+        var draft: MealDraft
+        if let session = try? makeSession(instructions: MealPromptBuilder.typedEntryInstructions()),
+           let response = try? await session.respond(
+               to: MealPromptBuilder.typedEntryPrompt(text: strippedName),
+               generating: GenerableMealDraft.self
+           ),
+           !response.content.items.isEmpty {
+            draft = response.content.toPackage(classification: .typed)
+        } else {
+            // Model unavailable/failed: the typed path never dead-ends — log the text as-is.
+            draft = MealDraft(
+                classification: .typed,
+                seller: nil,
+                items: [DraftItem(name: strippedName.prefix(1).uppercased() + strippedName.dropFirst())]
+            )
+        }
+        // The stated number is applied in code, after the funnel — the model can't touch it.
+        if let statedFacts, !draft.items.isEmpty {
+            draft.items[0].statedFacts = statedFacts
+        }
+        draft.capturedAt = dated.date
+        draft.suggestedSlot = dated.slot
+        return draft
     }
 
     // MARK: - Stage 4

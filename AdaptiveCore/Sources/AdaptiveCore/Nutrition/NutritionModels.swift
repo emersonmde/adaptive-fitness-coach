@@ -220,17 +220,22 @@ public struct MealDraft: Sendable {
     /// (`ReceiptDateParser`) or a typed "yesterday" — the confirmation screen's when-row
     /// prefills from it (labeled, editable). Nil means "now".
     public var capturedAt: Date?
+    /// A meal slot the capture named outright ("bagel for breakfast") — outranks the
+    /// hour-based suggestion, still user-editable.
+    public var suggestedSlot: MealSlot?
 
     public init(
         classification: CaptureClassification,
         seller: Seller? = nil,
         items: [DraftItem],
-        capturedAt: Date? = nil
+        capturedAt: Date? = nil,
+        suggestedSlot: MealSlot? = nil
     ) {
         self.classification = classification
         self.seller = seller
         self.items = items
         self.capturedAt = capturedAt
+        self.suggestedSlot = suggestedSlot
     }
 }
 

@@ -47,6 +47,24 @@ public struct ScriptedMealPipeline: MealPipeline {
     public func identify(_ capture: MealCapture) async throws -> MealDraft {
         if let delay = script.identifyDelay { try? await Task.sleep(for: delay) }
         if let error = script.identifyError { throw error }
+        // Typed entry is fully deterministic (the parsers are pure), so ANY script supports
+        // it — same routing order as production.
+        if let typed = capture.typedText?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !typed.isEmpty {
+            let dated = TypedDatePhraseParser.parse(typed)
+            let (name, statedKcal) = StatedCalorieParser.parse(dated.cleanText)
+            let item = DraftItem(
+                name: name.prefix(1).uppercased() + name.dropFirst(),
+                statedFacts: statedKcal.map { NutritionFacts(energy: .exact(kcal: $0)) }
+            )
+            return MealDraft(
+                classification: .typed,
+                seller: nil,
+                items: [item],
+                capturedAt: dated.date,
+                suggestedSlot: dated.slot
+            )
+        }
         if !capture.barcodes.isEmpty, let barcodeDraft = script.barcodeDraft {
             return barcodeDraft
         }
@@ -133,8 +151,15 @@ public extension ScriptedMealPipeline {
     }
 
     /// A grocery receipt exercising everything at once: a database hit, a questionnaire item,
-    /// a pre-unchecked pantry item (spec §4.3), and one honest estimate fallback.
+    /// a pre-unchecked pantry item (spec §4.3), one honest estimate fallback — and a printed
+    /// transaction date (yesterday evening, computed at script build time so the when-row
+    /// prefill is demoable and UI-testable without calendar fragility).
     static func demoGroceryReceipt(delays: Bool = false) -> ScriptedMealPipeline {
+        let calendar = Calendar.current
+        let yesterdayEvening = calendar.date(
+            bySettingHour: 18, minute: 42, second: 0,
+            of: calendar.date(byAdding: .day, value: -1, to: Date()) ?? Date()
+        )
         let draft = MealDraft(
             classification: .receipt,
             seller: Seller(name: "Trader Joe's", domainHint: "traderjoes.com"),
@@ -156,7 +181,8 @@ public extension ScriptedMealPipeline {
                 ),
                 DraftItem(id: DemoID.pasta, name: "Penne Pasta (box)", isChecked: false),
                 DraftItem(id: DemoID.curry, name: "Deli Lentil Curry"),
-            ]
+            ],
+            capturedAt: yesterdayEvening
         )
         return ScriptedMealPipeline(script: Script(
             draft: draft,

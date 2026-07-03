@@ -185,6 +185,7 @@ struct MealLogControllerTests {
     @Test func quantityMultipliesDailyTotalNotTheEntry() async throws {
         let (controller, recorder) = makeController()
         await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        controller.setLoggedDate(Date())   // demo receipt prefills yesterday; log it today
         controller.setQuantity(ScriptedMealPipeline.DemoID.salad, quantity: 2)
         await controller.commit()
         let salad = try #require(recorder.entries.first { $0.name.contains("Caesar") })
@@ -193,5 +194,64 @@ struct MealLogControllerTests {
         let intake = try await recorder.todayIntake()
         // 460×2 + 300 + estimate midpoint 475
         #expect(intake.totalKcal == 460 * 2 + 300 + 475)
+    }
+
+    // MARK: - Build 8: the when-row
+
+    @Test func receiptDatePrefillsAndStampsEntries() async throws {
+        let (controller, recorder) = makeController()   // demo receipt: yesterday 18:42
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        #expect(controller.prefilledFromCapture)
+        #expect(controller.mealSlot == .dinner)         // 18:42 → dinner
+        let calendar = Calendar.current
+        #expect(!calendar.isDateInToday(controller.loggedDate))
+
+        await controller.commit()
+        let salad = try #require(recorder.entries.first { $0.name.contains("Caesar") })
+        #expect(calendar.isDateInYesterday(salad.date))
+        #expect(salad.meal == .dinner)
+
+        // The pager finds it on yesterday, not today.
+        let yesterday = try await recorder.intake(on: controller.loggedDate)
+        #expect(!yesterday.entries.isEmpty)
+        #expect(try await recorder.todayIntake().entries.isEmpty)
+    }
+
+    @Test func manualSlotSurvivesADateChange() async {
+        let (controller, _) = makeController()
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        controller.setMealSlot(.lunch)                  // user's choice
+        controller.setLoggedDate(Date())                // date change re-suggests…
+        #expect(controller.mealSlot == .lunch)          // …but never overrides the user
+    }
+
+    @Test func loggedDateNeverLandsInTheFuture() async {
+        let (controller, _) = makeController()
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        controller.setLoggedDate(Date().addingTimeInterval(86_400))
+        #expect(controller.loggedDate <= Date())
+    }
+
+    @Test func typedEntryWithStatedCaloriesEndsUserStated() async throws {
+        let (controller, recorder) = makeController()
+        await controller.beginCapture(MealCapture(typedText: "salmon caesar salad, 400 calories"))
+        #expect(controller.draft?.classification == .typed)
+        #expect(controller.draft?.items.first?.name == "Salmon caesar salad")
+        await controller.commit()
+
+        let entry = try #require(recorder.entries.first)
+        #expect(entry.facts.energy == .exact(kcal: 400))
+        #expect(entry.provenance == .userStated)
+    }
+
+    @Test func typedYesterdayPhraseBackdates() async throws {
+        let (controller, recorder) = makeController()
+        await controller.beginCapture(MealCapture(typedText: "pad thai last night"))
+        #expect(controller.prefilledFromCapture)
+        #expect(controller.mealSlot == .dinner)
+        await controller.commit()
+        let entry = try #require(recorder.entries.first)
+        #expect(Calendar.current.isDateInYesterday(entry.date))
+        #expect(entry.meal == .dinner)
     }
 }
