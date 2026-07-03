@@ -277,6 +277,35 @@ was reserved for this). First spike: CQ1 — how the web lookup runs (app-side f
 extraction vs a web-search-capable backend). Supersedes the original PRD's nutrition non-goal
 (annotated there).
 
+### Build 9 — Integration build (IN PROGRESS on branch `build9-integration`)
+Watch polish + Effort/RPE + roadmap integrations. Committed + verified so far:
+- **Watch safe-area cutoff fix** ✅ — paged `.tabViewStyle(.page/.verticalPage)` children bled
+  past the bottom safe-area inset; `ZStack{field.ignoresSafeArea();VStack+Spacer}` edge-slammed
+  the bottom control into it (Simulator underrenders the inset → passed sim, clipped on
+  hardware). Fix: `.pagedWorkoutBackground` = `containerBackground(_,for:.tabView)` on
+  WorkoutActiveView/StrengthGlanceView/ExerciseDetailView/RoutineLaunchCard. **Screenshot-
+  verified on Series 11 46mm + Ultra 3 49mm**; hardware confirmation is the user's.
+- **Effort/RPE** ✅ — crown 1–10 skippable rating (`EffortRatingControl`) on both complete
+  screens → writes `HKWorkoutEffortScore` (`relateWorkoutEffortSample`; HKWorkout retained past
+  `end()`) AND feeds progression: `perceivedEffort` on the outcomes, `highEffortThreshold`
+  holds an otherwise-clean advance / suppresses the run snap (never eases, never more
+  aggressive — the subjective signal run v2's fatigue-blindness needed). Progression emits
+  once on Done (a high rating can't retract an end()-time advance, so emission moved to Done).
+  The "Next run"/"NEXT TIME" note previews the rating's effect live. 9 policy tests + watch
+  integration test.
+- **App Group foundation** ✅ — `group.com.memerson.Adaptive-Fitness-Coach` on phone+watch+
+  widget; `RoutineStore.defaultFileURL()` → group container with idempotent one-time migration;
+  widget target now links AdaptiveCore.
+- **Siri App Entities (partial P5)** ✅ — `RoutineEntity`/`RoutineEntityQuery`; NextWorkoutIntent
+  returns the entity; phone `StartWorkoutIntent` (→ points to watch); watch `StartRoutineIntent`
+  + `WorkoutLaunchRequest` routes `SessionContainerView.chosen` straight into a routine's
+  adaptive flow. Full CoreSpotlight index deferred.
+- **Pending (device-only-verifiable, not yet built)**: next-workout Home/Lock widgets + a NEW
+  watchOS widget-extension target for Smart Stack + complications (uses `StartRoutineIntent`);
+  Live Activities (meal-lookup progress + pre-workout "Up next"). WorkoutKit scheduled
+  compositions deliberately skipped (would hand tracking to Apple's app).
+- Decision recorded: hold TestFlight until the user validates the device-only integrations.
+
 ### Platform integration backlog (Apple-API leverage — researched at WWDC26/iOS 27, 2026-07-02)
 Candidates for riding the OS instead of building UI. Roughly ordered by value; the first two are effectively part of P4, the rest are their own mini-milestones:
 - **App Intents (iOS 27) as the P4 capture spine** — a `CaptureMealIntent` gives widget / Lock-Screen / Action-Button / Siri entry for free; **`LongRunningIntent`** runs the post-confirm lookup past the 30s intent limit and **auto-presents progress as a Live Activity**. Part of P4 proper (see `calorie-tracking-spec.md` §7).
