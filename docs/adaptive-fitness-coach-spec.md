@@ -8,6 +8,8 @@
 
 A watch-first fitness app that removes the two things that stall beginners: not knowing *what to do*, and not knowing *how hard to push*. The user states a goal; the app builds a routine, shows how to perform each movement, and keeps the user in the correct effort band automatically — adjusting run/walk intervals to heart rate in real time, and progressing strength load session over session — without the user ever manually logging a set or editing the plan.
 
+*(Scope note: the shipped roadmap evolved past this document's phasing — the P3 built was AI routine building rather than §5's learned-adaptation P3 (deferred), and calorie tracking, originally a §8 non-goal, is now P4 with its own companion spec, `calorie-tracking-spec.md`. `PROJECT-STATUS.md` is the living source of truth for phase numbering; this document remains authoritative for the workout product's non-negotiables and core experience.)*
+
 The product is a **UI and intelligence layer over Apple's Workout stack**. Every session is a real Apple workout via WorkoutKit/HealthKit; the app does not record its own metrics. Heart rate, calories, and route are captured natively by the OS and live in Apple Health.
 
 ---
@@ -158,7 +160,12 @@ A per-user model measurably outperforms the P2 heuristic for that user after a d
 
 - Not a social or sharing app.
 - Not for advanced lifters optimizing hypertrophy/periodization; target is approachable beginner training.
-- No nutrition or calorie tracking — weight loss is driven by diet, handled outside this app.
+- ~~No nutrition or calorie tracking — weight loss is driven by diet, handled outside this app.~~
+  **Superseded (P4).** This assumed calorie counting was a solved problem elsewhere; trying the
+  existing apps proved otherwise. Calorie tracking is now in scope as its own product surface
+  with its own spec and non-negotiables — see **`calorie-tracking-spec.md`**. What this
+  non-goal *meant* still binds: no tedious manual nutrition logging, and nothing here dilutes
+  the watch-first workout product.
 - No manual workout logging, ever (N1).
 - No non-wrist sensors or external hardware.
 - No AI "coach" persona — voice or chat — during workouts (N5).

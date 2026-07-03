@@ -146,8 +146,20 @@ The native trainer conversation replacing the RoutineExchange copy-paste loop. S
 - **Deterministic testing**: `ScriptedCoachEngine` in the package (unit tests drive `CoachConversation`); phone `-simulateCoach` launch arg runs the same script for demos and `CoachFlowUITests` (intake → proposal → apply → week screen). Library expanded to ~36 movements with `Equipment` tags (barbell/kettlebell/bands/pull-up bar/machines) so the equipment intake has teeth. **Phone deployment target is now iOS 27.0** (FoundationModels' `LanguageModel` abstraction needs it).
 - **Pending**: real-model behavior on device (sim can't grant Apple Intelligence) — persona quality, tool-call reliability (fallback design: explicit `respond(generating:)` on "Draft" if tool-proposing is flaky), PCC quota/latency feel.
 
-### P4 — Calorie tracking (phone)
-Log food via barcode scan, receipt photos, and food images; AI identifies the brand / restaurant / location and the items, then verifies calories against the manufacturer's or restaurant's own website (web fetch / browser use) rather than generic database lookups.
+### P4 — Calorie tracking (phone) — SPEC'D, not started
+Full product spec: **`docs/calorie-tracking-spec.md`** (read it first — it carries the P4
+non-negotiables C1–C7, the staged LLM pipeline, open questions CQ1–CQ5, and §9 "Direction for
+the planning session"). The one-paragraph version: **identification + retrieval, not photo
+guessing** — scan receipt/barcode/label → identify seller → identify items → native
+confirmation screen (checkable items; structured tap-to-answer questionnaire only when it
+materially changes the number — never chat) → per-item web lookup preferring the
+manufacturer's/restaurant's own data → write to Apple Health (`dietaryEnergyConsumed`, the
+water-logging pattern; no private food store). Photo-of-plate estimation is an honest,
+range-labeled fallback. Golden path ("salad benchmark"): widget → camera → snap → confirm →
+saved, under ten seconds, zero typing. Reuses the P3 provider seam (`CoachMessage.Content.image`
+was reserved for this). First spike: CQ1 — how the web lookup runs (app-side fetch + LLM
+extraction vs a web-search-capable backend). Supersedes the original PRD's nutrition non-goal
+(annotated there).
 
 ---
 
@@ -169,5 +181,5 @@ Log food via barcode scan, receipt photos, and food images; AI identifies the br
 1. Read this file, then the PRD (`docs/adaptive-fitness-coach-spec.md`) and design handoffs (`docs/design/`).
 2. Confirm Xcode 27 beta is installed; build the watch scheme with `DEVELOPER_DIR=…Xcode-beta…` against a watchOS 27 sim. Demo: `-simulateWorkout` (run), `-simulateStrength` (strength), `-simulateMixed` (run→strength sequence). Phone: `-seedDemo`.
 3. `cd AdaptiveCore && swift test` should be ~247 green instantly. Full suites: watch scheme test (unit + UI, incl. the self-driving `-simulateStrength` E2E) and phone `RoutineFlowUITests` + `CoachFlowUITests` (needs `-simulateCoach`; both UI suites **serially**) + the `CoachSchemaDriftTests` unit target.
-4. **Next: P3 on-device validation** — run all three coach intents against the real FoundationModels engine on a device (or an Apple-Intelligence-capable sim): persona quality, `propose_plan` tool reliability, PCC latency/quota; confirm a revise of a calibrated routine preserves run seeds live (the graft invariant, `RunProgressionTests` pins it in code). Then **P4 — calorie tracking** (barcode/receipt/photo → AI identification → verification against the maker's own website; reuse the `CoachEngine` seam — `CoachMessage.Content.image` is the extension point). Also pending: ship build 7 (P2+P3) when the user asks, and treat their first real strength session as on-body validation of the P2 thresholds. Deferred backlog (IMU heuristics, HR-zone circuit mode, snapshot tests, sequence finalize handoff, Claude-API/user-key coach engines + a Settings backend picker, conversation persistence) lives in the milestone sections above. `docs/DESIGN-PRINCIPLES.md` is binding on any new screen.
+4. **Next: P3 on-device validation** — run all three coach intents against the real FoundationModels engine on a device (or an Apple-Intelligence-capable sim): persona quality, `propose_plan` tool reliability, PCC latency/quota; confirm a revise of a calibrated routine preserves run seeds live (the graft invariant, `RunProgressionTests` pins it in code). Then **P4 — calorie tracking**: read **`docs/calorie-tracking-spec.md`** end to end before planning — especially §9 (direction for the planning session) and CQ1 (the web-lookup spike that decides the architecture); it reuses the P3 provider seam (`CoachMessage.Content.image` is the extension point). Also pending: ship build 7 (P2+P3) when the user asks, and treat their first real strength session as on-body validation of the P2 thresholds. Deferred backlog (IMU heuristics, HR-zone circuit mode, snapshot tests, sequence finalize handoff, Claude-API/user-key coach engines + a Settings backend picker, conversation persistence) lives in the milestone sections above. `docs/DESIGN-PRINCIPLES.md` is binding on any new screen.
 5. Releasing to TestFlight (significant milestones only): see **`docs/TESTFLIGHT.md`**.
