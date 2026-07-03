@@ -34,3 +34,4 @@ build-archive/
 
 # App Store Connect API credentials (path-only; never the .p8 itself)
 .env
+build-device/

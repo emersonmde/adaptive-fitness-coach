@@ -14,7 +14,10 @@ struct FoundationModelsMealPipeline: MealPipeline {
         #if targetEnvironment(simulator)
         return .unavailable(reason: "Meal scanning needs Apple Intelligence on a real device. In the simulator, launch with -simulateMealScan.")
         #else
-        if case .available = PrivateCloudComputeLanguageModel().availability { return .available }
+        // PCC without its entitlement is a FATAL ERROR, not .unavailable — never touch the
+        // type unless the profile carries the grant (see PCCEntitlement).
+        if PCCEntitlement.isGranted,
+           case .available = PrivateCloudComputeLanguageModel().availability { return .available }
         switch SystemLanguageModel.default.availability {
         case .available:
             return .available
@@ -103,9 +106,11 @@ struct FoundationModelsMealPipeline: MealPipeline {
         #if targetEnvironment(simulator)
         throw CocoaError(.featureUnsupported)
         #else
-        let pcc = PrivateCloudComputeLanguageModel()
-        if case .available = pcc.availability {
-            return LanguageModelSession(model: pcc, tools: tools, instructions: instructions)
+        if PCCEntitlement.isGranted {
+            let pcc = PrivateCloudComputeLanguageModel()
+            if case .available = pcc.availability {
+                return LanguageModelSession(model: pcc, tools: tools, instructions: instructions)
+            }
         }
         if SystemLanguageModel.default.isAvailable {
             return LanguageModelSession(model: SystemLanguageModel.default, tools: tools, instructions: instructions)
@@ -167,9 +172,11 @@ struct FoundationModelsAgenticLookup: AgenticLookup {
         #if targetEnvironment(simulator)
         throw CocoaError(.featureUnsupported)
         #else
-        let pcc = PrivateCloudComputeLanguageModel()
         let model: any LanguageModel = {
-            if case .available = pcc.availability { return pcc }
+            if PCCEntitlement.isGranted {
+                let pcc = PrivateCloudComputeLanguageModel()
+                if case .available = pcc.availability { return pcc }
+            }
             return SystemLanguageModel.default
         }()
         let session = LanguageModelSession(

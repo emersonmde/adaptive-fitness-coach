@@ -18,7 +18,10 @@ struct FoundationModelsCoachEngine: CoachEngine {
         #if targetEnvironment(simulator)
         return .unavailable(reason: "The coach needs Apple Intelligence on a real device. In the simulator, launch with -simulateCoach. You can also round-trip routines through the Claude app from the Coach menu.")
         #else
-        if case .available = PrivateCloudComputeLanguageModel().availability { return .available }
+        // PCC without its entitlement is a FATAL ERROR, not .unavailable (found by the P4
+        // LookupLab device spike) — never touch the type unless the profile carries the grant.
+        if PCCEntitlement.isGranted,
+           case .available = PrivateCloudComputeLanguageModel().availability { return .available }
         switch SystemLanguageModel.default.availability {
         case .available:
             return .available
@@ -40,12 +43,15 @@ struct FoundationModelsCoachEngine: CoachEngine {
         let sink = ProposalSink()
         let tool = ProposePlanTool { sink.deliver($0) }
 
-        // Prefer PCC (bigger model, reasoning); degrade to on-device rather than failing —
-        // a weaker coach beats no coach, and the seam hides the choice from the UI.
+        // Prefer PCC (bigger model, reasoning) when the build is entitled to it; degrade to
+        // on-device rather than failing — a weaker coach beats no coach, and the seam hides
+        // the choice from the UI.
         let session: LanguageModelSession
-        let pcc = PrivateCloudComputeLanguageModel()
-        if case .available = pcc.availability {
-            session = LanguageModelSession(model: pcc, tools: [tool], instructions: instructions)
+        if PCCEntitlement.isGranted,
+           case .available = PrivateCloudComputeLanguageModel().availability {
+            session = LanguageModelSession(
+                model: PrivateCloudComputeLanguageModel(), tools: [tool], instructions: instructions
+            )
         } else if SystemLanguageModel.default.isAvailable {
             session = LanguageModelSession(model: SystemLanguageModel.default, tools: [tool], instructions: instructions)
         } else {
