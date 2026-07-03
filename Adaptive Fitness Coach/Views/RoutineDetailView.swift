@@ -16,6 +16,7 @@ struct RoutineDetailView: View {
     @State private var draft: Routine?
     @State private var confirmingDelete = false
     @State private var editingCards = false
+    @State private var coachLaunch: CoachLaunch?
 
     var body: some View {
         ZStack {
@@ -37,6 +38,16 @@ struct RoutineDetailView: View {
             RoutineBuilderView(initialCards: draft?.cards ?? [], initialRounds: draft?.rounds ?? 1) { cards, rounds in
                 commit { $0.cards = cards; $0.rounds = max(1, rounds) }
                 editingCards = false
+            }
+        }
+        .sheet(item: $coachLaunch) { launch in
+            CoachChatView(store: store, intent: launch.intent)
+        }
+        // A coach apply rewrites this routine in the store; refresh the local draft when the
+        // sheet closes so the screen shows what was applied.
+        .onChange(of: coachLaunch == nil) {
+            if coachLaunch == nil {
+                draft = store.routines.first { $0.id == routineID }
             }
         }
     }
@@ -75,14 +86,26 @@ struct RoutineDetailView: View {
                 }
             }
 
-            Button {
-                editingCards = true
-            } label: {
-                Label(routine.cards.isEmpty ? "Add Cards" : "Edit Cards", systemImage: "slider.horizontal.3")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.accent)
+            HStack(spacing: 20) {
+                Button {
+                    editingCards = true
+                } label: {
+                    Label(routine.cards.isEmpty ? "Add Cards" : "Edit Cards", systemImage: "slider.horizontal.3")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    coachLaunch = CoachLaunch(intent: .reviseRoutine(routineID))
+                } label: {
+                    Label("Ask the coach", systemImage: "sparkles")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("askCoach")
             }
-            .buttonStyle(.plain)
             .padding(.top, 2)
         }
     }

@@ -124,9 +124,10 @@ public extension ScriptedCoachEngine {
                 cards: [.run(RunCard(durationMinutes: 20))]
             ),
         ]
+        // The sheet's static greeting asks the equipment question, so the script opens by
+        // responding to that answer (starting point → goal → proposal).
         return ScriptedCoachEngine(turns: [
-            Turn(text: "Happy to build this with you. First things first — what equipment do you have access to?"),
-            Turn(text: "Good, plenty to work with. Where are you starting from — have you been training lately, and is anything nagging you?"),
+            Turn(text: "Good kit — plenty to work with. Where are you starting from — have you been training lately, and is anything nagging you?"),
             Turn(text: "That's a solid base. What's the goal — strength, endurance, dropping weight, just feeling better?"),
             Turn(
                 text: "Here's what I'd start you on: two strength days and an easy adaptive run on the weekend. The app will adjust weights and run intervals from how you actually perform.",
