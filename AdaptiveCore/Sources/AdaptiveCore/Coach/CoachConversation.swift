@@ -43,6 +43,10 @@ public final class CoachConversation {
 
     private let session: any CoachSession
     private var turnTask: Task<Void, Never>?
+    /// Identifies the live turn. Every event handler checks it, so a previous turn's task
+    /// finishing late (its loop exits after the `.finishedTurn` event was already handled)
+    /// can't fold text into — or prematurely end — the turn that replaced it.
+    private var turnToken = 0
 
     /// Fails only if the engine can't open a session (callers check `engine.availability`
     /// first and route to the degradation state instead).
@@ -76,21 +80,24 @@ public final class CoachConversation {
     private func beginTurn(sending text: String) {
         isResponding = true
         streamingText = ""
+        turnToken += 1
+        let token = turnToken
         turnTask = Task { [weak self, session] in
             do {
                 for try await event in session.send(CoachMessage(text: text)) {
                     guard let self, !Task.isCancelled else { return }
-                    self.handle(event)
+                    self.handle(event, token: token)
                 }
-                self?.finishTurn()
+                self?.finishTurn(token: token)
             } catch {
                 guard let self, !Task.isCancelled else { return }
-                self.failTurn(retryText: text, error: error)
+                self.failTurn(retryText: text, error: error, token: token)
             }
         }
     }
 
-    private func handle(_ event: CoachEvent) {
+    private func handle(_ event: CoachEvent, token: Int) {
+        guard token == turnToken else { return }
         switch event {
         case let .textDelta(delta):
             streamingText += delta
@@ -101,16 +108,18 @@ public final class CoachConversation {
             latestProposal = proposal
             transcript.append(Entry(.proposal(proposal)))
         case .finishedTurn:
-            finishTurn()
+            finishTurn(token: token)
         }
     }
 
-    private func finishTurn() {
+    private func finishTurn(token: Int) {
+        guard token == turnToken else { return }
         foldStreamingText()
         isResponding = false
     }
 
-    private func failTurn(retryText: String, error: Error) {
+    private func failTurn(retryText: String, error: Error, token: Int) {
+        guard token == turnToken else { return }
         foldStreamingText()
         transcript.append(Entry(.failure(
             message: "The coach couldn't respond. \(error.localizedDescription)",
