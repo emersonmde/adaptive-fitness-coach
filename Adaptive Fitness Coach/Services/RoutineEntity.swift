@@ -53,7 +53,9 @@ extension RoutineEntityQuery: EnumerableEntityQuery {
 /// in-session start.
 struct StartWorkoutIntent: AppIntent {
     static let title: LocalizedStringResource = "Start Workout"
-    static let description = IntentDescription("Start one of your routines (on Apple Watch).")
+    // Note: App Intent descriptions must not contain "apple" (ITMS-90626), so this can't say
+    // "Apple Watch" — the runtime dialog does the pointing.
+    static let description = IntentDescription("Start one of your routines from your watch.")
     static let openAppWhenRun = true
 
     @Parameter(title: "Routine")
@@ -64,6 +66,6 @@ struct StartWorkoutIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        .result(dialog: "Open Adaptive Fitness Coach on your Apple Watch to start \(routine.name).")
+        .result(dialog: "Open Adaptive Fitness Coach on your watch to start \(routine.name).")
     }
 }

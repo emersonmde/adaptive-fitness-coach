@@ -26,7 +26,8 @@ struct StartRunIntent: AppIntent {
 /// engine runs in-session (N2/N3) rather than handing off to Apple's Workout app.
 struct StartRoutineIntent: AppIntent {
     static let title: LocalizedStringResource = "Start Workout"
-    static let description = IntentDescription("Start one of your routines on Apple Watch.")
+    // App Intent descriptions must not contain "apple" (ITMS-90626).
+    static let description = IntentDescription("Start one of your scheduled routines.")
     static let openAppWhenRun = true
 
     @Parameter(title: "Routine")
