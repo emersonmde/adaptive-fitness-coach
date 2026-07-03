@@ -220,6 +220,48 @@ guessing; Apple Health is the record (C5 — no private food store). Implemented
   OCR→extraction quality; salad-benchmark timing (<10s, C1); HealthKit auth prompt;
   HKCorrelation delete semantics; DataScanner capture quality.
 
+### P4.1 — Food UX expansion (build 8) ✅ IMPLEMENTED (sim-green; shipping as build 8)
+First-real-use feedback (no camera-less logging, no backdating, no in-app history/edit, no
+target) answered in one build. All on existing seams; AdaptiveCore still zero-dep.
+- **Food day screen** (`FoodDayView`, pushed from the hub's daily line — deliberately NO tab
+  bar): `‹ Today ›` day pager (Calendar math, forward-disabled-at-today), **calorie gauge**
+  as the dominant element (`CalorieGaugeView`: one ring, one variable = consumed/target;
+  over-target = full ring + one tint shift to gradient-amber + plain "230 over" — the
+  consciously amended C6, see spec §3), quiet active-energy line (informational only — fixed
+  budget by decision), meal-grouped entries (`MealSlot`, hour-auto-assigned, metadata
+  `AFCMeal`), tap-to-edit (`EntryEditSheet` → `recorder.replace` = delete+rewrite; kcal edits
+  honestly become `.userStated` "your number"), context-menu **Log again** (`relogged()` —
+  fresh identity, re-slotted), "n kcal from other apps" honesty footer, Scan + Type buttons,
+  first-run **target sheet** (`TargetSetupSheet`: Mifflin-St Jeor suggestion from Health body
+  data via `HealthKitBodyProfileSource` — any missing datum → manual entry, never a silent
+  constant; user override always wins; stored in `CalorieTargetStore` UserDefaults — a
+  setting, not food data).
+- **Typed/dictated entry**: "Type it instead" pill on the capture screen + Type on the Food
+  screen + **`LogMealIntent`** (Siri: "Log a meal" → dictate; one-shot parameter fill where
+  the new Siri manages it). Deterministic pre-pass strips **stated calories**
+  (`StatedCalorieParser` — trailing clause only; the stated number wins as the new
+  `.userStated` ladder rung above even printed labels) and **date/meal words**
+  (`TypedDatePhraseParser`: yesterday/last night/for lunch…); the model only normalizes
+  spelling/branding and can never touch either.
+- **When-row** on the confirmation sheet: meal chips (auto-defaulted, manual choice sticks) +
+  Today/Yesterday/picker date control, clamped to the past; **receipt printed dates**
+  (`ReceiptDateParser`, deterministic + sanity-clamped) prefill it, labeled "From the capture".
+- **`NextWorkoutIntent`**: Siri answers "when is my next workout" from
+  `RoutineStore.nextOccurrence()`, no app foregrounding.
+- **Widget extension** (`AdaptiveFitnessWidgets` — the project's first app-extension target):
+  two static small/lock-screen tiles (Scan / Type) deep-linking `afcoach://log/scan|type`
+  through the generalized `MealCaptureRequest` (same funnel as the intents; URL scheme in the
+  phone's merged Info.plist).
+- **Codable evolution guarded**: build-7 PendingMealQueue rows decode (custom `MealEntry`
+  decoder derives the meal slot; fixture-pinned); `Provenance.userStated` is additive.
+- **Roadmap: P5 = full Siri/Apple-Intelligence integration** — routines + meals as
+  AppEntities, iOS 27 App Schemas, Spotlight semantic index, onscreen-context references,
+  multi-turn follow-ups, watch-coordinated "start my workout". Build 8 deliberately shipped
+  only the two intents.
+- Tests: ~36 new package tests (parsers, target math, slots, Codable fixtures, recorder
+  evolution, controller when-state) → 339 total; MealFlowUITests grew 5 → 10 (typed+stated,
+  backdate, target+gauge, edit, log again).
+
 ### P4 original spec pointer (history)
 Full product spec: **`docs/calorie-tracking-spec.md`** (read it first — it carries the P4
 non-negotiables C1–C7, the staged LLM pipeline, open questions CQ1–CQ5, and §9 "Direction for

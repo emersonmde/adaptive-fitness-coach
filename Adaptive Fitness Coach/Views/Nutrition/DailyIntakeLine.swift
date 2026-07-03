@@ -8,6 +8,7 @@ import AdaptiveCore
 struct DailyIntakeLine: View {
     @Bindable var controller: MealLogController
     let recorder: any NutritionRecorder
+    var targetStore: CalorieTargetStore?
     let onCapture: () -> Void
     let onShowEntries: () -> Void
 
@@ -114,6 +115,10 @@ struct DailyIntakeLine: View {
 
     private var totalText: String {
         let kcal = Int(intake.totalKcal.rounded())
+        // With a target: quiet arithmetic on the same single line — no new channel (build 8).
+        if let target = targetStore?.target, kcal > 0 {
+            return "\(kcal.formatted()) / \(target.formatted()) kcal"
+        }
         return kcal == 0 ? "No meals logged today" : "\(kcal.formatted()) kcal today"
     }
 

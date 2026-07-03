@@ -15,6 +15,7 @@ struct MealCaptureView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var isCapturing = false
     @State private var cameraFailed = false
+    @State private var showingTypedEntry = false
 
     var body: some View {
         ZStack {
@@ -26,7 +27,8 @@ struct MealCaptureView: View {
             } else {
                 scanner
             }
-            // Cancel floats top-leading over whatever is showing — always an exit.
+            // Cancel floats top-leading over whatever is showing — always an exit; the typed
+            // pill floats bottom (a reserved slot under the shutter, build 8).
             VStack {
                 HStack {
                     Button {
@@ -42,10 +44,27 @@ struct MealCaptureView: View {
                     Spacer()
                 }
                 Spacer()
+                Button {
+                    showingTypedEntry = true
+                } label: {
+                    Label("Type it instead", systemImage: "keyboard")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }
+                .accessibilityIdentifier("meal.capture.typeInstead")
+                .padding(.bottom, 4)
             }
             .padding(16)
         }
         .statusBarHidden()
+        .sheet(isPresented: $showingTypedEntry) {
+            TypedEntryView { capture in
+                forward(capture)
+            }
+        }
     }
 
     private func forward(_ capture: MealCapture) {

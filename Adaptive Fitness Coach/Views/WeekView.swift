@@ -20,10 +20,13 @@ struct WeekView: View {
 
     // P4 meal logging: one controller + recorder per launch (provider decides scripted vs
     // production); capture is a full-screen cover, confirmation a sheet driven by phase.
+    // Build 8: the daily line pushes FoodDayView; typed entry is a sibling sheet.
     @State private var mealController = MealPipelineProvider.makeController()
     @State private var showingMealCapture = false
-    @State private var showingTodayEntries = false
+    @State private var showingFoodDay = false
+    @State private var showingTypedEntry = false
     private let mealRecorder = MealPipelineProvider.sharedRecorder
+    private let mealTargetStore = MealPipelineProvider.sharedTargetStore
     @ObservedObject private var mealCaptureRequest = MealCaptureRequest.shared
 
     var body: some View {
@@ -95,19 +98,49 @@ struct WeekView: View {
             )) {
                 MealConfirmationSheet(controller: mealController)
             }
-            .sheet(isPresented: $showingTodayEntries) {
-                TodayEntriesSheet(recorder: mealRecorder)
+            .sheet(isPresented: $showingTypedEntry) {
+                TypedEntryView { capture in
+                    Task { await mealController.beginCapture(capture) }
+                }
+            }
+            .navigationDestination(isPresented: $showingFoodDay) {
+                FoodDayView(
+                    controller: mealController,
+                    recorder: mealRecorder,
+                    targetStore: mealTargetStore,
+                    bodyProfileSource: MealPipelineProvider.makeBodyProfileSource(),
+                    onScan: { showingMealCapture = true },
+                    onType: { showingTypedEntry = true }
+                )
             }
             .task {
-                // The App Intent may have fired before the scene existed (cold start).
-                if mealCaptureRequest.consume() { showingMealCapture = true }
+                // The App Intent / deep link may have fired before the scene existed.
+                routeCaptureRequest()
                 // Finish any lookups that were mid-flight when the app last quit (C5 queue).
                 await mealController.resumePending()
             }
             .onReceive(mealCaptureRequest.$pending) { pending in
-                // Warm start: the intent fires while the week is on screen.
-                if pending, mealCaptureRequest.consume() { showingMealCapture = true }
+                // Warm start: the intent/link fires while the week is on screen.
+                if pending != nil { routeCaptureRequest() }
             }
+            .onOpenURL { url in
+                mealCaptureRequest.handle(url: url)   // afcoach://log/scan | /type (widgets)
+                routeCaptureRequest()
+            }
+        }
+    }
+
+    private func routeCaptureRequest() {
+        switch mealCaptureRequest.consume() {
+        case .scan:
+            showingMealCapture = true
+        case .type:
+            showingTypedEntry = true
+        case .typed(let text):
+            // Siri already collected the description — straight to identify → confirm.
+            Task { await mealController.beginCapture(MealCapture(typedText: text)) }
+        case nil:
+            break
         }
     }
 
@@ -115,8 +148,9 @@ struct WeekView: View {
         DailyIntakeLine(
             controller: mealController,
             recorder: mealRecorder,
+            targetStore: mealTargetStore,
             onCapture: { showingMealCapture = true },
-            onShowEntries: { showingTodayEntries = true }
+            onShowEntries: { showingFoodDay = true }
         )
     }
 

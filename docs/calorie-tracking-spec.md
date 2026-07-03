@@ -85,6 +85,13 @@ a missed day. **Consistency beats precision** for weight-loss adherence — a ro
 logged every day outperforms an exact number abandoned in week three; the design optimizes
 for the logging habit surviving a bad weekend.
 
+> **Amended (build 8, user decision):** an **opt-in daily calorie target** exists — "the whole
+> reason to count calories is to meet a target." The amendment is bounded: the target is
+> offered once and skippable; the gauge is one ring/one variable (fill = consumed/target);
+> over-target is a single tint shift to gradient-amber plus plain arithmetic ("230 over") —
+> never red, never an alarm, never a streak; the hub line shows quiet "x / y" arithmetic.
+> A budget the user asked for is a tool; judgment stays out of the pixels.
+
 **C7 — The workout product stays untouched.** Phone-only feature (main PRD's N4 is about the
 workout; this feature has no watch requirement in v1). No dashboards creep into the watch; no
 nutrition nagging in workout flows.

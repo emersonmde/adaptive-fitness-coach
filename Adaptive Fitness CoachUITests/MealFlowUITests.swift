@@ -72,6 +72,11 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertTrue(half.exists)
         half.tap()
 
+        // Build 8: the scripted receipt prints yesterday's date, so the when-row prefills
+        // Yesterday (visible label) — flip to Today so the daily line assertion below holds.
+        XCTAssertTrue(app.staticTexts["meal.when.prefill"].exists)
+        app.buttons["meal.when.today"].tap()
+
         // Pantry item is pre-unchecked → Log says 3 items.
         let log = app.buttons["meal.confirm.log"]
         XCTAssertTrue(log.label.contains("3"), "expected 3 checked items, got: \(log.label)")
@@ -147,6 +152,162 @@ final class MealFlowUITests: XCTestCase {
         // Back on the week screen, still in the never-logged state.
         XCTAssertTrue(app.buttons["meal.dailyLine.firstUse"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["meal.dailyLine.total"].exists)
+    }
+
+    // MARK: - Build 8
+
+    /// Typed entry with a stated calorie count: the number is the user's, verbatim.
+    func testTypedEntryStatedCalories() throws {
+        let app = launchApp()
+        openCapture(app)
+
+        let typePill = app.buttons["meal.capture.typeInstead"]
+        XCTAssertTrue(typePill.waitForExistence(timeout: 5))
+        typePill.tap()
+
+        let field = app.textFields["meal.typed.field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("salmon caesar salad, 400 calories")
+        app.buttons["meal.typed.submit"].tap()
+
+        // Confirmation shows the stripped, capitalized name; log it.
+        XCTAssertTrue(app.staticTexts["Salmon caesar salad"].waitForExistence(timeout: 5))
+        app.buttons["meal.confirm.log"].tap()
+
+        let total = app.staticTexts["meal.dailyLine.total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForLabel(total, contains: "400", timeout: 8))
+    }
+
+    /// Backdate via the when-row: a barcode logged to Yesterday leaves today empty and shows
+    /// up on the Food screen's previous day.
+    func testBackdateYesterday() throws {
+        let app = launchApp()
+        openCapture(app)
+
+        app.buttons["meal.capture.simulated.barcode"].tap()
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 5))
+        app.buttons["meal.when.yesterday"].tap()
+        app.buttons["meal.confirm.log"].tap()
+
+        // Today's hub line shows an empty day (the entry went to yesterday)…
+        let total = app.staticTexts["meal.dailyLine.total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForLabel(total, contains: "No meals", timeout: 8),
+                      "expected an empty today, got: \(total.label)")
+
+        // …and the Food screen finds the entry on Yesterday.
+        openFoodDay(app)
+        dismissTargetSheetIfPresent(app)   // first-run target offer covers the pager
+        app.buttons["meal.day.prev"].tap()
+        XCTAssertTrue(app.staticTexts["meal.day.title"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Yesterday"].exists)
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 5))
+    }
+
+    /// Target setup from the fixed sim profile → gauge appears with the suggested number.
+    func testTargetSetupAndGauge() throws {
+        let app = launchApp()
+        // Log once so the daily line (the Food screen's door) exists.
+        openCapture(app)
+        app.buttons["meal.capture.simulated.barcode"].tap()
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 5))
+        app.buttons["meal.confirm.log"].tap()
+        XCTAssertTrue(waitForLabel(app.staticTexts["meal.dailyLine.total"], contains: "140", timeout: 8))
+
+        openFoodDay(app)
+
+        // First-run sheet offers the suggestion (fixed sim profile 80kg/180cm/35/M). Confirm.
+        let confirm = app.buttons["meal.target.confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 6))
+        XCTAssertTrue(app.staticTexts["meal.target.suggested"].exists)
+        confirm.tap()
+
+        // The gauge takes the slot: consumed hero + "of N" target line; the hub line gains
+        // the quiet "x / y" arithmetic.
+        XCTAssertTrue(app.staticTexts["meal.day.gauge.consumed"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["meal.day.gauge.target"].exists)
+        app.navigationBars.buttons.firstMatch.tap()   // back to the hub
+        XCTAssertTrue(waitForLabel(app.staticTexts["meal.dailyLine.total"], contains: "/", timeout: 5))
+    }
+
+    /// Edit an entry's calories → the number becomes "your number" and the row updates.
+    func testEditEntry() throws {
+        let app = launchApp()
+        openCapture(app)
+        app.buttons["meal.capture.simulated.barcode"].tap()
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 5))
+        app.buttons["meal.confirm.log"].tap()
+        let total = app.staticTexts["meal.dailyLine.total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForLabel(total, contains: "140", timeout: 8))
+
+        openFoodDay(app)
+        dismissTargetSheetIfPresent(app)
+        let row = app.staticTexts["Coca-Cola Classic 12 fl oz"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+
+        let kcalField = app.textFields["meal.edit.kcal"]
+        XCTAssertTrue(kcalField.waitForExistence(timeout: 5))
+        kcalField.tap()
+        clear(kcalField)
+        kcalField.typeText("500")
+        XCTAssertTrue(app.staticTexts["meal.edit.userStatedNote"].exists)
+        app.buttons["meal.edit.save"].tap()
+
+        XCTAssertTrue(app.staticTexts["your number"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["500 kcal"].exists)
+    }
+
+    /// "Log again" duplicates a past entry as a fresh one now — the total doubles.
+    func testLogAgain() throws {
+        let app = launchApp()
+        openCapture(app)
+        app.buttons["meal.capture.simulated.barcode"].tap()
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 5))
+        app.buttons["meal.confirm.log"].tap()
+        XCTAssertTrue(waitForLabel(app.staticTexts["meal.dailyLine.total"], contains: "140", timeout: 8))
+
+        openFoodDay(app)
+        dismissTargetSheetIfPresent(app)
+        let row = app.staticTexts["Coca-Cola Classic 12 fl oz"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.press(forDuration: 1.0)
+        let again = app.buttons["Log again"]
+        XCTAssertTrue(again.waitForExistence(timeout: 3))
+        again.tap()
+
+        // Two 140-kcal entries → the day total (gauge-less slot) reads 280 kcal.
+        XCTAssertTrue(app.staticTexts["280 kcal"].waitForExistence(timeout: 6))
+    }
+
+    // MARK: - Helpers
+
+    private func openFoodDay(_ app: XCUIApplication) {
+        // The daily line's total text is the tap target once anything was logged.
+        let total = app.staticTexts["meal.dailyLine.total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 5), "daily line not present — log something first")
+        total.tap()
+        XCTAssertTrue(app.staticTexts["meal.day.title"].waitForExistence(timeout: 5), "Food screen didn't open")
+    }
+
+    private func clear(_ field: XCUIElement) {
+        guard let value = field.value as? String, !value.isEmpty else { return }
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count + 1))
+    }
+
+    private func dismissTargetSheetIfPresent(_ app: XCUIApplication) {
+        // The first-run target offer (a sheet) appears on the Food screen's first open.
+        if app.textFields["meal.target.field"].waitForExistence(timeout: 3) {
+            let cancel = app.buttons["Cancel"].firstMatch
+            if cancel.waitForExistence(timeout: 2) {
+                cancel.tap()
+                // Let the sheet's dismissal settle before the caller taps beneath it.
+                _ = app.staticTexts["meal.day.title"].waitForExistence(timeout: 3)
+            }
+        }
     }
 
     private func waitForLabel(_ element: XCUIElement, contains text: String, timeout: TimeInterval) -> Bool {

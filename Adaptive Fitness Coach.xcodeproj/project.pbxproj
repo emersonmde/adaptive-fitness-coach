@@ -14,6 +14,8 @@
 		FACE000000000000000000C3 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B3 /* SwiftSoup */; };
 /* End PBXBuildFile section */
 
+		FACE0000000000000000D007 /* AdaptiveFitnessWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+
 /* Begin PBXContainerItemProxy section */
 		34704E1C2FECD82000C28688 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -50,6 +52,13 @@
 			remoteGlobalIDString = 34704E302FECD82000C28688;
 			remoteInfo = "Adaptive Fitness Coach Watch App";
 		};
+		FACE0000000000000000D008 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 34704E062FECD81F00C28688 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FACE0000000000000000D002;
+			remoteInfo = AdaptiveFitnessWidgets;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -64,6 +73,17 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FACE0000000000000000D006 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				FACE0000000000000000D007 /* AdaptiveFitnessWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -73,10 +93,18 @@
 		34704E312FECD82000C28688 /* Adaptive Fitness Coach Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Adaptive Fitness Coach Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E402FECD82100C28688 /* Adaptive Fitness Coach Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Adaptive Fitness Coach Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E4A2FECD82100C28688 /* Adaptive Fitness Coach Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Adaptive Fitness Coach Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AdaptiveFitnessWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E822FECDA6200C28688 /* WorkoutKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WorkoutKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.5.sdk/System/Library/Frameworks/WorkoutKit.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FACE000000000000000000E2 /* Exceptions for "Adaptive Fitness Coach" folder in "Adaptive Fitness Coach" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 34704E0D2FECD81F00C28688 /* Adaptive Fitness Coach */;
+		};
 		FACE000000000000000000E1 /* Exceptions for "Adaptive Fitness Coach Watch App" folder in "Adaptive Fitness Coach Watch App" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -84,11 +112,21 @@
 			);
 			target = 34704E302FECD82000C28688 /* Adaptive Fitness Coach Watch App */;
 		};
+		FACE0000000000000000D00E /* Exceptions for "AdaptiveFitnessWidgets" folder in "AdaptiveFitnessWidgets" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = FACE0000000000000000D002 /* AdaptiveFitnessWidgets */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		34704E102FECD81F00C28688 /* Adaptive Fitness Coach */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FACE000000000000000000E2 /* Exceptions for "Adaptive Fitness Coach" folder in "Adaptive Fitness Coach" target */,
+			);
 			path = "Adaptive Fitness Coach";
 			sourceTree = "<group>";
 		};
@@ -118,6 +156,14 @@
 		34704E4D2FECD82100C28688 /* Adaptive Fitness Coach Watch AppUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "Adaptive Fitness Coach Watch AppUITests";
+			sourceTree = "<group>";
+		};
+		FACE0000000000000000D00A /* AdaptiveFitnessWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FACE0000000000000000D00E /* Exceptions for "AdaptiveFitnessWidgets" folder in "AdaptiveFitnessWidgets" target */,
+			);
+			path = AdaptiveFitnessWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -169,6 +215,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FACE0000000000000000D004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -176,6 +229,7 @@
 			isa = PBXGroup;
 			children = (
 				34704E102FECD81F00C28688 /* Adaptive Fitness Coach */,
+				FACE0000000000000000D00A /* AdaptiveFitnessWidgets */,
 				34704E1E2FECD82000C28688 /* Adaptive Fitness CoachTests */,
 				34704E282FECD82000C28688 /* Adaptive Fitness CoachUITests */,
 				34704E352FECD82000C28688 /* Adaptive Fitness Coach Watch App */,
@@ -195,6 +249,7 @@
 				34704E312FECD82000C28688 /* Adaptive Fitness Coach Watch App.app */,
 				34704E402FECD82100C28688 /* Adaptive Fitness Coach Watch AppTests.xctest */,
 				34704E4A2FECD82100C28688 /* Adaptive Fitness Coach Watch AppUITests.xctest */,
+				FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -218,11 +273,13 @@
 				34704E0B2FECD81F00C28688 /* Frameworks */,
 				34704E0C2FECD81F00C28688 /* Resources */,
 				34704E572FECD82100C28688 /* Embed Watch Content */,
+				FACE0000000000000000D006 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				34704E342FECD82000C28688 /* PBXTargetDependency */,
+				FACE0000000000000000D009 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				34704E102FECD81F00C28688 /* Adaptive Fitness Coach */,
@@ -351,6 +408,28 @@
 			productReference = 34704E4A2FECD82100C28688 /* Adaptive Fitness Coach Watch AppUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		FACE0000000000000000D002 /* AdaptiveFitnessWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FACE0000000000000000D00B /* Build configuration list for PBXNativeTarget "AdaptiveFitnessWidgets" */;
+			buildPhases = (
+				FACE0000000000000000D003 /* Sources */,
+				FACE0000000000000000D004 /* Frameworks */,
+				FACE0000000000000000D005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				FACE0000000000000000D00A /* AdaptiveFitnessWidgets */,
+			);
+			name = AdaptiveFitnessWidgets;
+			packageProductDependencies = (
+			);
+			productName = AdaptiveFitnessWidgets;
+			productReference = FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -409,6 +488,7 @@
 				34704E302FECD82000C28688 /* Adaptive Fitness Coach Watch App */,
 				34704E3F2FECD82100C28688 /* Adaptive Fitness Coach Watch AppTests */,
 				34704E492FECD82100C28688 /* Adaptive Fitness Coach Watch AppUITests */,
+				FACE0000000000000000D002 /* AdaptiveFitnessWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -450,6 +530,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		34704E482FECD82100C28688 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FACE0000000000000000D005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -501,6 +588,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FACE0000000000000000D003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -528,6 +622,11 @@
 			isa = PBXTargetDependency;
 			target = 34704E302FECD82000C28688 /* Adaptive Fitness Coach Watch App */;
 			targetProxy = 34704E4B2FECD82100C28688 /* PBXContainerItemProxy */;
+		};
+		FACE0000000000000000D009 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FACE0000000000000000D002 /* AdaptiveFitnessWidgets */;
+			targetProxy = FACE0000000000000000D008 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -736,6 +835,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
+				INFOPLIST_FILE = "Adaptive Fitness Coach/Info.plist";
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera scans receipts, barcodes, and nutrition labels so meals log in seconds.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Reads today's logged meals from Apple Health to show your daily intake.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Saves meals you log to Apple Health as dietary energy and macros.";
@@ -779,6 +879,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness Coach";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
+				INFOPLIST_FILE = "Adaptive Fitness Coach/Info.plist";
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera scans receipts, barcodes, and nutrition labels so meals log in seconds.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Reads today's logged meals from Apple Health to show your daily intake.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Saves meals you log to Apple Health as dietary energy and macros.";
@@ -994,6 +1095,58 @@
 			};
 			name = Release;
 		};
+		FACE0000000000000000D00C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = 7542Q96HNF;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AdaptiveFitnessWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-Coach.Widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		FACE0000000000000000D00D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = 7542Q96HNF;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = AdaptiveFitnessWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Adaptive Fitness";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-Coach.Widgets";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1056,6 +1209,15 @@
 			buildConfigurations = (
 				34704E652FECD82100C28688 /* Debug */,
 				34704E662FECD82100C28688 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FACE0000000000000000D00B /* Build configuration list for PBXNativeTarget "AdaptiveFitnessWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FACE0000000000000000D00C /* Debug */,
+				FACE0000000000000000D00D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

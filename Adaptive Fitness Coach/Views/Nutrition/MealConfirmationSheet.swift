@@ -28,6 +28,24 @@ struct MealConfirmationSheet: View {
                                     )
                                 }
                             }
+                            // The when-row (build 8): meal chips + day control, prefilled
+                            // from the capture when it carried a date (labeled honestly).
+                            WhenRow(
+                                mealSlot: Binding(
+                                    get: { controller.mealSlot },
+                                    set: { controller.setMealSlot($0) }
+                                ),
+                                date: Binding(
+                                    get: { controller.loggedDate },
+                                    set: { controller.setLoggedDate($0) }
+                                ),
+                                prefillCaption: controller.prefilledFromCapture
+                                    ? "From the capture · " + controller.loggedDate
+                                        .formatted(.dateTime.month(.abbreviated).day().hour().minute())
+                                    : nil
+                            )
+                            .padding(.top, 2)
+
                             if let error = controller.error {
                                 Text(error)
                                     .font(.footnote)
