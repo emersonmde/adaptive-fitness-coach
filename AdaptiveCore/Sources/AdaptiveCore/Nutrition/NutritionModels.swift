@@ -54,7 +54,8 @@ public struct NutritionFacts: Sendable, Hashable, Codable {
 
 /// Where a number came from (C3). Every logged entry carries one; the UI language is quiet
 /// but always present. `estimate` is the only case allowed to pair with `Energy.range`,
-/// and estimates must *always* be ranges (pinned by tests).
+/// and estimates must *always* be ranges (pinned by tests). `userStated` pairs with `.exact`
+/// — a stated number is exact by definition.
 public enum Provenance: Sendable, Hashable, Codable {
     /// The seller's own published data (their domain) or their printed nutrition label.
     case verified(sourceURL: URL?)
@@ -62,13 +63,28 @@ public enum Provenance: Sendable, Hashable, Codable {
     case database(name: String, sourceURL: URL?)
     /// A model's guess, shown as a range with its assumptions on display.
     case estimate(assumptions: [String])
+    /// The user's own number — a stated calorie count ("…, 400 calories") or a post-hoc
+    /// edit. Honest by construction: "the user said so" is a legitimate source, distinct
+    /// from anything retrieved or guessed (build 8).
+    case userStated
 
-    /// The one-word UI label ("verified" / "database" / "estimate").
+    /// The quiet UI phrase ("verified" / "database" / "estimate" / "your number").
     public var label: String {
         switch self {
         case .verified: "verified"
         case .database: "database"
         case .estimate: "estimate"
+        case .userStated: "your number"
+        }
+    }
+
+    /// Stable machine string for Health metadata (never the UI label).
+    public var metadataValue: String {
+        switch self {
+        case .verified: "verified"
+        case .database: "database"
+        case .estimate: "estimate"
+        case .userStated: "userStated"
         }
     }
 
@@ -76,7 +92,7 @@ public enum Provenance: Sendable, Hashable, Codable {
         switch self {
         case .verified(let url): url
         case .database(_, let url): url
-        case .estimate: nil
+        case .estimate, .userStated: nil
         }
     }
 }
@@ -93,12 +109,14 @@ public struct Seller: Sendable, Hashable, Codable {
     }
 }
 
-/// Pipeline stage 1 output: what kind of thing the camera saw.
+/// Pipeline stage 1 output: what kind of thing the camera saw (or the keyboard produced).
 public enum CaptureClassification: String, Sendable, Codable {
     case barcode
     case receipt
     case nutritionLabel
     case plate
+    /// Typed or dictated text (build 8) — no camera involved.
+    case typed
     case unknown
 }
 
@@ -112,11 +130,20 @@ public struct MealCapture: Sendable {
     /// Recognized text lines in reading order.
     public var ocrLines: [String]
     public var imageData: Data?
+    /// Typed or Siri-dictated description ("salmon caesar salad, 400 calories") — the
+    /// keyboard path (build 8). Non-nil ⇒ classification `.typed`.
+    public var typedText: String?
 
-    public init(barcodes: [String] = [], ocrLines: [String] = [], imageData: Data? = nil) {
+    public init(
+        barcodes: [String] = [],
+        ocrLines: [String] = [],
+        imageData: Data? = nil,
+        typedText: String? = nil
+    ) {
         self.barcodes = barcodes
         self.ocrLines = ocrLines
         self.imageData = imageData
+        self.typedText = typedText
     }
 }
 
@@ -134,6 +161,10 @@ public struct DraftItem: Identifiable, Sendable, Hashable {
     /// Set when a nutrition label was parsed directly — short-circuits the lookup ladder
     /// as `.verified` (the seller's own printed data).
     public var labelFacts: NutritionFacts?
+    /// Set when the user *stated* the number ("…, 400 calories") — short-circuits the ladder
+    /// as `.userStated`, above even the printed label. Deliberately distinct from
+    /// `labelFacts`: reusing it would launder a user's number as "verified" (C3).
+    public var statedFacts: NutritionFacts?
     /// The barcode this item came from, when the capture was a barcode scan (rung-1 key).
     public var barcode: String?
 
@@ -144,6 +175,7 @@ public struct DraftItem: Identifiable, Sendable, Hashable {
         isChecked: Bool = true,
         question: ClarifyingQuestion? = nil,
         labelFacts: NutritionFacts? = nil,
+        statedFacts: NutritionFacts? = nil,
         barcode: String? = nil
     ) {
         self.id = id
@@ -152,6 +184,7 @@ public struct DraftItem: Identifiable, Sendable, Hashable {
         self.isChecked = isChecked
         self.question = question
         self.labelFacts = labelFacts
+        self.statedFacts = statedFacts
         self.barcode = barcode
     }
 }
@@ -183,11 +216,21 @@ public struct MealDraft: Sendable {
     public var classification: CaptureClassification
     public var seller: Seller?
     public var items: [DraftItem]
+    /// When the capture itself carries a timestamp — a receipt's printed date/time
+    /// (`ReceiptDateParser`) or a typed "yesterday" — the confirmation screen's when-row
+    /// prefills from it (labeled, editable). Nil means "now".
+    public var capturedAt: Date?
 
-    public init(classification: CaptureClassification, seller: Seller? = nil, items: [DraftItem]) {
+    public init(
+        classification: CaptureClassification,
+        seller: Seller? = nil,
+        items: [DraftItem],
+        capturedAt: Date? = nil
+    ) {
         self.classification = classification
         self.seller = seller
         self.items = items
+        self.capturedAt = capturedAt
     }
 }
 
@@ -212,6 +255,8 @@ public struct MealEntry: Identifiable, Sendable, Codable, Hashable {
     public var quantity: Int
     public var facts: NutritionFacts
     public var provenance: Provenance
+    /// Day-screen grouping (build 8). Auto-suggested from the entry's time; user-correctable.
+    public var meal: MealSlot
 
     public init(
         id: UUID = UUID(),
@@ -219,7 +264,8 @@ public struct MealEntry: Identifiable, Sendable, Codable, Hashable {
         name: String,
         quantity: Int = 1,
         facts: NutritionFacts,
-        provenance: Provenance
+        provenance: Provenance,
+        meal: MealSlot? = nil
     ) {
         self.id = id
         self.date = date
@@ -227,5 +273,63 @@ public struct MealEntry: Identifiable, Sendable, Codable, Hashable {
         self.quantity = quantity
         self.facts = facts
         self.provenance = provenance
+        self.meal = meal ?? MealSlot.suggested(for: date)
+    }
+
+    // Custom decode only: build-7 PendingMealQueue rows have no `meal` key — derive it from
+    // the date instead of failing the whole queue at upgrade. Encoding stays synthesized.
+    private enum CodingKeys: String, CodingKey {
+        case id, date, name, quantity, facts, provenance, meal
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let date = try container.decode(Date.self, forKey: .date)
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            date: date,
+            name: try container.decode(String.self, forKey: .name),
+            quantity: try container.decode(Int.self, forKey: .quantity),
+            facts: try container.decode(NutritionFacts.self, forKey: .facts),
+            provenance: try container.decode(Provenance.self, forKey: .provenance),
+            meal: try container.decodeIfPresent(MealSlot.self, forKey: .meal)
+        )
+    }
+}
+
+public extension MealEntry {
+    /// A post-hoc edit (the day screen's edit sheet). Changing the calorie value makes the
+    /// number the user's — energy becomes `.exact(kcal)` and provenance `.userStated`
+    /// (macros are kept: the user restated energy, not composition). Name/slot/day edits
+    /// alone preserve the original facts and provenance.
+    func edited(
+        name: String? = nil,
+        kcal: Double? = nil,
+        meal: MealSlot? = nil,
+        date: Date? = nil
+    ) -> MealEntry {
+        var copy = self
+        if let name, !name.trimmingCharacters(in: .whitespaces).isEmpty {
+            copy.name = name.trimmingCharacters(in: .whitespaces)
+        }
+        if let kcal, kcal > 0, kcal != facts.energy.midpointKcal || facts.energy.isRange {
+            copy.facts.energy = .exact(kcal: kcal)
+            copy.provenance = .userStated
+        }
+        if let meal { copy.meal = meal }
+        if let date { copy.date = date }
+        return copy
+    }
+
+    /// "Log again": the same food as a brand-new entry, now. Fresh identity (delete-by-id
+    /// must never collide), slot re-suggested from the new time; facts/provenance copied.
+    func relogged(at now: Date = Date()) -> MealEntry {
+        MealEntry(
+            date: now,
+            name: name,
+            quantity: quantity,
+            facts: facts,
+            provenance: provenance
+        )
     }
 }

@@ -40,6 +40,38 @@ public enum MealPromptBuilder {
         """
     }
 
+    // MARK: - Typed entry (build 8)
+
+    /// System instructions for normalizing a typed/dictated description. The calorie clause
+    /// and date words were already stripped deterministically — the model never sees them
+    /// (and so can never rewrite them).
+    public static func typedEntryInstructions() -> String {
+        """
+        You clean up a short typed or dictated description of food someone ate. Produce the \
+        item (fix spelling, expand shorthand, proper brand capitalization — "chick fil a \
+        market salad w grilled chicken" → seller "Chick-fil-A", item "Market Salad with \
+        Grilled Chicken") and identify the seller (restaurant/store/brand) when one is named, \
+        with its official website domain if you are confident of it.
+
+        Rules:
+        - One typed description is usually ONE item; split only when two foods are clearly \
+        listed ("burger and fries" stays one meal item only if it's a named combo).
+        - Never invent details that aren't in the text; keep unknown foods as written, \
+        spelling-corrected.
+        - Ask a clarifying question ONLY when the answer would materially change calories.
+        """
+    }
+
+    public static func typedEntryPrompt(text: String) -> String {
+        """
+        Typed description:
+        ---
+        \(text)
+        ---
+        Identify the seller (if any) and the food item(s).
+        """
+    }
+
     // MARK: - Stage 4: search + adjudication (rung 2)
 
     public static func searchObjective(item: DraftItem, seller: Seller?) -> String {

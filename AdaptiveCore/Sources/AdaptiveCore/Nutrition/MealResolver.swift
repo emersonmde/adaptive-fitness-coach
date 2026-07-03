@@ -62,6 +62,7 @@ public struct MealResolver: Sendable {
     /// Which rung produced the answer — surfaced by LookupLab (the CQ1 spike metric) and
     /// useful in logs; the product UI shows provenance, not rungs.
     public enum Rung: String, Sendable, Hashable {
+        case userStated
         case printedLabel
         case barcodeDatabase
         case searchExcerpts
@@ -98,6 +99,12 @@ public struct MealResolver: Sendable {
         capture: MealCapture?,
         answers: [QuestionAnswer]
     ) async -> (nutrition: ResolvedNutrition, rung: Rung) {
+        // The user stated the number ("…, 400 calories") — their number wins over everything,
+        // including a printed label (build 8: the whole point of stating it).
+        if let statedFacts = item.statedFacts {
+            return (ResolvedNutrition(facts: statedFacts, provenance: .userStated), .userStated)
+        }
+
         // A parsed label is the seller's own printed data — nothing to look up.
         if let labelFacts = item.labelFacts {
             return (ResolvedNutrition(facts: labelFacts, provenance: .verified(sourceURL: nil)), .printedLabel)
