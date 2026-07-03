@@ -83,6 +83,24 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertTrue(waitForLabel(total, contains: "1,235 kcal", timeout: 10))
     }
 
+    /// The label path: deterministic panel parse → verified item with its printed facts →
+    /// Log → total = the label's calories (no lookup ran at all).
+    func testNutritionLabelFlow() throws {
+        let app = launchApp()
+        openCapture(app)
+
+        let labelButton = app.buttons["meal.capture.simulated.label"]
+        XCTAssertTrue(labelButton.waitForExistence(timeout: 5))
+        labelButton.tap()
+
+        XCTAssertTrue(app.staticTexts["GREEK YOGURT"].waitForExistence(timeout: 5))
+        app.buttons["meal.confirm.log"].tap()
+
+        let total = app.staticTexts["meal.dailyLine.total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForLabel(total, contains: "190 kcal", timeout: 8))
+    }
+
     /// Cancel is always an exit (principle 13): capture → Cancel → week intact, nothing logged.
     func testCancelExits() throws {
         let app = launchApp()

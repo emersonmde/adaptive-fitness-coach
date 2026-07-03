@@ -38,13 +38,16 @@ struct FoundationModelsMealPipeline: MealPipeline {
         guard !capture.ocrLines.isEmpty else {
             return MealDraft(classification: .unknown, seller: nil, items: [])
         }
-        // Nutrition label heuristic: the panel's fixed vocabulary in the OCR text.
-        let joined = capture.ocrLines.joined(separator: " ").lowercased()
-        if joined.contains("nutrition facts") || (joined.contains("serving size") && joined.contains("calories")) {
+        // Nutrition label: parse the panel deterministically — the printed label is the
+        // seller's own data, so a successful parse short-circuits the whole ladder (C2).
+        if let label = NutritionLabelParser.parse(ocrLines: capture.ocrLines) {
             return MealDraft(
                 classification: .nutritionLabel,
                 seller: nil,
-                items: [DraftItem(name: "Labeled item")]   // Slice C: parse labelFacts from OCR
+                items: [DraftItem(
+                    name: label.nameGuess ?? "Labeled item",   // inline-editable on confirm
+                    labelFacts: label.facts
+                )]
             )
         }
 

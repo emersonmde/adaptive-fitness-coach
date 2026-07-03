@@ -220,6 +220,18 @@ private struct SimulatedCapturePicker: View {
             }
             .buttonStyle(.bordered)
             .accessibilityIdentifier("meal.capture.simulated.barcode")
+
+            Button {
+                onCapture(MealCapture(ocrLines: [
+                    "GREEK YOGURT", "Nutrition Facts", "Serving size 2/3 cup (170g)",
+                    "Calories 190", "Total Fat 9g 12%", "Total Carbohydrate 9g 3%", "Protein 17g 34%",
+                ]))
+            } label: {
+                Label("Scan a nutrition label", systemImage: "tablecells")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("meal.capture.simulated.label")
         }
         .padding(32)
     }

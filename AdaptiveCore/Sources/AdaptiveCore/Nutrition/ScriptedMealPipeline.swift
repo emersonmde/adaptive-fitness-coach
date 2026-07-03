@@ -50,6 +50,15 @@ public struct ScriptedMealPipeline: MealPipeline {
         if !capture.barcodes.isEmpty, let barcodeDraft = script.barcodeDraft {
             return barcodeDraft
         }
+        // The label parser is deterministic (no model), so the scripted pipeline routes real
+        // label OCR exactly as production does — the label path demos in the simulator.
+        if let label = NutritionLabelParser.parse(ocrLines: capture.ocrLines) {
+            return MealDraft(
+                classification: .nutritionLabel,
+                seller: nil,
+                items: [DraftItem(name: label.nameGuess ?? "Labeled item", labelFacts: label.facts)]
+            )
+        }
         return script.draft
     }
 
