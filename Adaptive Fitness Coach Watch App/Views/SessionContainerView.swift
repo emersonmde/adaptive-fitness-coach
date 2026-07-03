@@ -23,6 +23,8 @@ struct SessionContainerView: View {
 
     /// The routine the user picked to run (via the crown launch picker). `nil` = still picking.
     @State private var chosen: Routine?
+    /// A start-routine intent (complication / Siri / widget) may target a routine directly.
+    @ObservedObject private var launchRequest = WorkoutLaunchRequest.shared
 
     init(store: RoutineStore,
          recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil,
@@ -51,7 +53,17 @@ struct SessionContainerView: View {
             RunSessionContainerView(store: store, simulate: false)
         } else {
             RoutineLaunchPicker(routines: orderedRoutines, initialIndex: initialIndex) { chosen = $0 }
+                .task { routeLaunchRequest() }
+                .onReceive(launchRequest.$pendingRoutineId) { _ in routeLaunchRequest() }
         }
+    }
+
+    /// A `StartRoutineIntent` (complication/Siri/widget) targets a routine by id — jump the
+    /// picker straight into its adaptive flow.
+    private func routeLaunchRequest() {
+        guard chosen == nil, let id = launchRequest.consume(),
+              let routine = store.routines.first(where: { $0.id.uuidString == id }) else { return }
+        chosen = routine
     }
 
     /// Launch the picked routine's flow by its kind, and hand `onFinish`/`onExit` back so finishing

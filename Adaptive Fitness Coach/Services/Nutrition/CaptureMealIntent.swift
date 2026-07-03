@@ -55,11 +55,11 @@ struct NextWorkoutIntent: AppIntent {
     static let openAppWhenRun = false
 
     @MainActor
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<RoutineEntity?> {
         // Read the same store file the app uses; the intent may run without the app alive.
         let store = RoutineStore(fileURL: nil, onChange: { _ in })
         guard let next = store.nextOccurrence() else {
-            return .result(dialog: "Nothing is scheduled. Open Adaptive Fitness Coach to plan your week.")
+            return .result(value: nil, dialog: "Nothing is scheduled. Open Adaptive Fitness Coach to plan your week.")
         }
         let day = next.date.formatted(.dateTime.weekday(.wide))
         let time = next.date.formatted(.dateTime.hour().minute())
@@ -71,7 +71,10 @@ struct NextWorkoutIntent: AppIntent {
         } else {
             relative = "\(day) at \(time)"
         }
-        return .result(dialog: "\(IntentDialog(stringLiteral: "\(next.routine.name), \(relative)."))")
+        return .result(
+            value: RoutineEntity(routine: next.routine),
+            dialog: "\(IntentDialog(stringLiteral: "\(next.routine.name), \(relative)."))"
+        )
     }
 }
 
@@ -136,6 +139,15 @@ struct AdaptiveFitnessPhoneShortcuts: AppShortcutsProvider {
                 "What's my next workout in \(.applicationName)",
             ],
             shortTitle: "Next Workout",
+            systemImageName: "figure.run"
+        )
+        AppShortcut(
+            intent: StartWorkoutIntent(),
+            phrases: [
+                "Start my workout in \(.applicationName)",
+                "Start \(\.$routine) in \(.applicationName)",
+            ],
+            shortTitle: "Start Workout",
             systemImageName: "figure.run"
         )
     }

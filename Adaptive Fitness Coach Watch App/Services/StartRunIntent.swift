@@ -1,4 +1,6 @@
 import AppIntents
+import Combine
+import Foundation
 
 /// Lets the Apple Watch Ultra Action Button launch straight into the app's session screen.
 ///
@@ -18,7 +20,44 @@ struct StartRunIntent: AppIntent {
     }
 }
 
-/// Exposes the intent to the system (Shortcuts, Action Button) without extra setup.
+/// Starts a *specific* routine's adaptive session (build 9) — the intent behind the watch
+/// Smart Stack complication/widget and "Start my Morning Run". Opens the app and routes the
+/// session container straight to that routine, bypassing the crown picker, so our adaptive
+/// engine runs in-session (N2/N3) rather than handing off to Apple's Workout app.
+struct StartRoutineIntent: AppIntent {
+    static let title: LocalizedStringResource = "Start Workout"
+    static let description = IntentDescription("Start one of your routines on Apple Watch.")
+    static let openAppWhenRun = true
+
+    @Parameter(title: "Routine")
+    var routineId: String
+
+    init() {}
+    init(routineId: String) { self.routineId = routineId }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        WorkoutLaunchRequest.shared.request(routineId: routineId)
+        return .result()
+    }
+}
+
+/// Hand-off from `StartRoutineIntent` (which may fire before or after the scene exists) to
+/// `SessionContainerView`: a pending routine id the container consumes to auto-select.
+@MainActor
+final class WorkoutLaunchRequest: ObservableObject {
+    static let shared = WorkoutLaunchRequest()
+    @Published private(set) var pendingRoutineId: String?
+
+    func request(routineId: String) { pendingRoutineId = routineId }
+
+    func consume() -> String? {
+        defer { pendingRoutineId = nil }
+        return pendingRoutineId
+    }
+}
+
+/// Exposes the intents to the system (Shortcuts, Action Button, Siri) without extra setup.
 struct AdaptiveFitnessShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
