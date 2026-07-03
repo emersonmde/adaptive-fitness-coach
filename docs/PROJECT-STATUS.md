@@ -189,10 +189,28 @@ guessing; Apple Health is the record (C5 — no private food store). Implemented
   **SwiftSoup 2.13.6** = the project's first remote SPM dep (exact-pinned, phone target only;
   AdaptiveCore stays zero-dependency).
 - **`LookupLabView` (`-lookupLab`)**: the CQ1 spike instrument — ~10 real items × each rung
-  independently, per-rung coverage/provenance/latency. **Pending: run on a physical iPhone**
-  (decides whether rung 3 ships enabled; doubles as the first real-device PCC exercise →
-  informs P3's pending validation). Network rungs validated from macOS during planning:
-  OFF resolves real UPCs; Parallel returns nutrition tables in excerpts keylessly.
+  independently. **SPIKE RUN 2026-07-03 on the user's iPhone 17 Pro (iOS 27.0) — CQ1 closed:**
+  - **barcode → OFF: 2/2, ~0.3s** — flawless.
+  - **search+adjudicate (on-device model): 8/10, ~4.3s/item** — every chain/deli item
+    resolved with plausible kcal + honest sources (Starbucks graded *verified* — the search
+    hit starbucks.com itself). The 2 misses were **transport, not model**: instant
+    `DecodeError` on consecutive items = keyless-tier rate limiting under a 10-item burst
+    (client now retries once with a fresh session + 700ms backoff; real per-meal usage
+    doesn't burst like the lab).
+  - **agentic tool loop: 0/9, all context overflows** — a tool loop's transcript
+    (instructions + schemas + tool results + turns) cannot fit the local model's fixed
+    4,096-token window. **Verdict: rung 3 ships disabled (`agent: nil`); revisit only when
+    the PCC grant lands (32K).**
+  - **Two hard-won platform facts:** (1) instantiating `PrivateCloudComputeLanguageModel`
+    without `com.apple.developer.private-cloud-compute` is a **fatal error**, not
+    `.unavailable` — and the entitlement is a *gated Apple grant* (Small Business Program,
+    <2M downloads; request at developer.apple.com/private-cloud-compute). `PCCEntitlement`
+    guards every touch in BOTH the P4 pipeline and the **P3 coach** (which would otherwise
+    have crashed on first device use — spike caught it). (2) All context budgets must be
+    sized to the *running* model (`ExcerptBudget.onDevice` 3,600 chars vs `.privateCloud`),
+    reduced query-aware by `ExcerptReducer` (keep item-term/nutrition lines only).
+  - User has requested the PCC entitlement; on grant, PCC (32K + reasoning) engages
+    automatically via `PCCEntitlement.isGranted` — no code change.
 - **Pending on-device**: LookupLab coverage numbers; real UPC → Apple Health write; receipt
   OCR→extraction quality; salad-benchmark timing (<10s, C1); HealthKit auth prompt;
   HKCorrelation delete semantics; DataScanner capture quality.

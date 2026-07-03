@@ -21,9 +21,12 @@ public struct ExcerptBudget: Sendable {
         self.totalCharacters = totalCharacters
     }
 
-    /// ~1,500 prompt tokens of excerpts: fits the local model's 4,096 total alongside
-    /// instructions and a structured response.
-    public static let onDevice = ExcerptBudget(maxExcerpts: 4, perExcerptCharacters: 1_800, totalCharacters: 6_000)
+    /// Sized for the local model's 4,096-token *total* window with real margin: nutrition
+    /// tables tokenize densely (~2.5–3 chars/token, not the prose ~4), and the window also
+    /// holds instructions, prompt scaffolding, and the model's own structured output. 3,600
+    /// chars ≈ 1,200–1,400 tokens of excerpts — measured after a device run at 6,000 chars
+    /// still grazed the ceiling.
+    public static let onDevice = ExcerptBudget(maxExcerpts: 3, perExcerptCharacters: 1_200, totalCharacters: 3_600)
     /// PCC's 32K leaves room to be generous — more excerpts beats a second search.
     public static let privateCloud = ExcerptBudget(maxExcerpts: 5, perExcerptCharacters: 8_000, totalCharacters: 32_000)
 }

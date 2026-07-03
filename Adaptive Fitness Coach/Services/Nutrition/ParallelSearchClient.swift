@@ -29,7 +29,18 @@ final class ParallelSearchClient: NutritionWebSearcher, @unchecked Sendable {
             let (retryData, _) = try await post(body, sessionID: fresh)
             return try ParallelSearchProtocol.decodeExcerpts(retryData)
         }
-        return try ParallelSearchProtocol.decodeExcerpts(data)
+        do {
+            return try ParallelSearchProtocol.decodeExcerpts(data)
+        } catch {
+            // Undecodable body (observed on device: instant non-JSON refusals under a burst
+            // of queries — the keyless tier rate-limiting). One breath, one fresh session,
+            // one retry; a second failure falls through the ladder (never blocks the user).
+            try await Task.sleep(for: .milliseconds(700))
+            lock.lock(); sessionID = nil; lock.unlock()
+            let fresh = try await ensureSession()
+            let (retryData, _) = try await post(body, sessionID: fresh)
+            return try ParallelSearchProtocol.decodeExcerpts(retryData)
+        }
     }
 
     private func ensureSession() async throws -> String {

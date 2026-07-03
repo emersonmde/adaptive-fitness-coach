@@ -71,8 +71,9 @@ struct ExcerptReducerTests {
             excerpts: Array(repeating: noisyExcerpt, count: 6),
             budget: .onDevice
         )
-        // ~4 chars/token: the whole prompt must sit well inside the local model's 4,096 total.
-        #expect(prompt.count < 9_000, "prompt is \(prompt.count) chars")
+        // Device-measured: tables tokenize at ~2.5–3 chars/token, and the window also holds
+        // instructions + output. 5,100 chars ≈ ≤2,000 prompt tokens — real headroom in 4,096.
+        #expect(prompt.count < 5_100, "prompt is \(prompt.count) chars")
         #expect(prompt.contains("460 Cal"))
     }
 }
