@@ -101,6 +101,40 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertTrue(waitForLabel(total, contains: "190 kcal", timeout: 8))
     }
 
+    /// The plate fallback (stage 5): placeholder item renamed inline, portion chips answered,
+    /// Log → an honest RANGE lands (never a point value — C3).
+    func testPlateEstimateFlow() throws {
+        let app = launchApp()
+        openCapture(app)
+
+        let plateButton = app.buttons["meal.capture.simulated.plate"]
+        XCTAssertTrue(plateButton.waitForExistence(timeout: 5))
+        plateButton.tap()
+
+        // Rename the placeholder inline (the plate path's one typing allowance).
+        let placeholder = app.staticTexts["Plate of food (tap to name it)"]
+        XCTAssertTrue(placeholder.waitForExistence(timeout: 5))
+        placeholder.tap()
+        let field = app.textFields["meal.confirm.nameField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 2))
+        field.typeText("Lentil curry with rice")
+        app.keyboards.buttons["done"].firstMatch.exists
+            ? app.keyboards.buttons["done"].tap()
+            : field.typeText("\n")
+
+        // Portion chips (deterministic C4 question) — pick Large.
+        let large = app.buttons["meal.question.plate-portion.large"]
+        XCTAssertTrue(large.waitForExistence(timeout: 2))
+        large.tap()
+
+        app.buttons["meal.confirm.log"].tap()
+
+        // Scripted estimate = 350–600 → the daily total shows the midpoint (475).
+        let total = app.staticTexts["meal.dailyLine.total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForLabel(total, contains: "475 kcal", timeout: 8))
+    }
+
     /// Cancel is always an exit (principle 13): capture → Cancel → week intact, nothing logged.
     func testCancelExits() throws {
         let app = launchApp()

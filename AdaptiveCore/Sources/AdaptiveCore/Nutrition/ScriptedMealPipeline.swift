@@ -59,6 +59,10 @@ public struct ScriptedMealPipeline: MealPipeline {
                 items: [DraftItem(name: label.nameGuess ?? "Labeled item", labelFacts: label.facts)]
             )
         }
+        // Plate photo (no text at all): same deterministic fallback draft as production.
+        if capture.ocrLines.isEmpty, capture.imageData != nil {
+            return MealDraft(classification: .plate, seller: nil, items: [.plateFallback()])
+        }
         return script.draft
     }
 

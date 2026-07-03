@@ -24,6 +24,7 @@ struct WeekView: View {
     @State private var showingMealCapture = false
     @State private var showingTodayEntries = false
     private let mealRecorder = MealPipelineProvider.sharedRecorder
+    @ObservedObject private var mealCaptureRequest = MealCaptureRequest.shared
 
     var body: some View {
         NavigationStack {
@@ -98,8 +99,14 @@ struct WeekView: View {
                 TodayEntriesSheet(recorder: mealRecorder)
             }
             .task {
+                // The App Intent may have fired before the scene existed (cold start).
+                if mealCaptureRequest.consume() { showingMealCapture = true }
                 // Finish any lookups that were mid-flight when the app last quit (C5 queue).
                 await mealController.resumePending()
+            }
+            .onReceive(mealCaptureRequest.$pending) { pending in
+                // Warm start: the intent fires while the week is on screen.
+                if pending, mealCaptureRequest.consume() { showingMealCapture = true }
             }
         }
     }

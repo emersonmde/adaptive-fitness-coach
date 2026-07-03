@@ -35,7 +35,14 @@ struct FoundationModelsMealPipeline: MealPipeline {
                 items: [DraftItem(name: "Scanned product", barcode: barcode)]
             )
         }
+        // Plate photo (stage 5's entry): no barcode, no label, no readable text — the one
+        // path where the user names the dish (inline, on the confirm screen) and the number
+        // is an honest range. Portion is the assumption that most moves the estimate, so it's
+        // asked up front as a deterministic C4 question, not assumed silently.
         guard !capture.ocrLines.isEmpty else {
+            if capture.imageData != nil {
+                return MealDraft(classification: .plate, seller: nil, items: [.plateFallback()])
+            }
             return MealDraft(classification: .unknown, seller: nil, items: [])
         }
         // Nutrition label: parse the panel deterministically — the printed label is the

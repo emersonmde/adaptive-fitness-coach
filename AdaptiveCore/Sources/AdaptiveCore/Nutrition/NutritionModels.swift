@@ -156,6 +156,27 @@ public struct DraftItem: Identifiable, Sendable, Hashable {
     }
 }
 
+public extension DraftItem {
+    /// The plate-photo fallback's single item (stage 5's entry): a placeholder name the user
+    /// fixes inline, plus the portion question — the one assumption that most moves an
+    /// estimate, asked up front as a deterministic C4 question rather than assumed silently.
+    static func plateFallback() -> DraftItem {
+        DraftItem(
+            name: "Plate of food (tap to name it)",
+            question: ClarifyingQuestion(
+                id: "plate-portion",
+                prompt: "How big a portion?",
+                options: [
+                    .init(id: "light", label: "Light"),
+                    .init(id: "regular", label: "Regular"),
+                    .init(id: "large", label: "Large"),
+                ],
+                defaultOptionID: "regular"
+            )
+        )
+    }
+}
+
 /// Stages 1–3 output = the confirmation screen's model. The item list (not chat history) is
 /// the state that flows between pipeline stages (§5).
 public struct MealDraft: Sendable {

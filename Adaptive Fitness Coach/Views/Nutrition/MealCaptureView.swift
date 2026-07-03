@@ -232,6 +232,15 @@ private struct SimulatedCapturePicker: View {
             }
             .buttonStyle(.bordered)
             .accessibilityIdentifier("meal.capture.simulated.label")
+
+            Button {
+                onCapture(MealCapture(imageData: Data([0x00])))   // no text, just pixels
+            } label: {
+                Label("Photo of a plate", systemImage: "fork.knife")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("meal.capture.simulated.plate")
         }
         .padding(32)
     }
