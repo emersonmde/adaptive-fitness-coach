@@ -42,3 +42,24 @@ enum WatchTheme {
 
     static let textSecondary = Color(hex: 0x9DA3AE)
 }
+
+extension View {
+    /// Full-bleed workout-field background for a **paged** in-workout screen (a `.page`
+    /// TabView child), keeping content inside the safe area. Replaces the old
+    /// `ZStack { field.ignoresSafeArea(); content }` idiom, which let the bottom-most control
+    /// clip under the watch's bottom inset on real hardware — paged TabView children bleed
+    /// past the safe area, and the Simulator underrenders the inset so it slipped through
+    /// (build 9). Verified on Series 11 46mm + Ultra 3 49mm.
+    func pagedWorkoutBackground(_ field: Color) -> some View {
+        containerBackground(field, for: .tabView)
+    }
+
+    /// Full-bleed workout-field background for a **full-screen** (non-paged) in-workout or
+    /// launch screen, reserving the bottom safe area so edge-justified controls don't clip.
+    func fullScreenWorkoutBackground(_ field: Color) -> some View {
+        self
+            .scenePadding(.bottom)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(field.ignoresSafeArea())
+    }
+}

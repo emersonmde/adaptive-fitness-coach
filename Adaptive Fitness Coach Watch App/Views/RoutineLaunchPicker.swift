@@ -48,41 +48,39 @@ private struct RoutineLaunchCard: View {
 
     var body: some View {
         let kind = RoutineKind(routine)
-        ZStack {
-            kind.field.ignoresSafeArea()
-            VStack(spacing: 8) {
-                Spacer(minLength: 0)
-                Image(systemName: kind.icon)
-                    .font(.title3)
-                    .foregroundStyle(kind.tint)
-                VStack(spacing: 3) {
-                    Text(isUpNext ? "UP NEXT" : "\(position.current) OF \(position.total)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text(routine.name)
-                        .font(.title3.bold())
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.7)
-                    Text(kind.summary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                Button(action: onStart) {
-                    Text("Start")
-                        .font(.title3.bold())
-                        .frame(maxWidth: .infinity)
-                }
-                .tint(kind.tint)
-                if position.total > 1 {
-                    Text("Turn the crown for more")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+        VStack(spacing: 8) {
+            Spacer(minLength: 0)
+            Image(systemName: kind.icon)
+                .font(.title3)
+                .foregroundStyle(kind.tint)
+            VStack(spacing: 3) {
+                Text(isUpNext ? "UP NEXT" : "\(position.current) OF \(position.total)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Text(routine.name)
+                    .font(.title3.bold())
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+                Text(kind.summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 6)
+            Spacer(minLength: 0)
+            Button(action: onStart) {
+                Text("Start")
+                    .font(.title3.bold())
+                    .frame(maxWidth: .infinity)
+            }
+            .tint(kind.tint)
+            if position.total > 1 {
+                Text("Turn the crown for more")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
         }
+        .padding(.horizontal, 6)
+        .pagedWorkoutBackground(kind.field)
     }
 }
 

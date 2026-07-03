@@ -42,11 +42,12 @@ struct WorkoutActiveView: View {
     }
 
     var body: some View {
-        ZStack {
-            // Deep tinted-black field: the colored ground telegraphs run/walk before the word reads.
-            WorkoutColors.field(for: phase).ignoresSafeArea()
+        content
+            .pagedWorkoutBackground(WorkoutColors.field(for: phase))
+    }
 
-            VStack(spacing: 2) {
+    private var content: some View {
+        VStack(spacing: 2) {
                 // Top: workout clock · progress · HR. Two glyph-anchored primary metrics at
                 // full weight flanking a quiet center. The workout clock sits top-LEFT — the
                 // far corner from the (unremovable) system clock — so the two times can't be
@@ -120,9 +121,8 @@ struct WorkoutActiveView: View {
                 }
                 .padding(.top, 3)
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
         .animation(.easeInOut(duration: 0.25), value: isRun)
         .animation(.easeInOut(duration: 0.3), value: manager.adaptationEvent)
         .onChange(of: nearingSwitch) { _, near in

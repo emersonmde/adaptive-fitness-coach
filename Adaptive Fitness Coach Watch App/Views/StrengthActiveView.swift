@@ -73,46 +73,43 @@ struct StrengthGlanceView: View {
     private var item: StrengthExerciseItem? { manager.currentItem }
 
     var body: some View {
-        ZStack {
-            WatchTheme.strengthField.ignoresSafeArea()
+        VStack(spacing: 6) {
+            statusRow
 
-            VStack(spacing: 6) {
-                statusRow
+            Spacer(minLength: 0)
 
-                Spacer(minLength: 0)
+            if let exercise, let item {
+                Text(exercise.name)
+                    .font(.title3.weight(.bold))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
 
-                if let exercise, let item {
-                    Text(exercise.name)
-                        .font(.title3.weight(.bold))
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-
-                    if item.isHold {
-                        HoldRingView(manager: manager)
-                            .padding(.top, 2)
-                    } else {
-                        repHero
-                        weightChip(item)
-                    }
+                if item.isHold {
+                    HoldRingView(manager: manager)
+                        .padding(.top, 2)
                 } else {
-                    ProgressView().tint(WatchTheme.strength)
+                    repHero
+                    weightChip(item)
                 }
-
-                Spacer(minLength: 0)
-
-                // Set pips: this exercise's sets across the block (real information — the
-                // strength analogue of the run's "n of N"), in the reserved bottom slot.
-                setPips
-
-                if let item, !item.isHold {
-                    DoneSetButton { manager.completeSet() }
-                }
+            } else {
+                ProgressView().tint(WatchTheme.strength)
             }
-            .padding(.horizontal, 6)
-            .padding(.top, 2)
+
+            Spacer(minLength: 0)
+
+            // Set pips: this exercise's sets across the block (real information — the
+            // strength analogue of the run's "n of N"), in the reserved bottom slot.
+            setPips
+
+            if let item, !item.isHold {
+                DoneSetButton { manager.completeSet() }
+            }
         }
+        .padding(.horizontal, 6)
+        .padding(.top, 2)
+        .pagedWorkoutBackground(WatchTheme.strengthField)
         .animation(.easeInOut(duration: 0.25), value: manager.currentIndex)
         .onChange(of: manager.currentIndex) { _, _ in crownValue = Double(manager.repsPending) }
         .onAppear { crownValue = Double(manager.repsPending) }
@@ -245,13 +242,11 @@ struct ExerciseDetailView: View {
     private var item: StrengthExerciseItem? { manager.currentItem }
 
     var body: some View {
-        ZStack {
-            WatchTheme.strengthField.ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: 10) {
-                    if let exercise, let item {
-                        FormDemoView(formDemo: exercise.formDemo)
-                            .frame(height: 84)
+        ScrollView {
+            VStack(spacing: 10) {
+                if let exercise, let item {
+                    FormDemoView(formDemo: exercise.formDemo)
+                        .frame(height: 84)
 
                         Text(exercise.name)
                             .font(.headline)
@@ -280,11 +275,11 @@ struct ExerciseDetailView: View {
                     } else {
                         ProgressView().tint(WatchTheme.strength)
                     }
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
         }
+        .pagedWorkoutBackground(WatchTheme.strengthField)
     }
 
     private func adjust(_ delta: Double) {
