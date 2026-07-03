@@ -110,7 +110,13 @@ public enum CalorieTargetCalculator {
 /// simulator). `nil` = one or more inputs missing — indistinguishable from read-denied by
 /// HealthKit design, so callers degrade to manual entry without accusing.
 public protocol BodyProfileSource: Sendable {
+    /// Deferred-contextual permission request (the target sheet calls it on open).
+    func requestAuthorization() async throws
     func currentProfile() async throws -> BodyProfile?
+}
+
+public extension BodyProfileSource {
+    func requestAuthorization() async throws {}   // fakes need no permission
 }
 
 /// One day's budget arithmetic — the single source of truth for the gauge and the hub line.

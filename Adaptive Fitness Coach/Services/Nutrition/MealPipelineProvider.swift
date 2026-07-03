@@ -51,4 +51,13 @@ enum MealPipelineProvider {
     static let sharedRecorder: any NutritionRecorder = isSimulated
         ? InMemoryNutritionRecorder()
         : HealthKitNutritionRecorder()
+
+    /// The daily target setting (build 8) — one instance drives the gauge and the hub line.
+    static let sharedTargetStore = CalorieTargetStore()
+
+    /// Body data for the target suggestion: fixed fixture in the sim (stable suggested
+    /// numbers for demos/UI tests), HealthKit on device.
+    static func makeBodyProfileSource() -> any BodyProfileSource {
+        isSimulated ? FixedBodyProfileSource() : HealthKitBodyProfileSource()
+    }
 }

@@ -88,6 +88,7 @@ struct MealConfirmationSheet: View {
         case .receipt: "receipt"
         case .nutritionLabel: "nutrition label"
         case .plate: "photo"
+        case .typed: "typed"
         case .unknown: "capture"
         }
         if let seller = draft.seller { return "\(seller.name) · \(kind)" }
@@ -100,6 +101,7 @@ struct MealConfirmationSheet: View {
         case .receipt: "doc.text"
         case .nutritionLabel: "tablecells"
         case .plate: "fork.knife"
+        case .typed: "keyboard"
         case .unknown: "questionmark.circle"
         }
     }

@@ -737,9 +737,6 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera scans receipts, barcodes, and nutrition labels so meals log in seconds.";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Reads today's logged meals from Apple Health to show your daily intake.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Saves meals you log to Apple Health as dietary energy and macros.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -757,6 +754,9 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -780,9 +780,6 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adaptive Fitness Coach adds your scheduled runs to your calendar so they show up at the time you chose.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "The camera scans receipts, barcodes, and nutrition labels so meals log in seconds.";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
-				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Reads today's logged meals from Apple Health to show your daily intake.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Saves meals you log to Apple Health as dietary energy and macros.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -800,6 +797,9 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -90,6 +90,7 @@ struct TodayEntriesSheet: View {
         case .database(let name, _): "database · \(name)"
         case .estimate(let assumptions):
             assumptions.isEmpty ? "estimate" : "estimate · \(assumptions.joined(separator: " · "))"
+        case .userStated: "your number"
         }
     }
 

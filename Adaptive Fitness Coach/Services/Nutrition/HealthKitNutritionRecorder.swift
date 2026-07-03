@@ -14,7 +14,7 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
 
     enum MetadataKey {
         static let entryID = "AFCEntryID"
-        static let provenance = "AFCProvenance"       // "verified" | "database" | "estimate"
+        static let provenance = "AFCProvenance"       // Provenance.metadataValue
         static let databaseName = "AFCDatabaseName"
         static let sourceURL = "AFCSourceURL"
         static let kcalLow = "AFCKcalLow"             // estimates only (Health has no range type)
@@ -22,6 +22,7 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
         static let assumptions = "AFCAssumptions"     // "a · b · c"
         static let quantity = "AFCQuantity"           // servings; samples store totals
         static let serving = "AFCServing"
+        static let meal = "AFCMeal"                   // MealSlot.rawValue (build 8)
     }
 
     private let store = HKHealthStore()
@@ -31,6 +32,7 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
     private static let proteinType = HKQuantityType(.dietaryProtein)
     private static let carbType = HKQuantityType(.dietaryCarbohydrates)
     private static let fatType = HKQuantityType(.dietaryFatTotal)
+    private static let activeEnergyType = HKQuantityType(.activeEnergyBurned)
     private static let foodType = HKCorrelationType(.food)
 
     private static var allQuantityTypes: Set<HKSampleType> {
@@ -41,12 +43,13 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw CocoaError(.featureUnsupported)
         }
-        // Share to write; read the same types (+ the correlation) for the daily line. A user
-        // denial is not a throw — HealthKit reports it through the write path (and hides read
-        // denial by design; the daily line degrades honestly).
+        // Share to write; read the same types (+ the correlation, + active energy for the
+        // day screen's informational burn line). A user denial is not a throw — HealthKit
+        // reports it through the write path (and hides read denial by design; the daily line
+        // degrades honestly).
         try await store.requestAuthorization(
             toShare: Self.allQuantityTypes,
-            read: Self.allQuantityTypes.union([Self.foodType])
+            read: Self.allQuantityTypes.union([Self.foodType, Self.activeEnergyType])
         )
     }
 
@@ -72,8 +75,9 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
         var metadata: [String: Any] = [
             HKMetadataKeyFoodType: entry.name,
             MetadataKey.entryID: entry.id.uuidString,
-            MetadataKey.provenance: entry.provenance.label,
+            MetadataKey.provenance: entry.provenance.metadataValue,
             MetadataKey.quantity: entry.quantity,
+            MetadataKey.meal: entry.meal.rawValue,
         ]
         switch entry.provenance {
         case .verified(let url):
@@ -83,6 +87,8 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
             if let url { metadata[MetadataKey.sourceURL] = url.absoluteString }
         case .estimate(let assumptions):
             metadata[MetadataKey.assumptions] = assumptions.joined(separator: " · ")
+        case .userStated:
+            break   // the metadataValue string carries everything
         }
         if case .range(let low, let high) = entry.facts.energy {
             metadata[MetadataKey.kcalLow] = low * servings
@@ -118,20 +124,45 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
         }
     }
 
-    func todayIntake() async throws -> DailyIntake {
-        let calendar = Calendar.current
-        let start = calendar.startOfDay(for: Date())
-        let today = HKQuery.predicateForSamples(withStart: start, end: nil)
+    func intake(on day: Date) async throws -> DailyIntake {
+        let predicate = Self.dayPredicate(day)
 
-        // Total = ALL dietary energy today, any source (another app's entries still count
+        // Total = ALL dietary energy that day, any source (another app's entries still count
         // toward the user's day — we're a pen, not the only pen).
-        let energySamples: [HKQuantitySample] = try await sampleQuery(type: Self.energyType, predicate: today)
+        let energySamples: [HKQuantitySample] = try await sampleQuery(type: Self.energyType, predicate: predicate)
         let total = energySamples.reduce(0) { $0 + $1.quantity.doubleValue(for: .kilocalorie()) }
 
         // Entries = our correlations, reconstructed from metadata.
-        let correlations: [HKCorrelation] = try await sampleQuery(type: Self.foodType, predicate: today)
+        let correlations: [HKCorrelation] = try await sampleQuery(type: Self.foodType, predicate: predicate)
         let entries = correlations.compactMap(Self.entry(from:)).sorted { $0.date < $1.date }
         return DailyIntake(totalKcal: total, entries: entries)
+    }
+
+    func activeEnergyBurned(on day: Date) async throws -> Double {
+        try await withCheckedThrowingContinuation { continuation in
+            let query = HKStatisticsQuery(
+                quantityType: Self.activeEnergyType,
+                quantitySamplePredicate: Self.dayPredicate(day),
+                options: .cumulativeSum
+            ) { _, statistics, error in
+                if let error {
+                    // Read denial surfaces as an error here; the burn line is informational —
+                    // callers treat a throw as "show nothing", never as zero-with-confidence.
+                    continuation.resume(throwing: error)
+                } else {
+                    let kcal = statistics?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
+                    continuation.resume(returning: kcal)
+                }
+            }
+            store.execute(query)
+        }
+    }
+
+    private static func dayPredicate(_ day: Date) -> NSPredicate {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: day)
+        let end = calendar.date(byAdding: .day, value: 1, to: start)
+        return HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
     }
 
     func observeChanges(_ handler: @escaping @Sendable () -> Void) {
@@ -181,12 +212,16 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
             let assumptions = (metadata[MetadataKey.assumptions] as? String)?
                 .components(separatedBy: " · ") ?? []
             provenance = .estimate(assumptions: assumptions)
+        case "userStated":
+            provenance = .userStated
         default:
             provenance = .database(
                 name: (metadata[MetadataKey.databaseName] as? String) ?? "database",
                 sourceURL: sourceURL
             )
         }
+
+        let meal = (metadata[MetadataKey.meal] as? String).flatMap(MealSlot.init(rawValue:))
 
         return MealEntry(
             id: id,
@@ -200,7 +235,8 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
                 fatGrams: total(fatType, .gram()),
                 servingDescription: metadata[MetadataKey.serving] as? String
             ),
-            provenance: provenance
+            provenance: provenance,
+            meal: meal   // nil (build-7 entries) → init derives from the entry's time
         )
     }
 
