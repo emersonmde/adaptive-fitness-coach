@@ -1,5 +1,36 @@
 import Foundation
 
+/// The gear a movement requires. Drives the P3 coach's equipment intake — the model is told
+/// which movements the user's equipment unlocks and proposes only those — and future library
+/// grouping/filtering. `.bodyweight` means no gear at all.
+public enum Equipment: String, Codable, Sendable, CaseIterable, Hashable, Comparable {
+    case bodyweight
+    case dumbbell
+    case barbell
+    case kettlebell
+    case band
+    case pullUpBar = "pull_up_bar"
+    case bench
+    case machine
+
+    public var displayName: String {
+        switch self {
+        case .bodyweight: "Bodyweight"
+        case .dumbbell: "Dumbbells"
+        case .barbell: "Barbell"
+        case .kettlebell: "Kettlebell"
+        case .band: "Resistance bands"
+        case .pullUpBar: "Pull-up bar"
+        case .bench: "Bench"
+        case .machine: "Gym machines"
+        }
+    }
+
+    public static func < (lhs: Equipment, rhs: Equipment) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 /// A library catalog entry: one movement the app knows how to coach, with conservative seed
 /// defaults. Authored content (see `ExerciseLibrary`), not a per-user record. The user picks
 /// these into a routine and may adjust the prescription; the entry itself never changes.
@@ -38,6 +69,9 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
     /// et al., JSCR 30(7), 2016; Grgic et al. 2017 review), 60–90s adequate for isolation and
     /// bodyweight work (de Salles & Simão, Sports Medicine 39(9), 2009).
     public var restSeedSeconds: TimeInterval
+    /// The gear this movement needs — all of it (a dumbbell bench press needs dumbbells *and*
+    /// a bench). `.bodyweight` alone means no equipment.
+    public var equipment: Set<Equipment>
 
     public init(
         id: String,
@@ -51,7 +85,8 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
         defaultSets: Int,
         kind: ExerciseKind,
         weightStepPounds: Double = 5,
-        restSeedSeconds: TimeInterval = 60
+        restSeedSeconds: TimeInterval = 60,
+        equipment: Set<Equipment> = [.bodyweight]
     ) {
         self.id = id
         self.name = name
@@ -65,6 +100,7 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
         self.kind = kind
         self.weightStepPounds = weightStepPounds
         self.restSeedSeconds = restSeedSeconds
+        self.equipment = equipment
     }
 
     /// The double-progression rep band, or nil for holds.

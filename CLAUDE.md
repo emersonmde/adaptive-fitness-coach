@@ -2,14 +2,14 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-A watch-first adaptive running app (iOS + watchOS, SwiftUI). For current status, milestone scope (P0–P2 done; P3 AI integration next), and open TODOs, read **`docs/PROJECT-STATUS.md`** first, then the PRD `docs/adaptive-fitness-coach-spec.md`.
+A watch-first adaptive running app (iOS + watchOS, SwiftUI). For current status, milestone scope (P0–P3 implemented; P3 on-device validation then P4 next), and open TODOs, read **`docs/PROJECT-STATUS.md`** first, then the PRD `docs/adaptive-fitness-coach-spec.md`.
 
 ## Build & test
 
 **Critical toolchain gotcha:** the watch target's minimum is **watchOS 27**, which ships only in the **watchOS 27 SDK → Xcode 27 beta** at `/Applications/Xcode-beta.app`. The default `xcode-select` is Xcode 26.5. Any `xcodebuild` for a device target (watch, or the iOS scheme — it embeds the watch app) **must** prefix `DEVELOPER_DIR`:
 
 ```bash
-# Pure logic — the fast loop. Default toolchain, no simulator. ~221 tests.
+# Pure logic — the fast loop. Default toolchain, no simulator. ~247 tests.
 cd AdaptiveCore && swift test
 cd AdaptiveCore && swift test --filter AdaptationPolicyTests          # one suite
 cd AdaptiveCore && swift test --filter IntervalStateMachineTests/nonPositiveDeltaIsInert  # one test
@@ -30,6 +30,7 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
 - Watch `-simulateWorkout` — scripted HR/zones via `SimulatedWorkoutBackend`, compressed plan, auto-starts, skips the HealthKit prompt. **The only way to see the adaptive loop in the simulator.**
 - Phone `-uiTesting` — throwaway store so runs start clean (used by the XCUITests).
 - Phone `-seedDemo` — throwaway store seeded with demo routines (QA/screenshots).
+- Phone `-simulateCoach` — the P3 coach runs on the deterministic `ScriptedCoachEngine` (scripted intake → canned proposal). **The only way to see the coach flow in the simulator** (Apple Intelligence can't be granted there); used by `CoachFlowUITests`.
 
 Adding a new `.swift` file under a target's folder auto-compiles it — the project uses **file-system-synchronized groups** (objectVersion 77), so no `project.pbxproj` edits are needed to add sources. Adding a *non-source* file to a target (e.g. the watch `Info.plist`) requires a `membershipExceptions` entry in the pbxproj.
 
@@ -48,6 +49,8 @@ Adding a new `.swift` file under a target's folder auto-compiles it — the proj
 **Data flow & sync.** The phone owns routines (`RoutineStore`, shared from `AdaptiveCore`); changes push to the watch one-directionally via `WatchConnectivity` `updateApplicationContext` (latest-state-wins, survives the counterpart being absent — supports "watch-first, phone-optional"). `WCMessageCodec` (in the package) is the shared serializer both sides use. The watch reads its own local `RoutineStore` populated by the received context; it never needs the phone present at workout time.
 
 **The OS is the system of record (N2).** The app never writes its own HR/calorie/route samples — `HKLiveWorkoutBuilder` persists the workout to Apple Health on the app's behalf; the summary screen reads totals back. There is no private metrics store.
+
+**The `CoachEngine` seam (phone, P3).** The AI coach is the `WorkoutBackend` pattern lifted to chat: `CoachChatView` drives `CoachConversation` (`@Observable`, in the package), which talks to a `CoachEngine`/`CoachSession` protocol pair — messages in, `CoachEvent`s out (`textDelta` / validated `proposal` / `finishedTurn`). Production is `FoundationModelsCoachEngine` (phone target only — the package stays Foundation-only): PCC model default, on-device fallback, `propose_plan` tool whose `@Generable` mirror DTOs (`GenerableRoutinePlan`) match the exchange schema field-for-field. **Every AI proposal funnels through `CoachProposalValidator` → `RoutineExchange` → user confirmation in `ImportRoutinesSheet` → `store.importRoutines`** — the import-preserves-progression graft is the load-bearing invariant; the AI never writes to the store directly. `ScriptedCoachEngine` (package) is the deterministic fake behind `-simulateCoach` and the tests. Swapping providers (Claude API, user keys, Gemini/Firebase) = a new `CoachEngine` conformance in `CoachEngineProvider`; the phone target now requires iOS 27 for FoundationModels' `LanguageModel` abstraction.
 
 **Two-tier color system.** The **brand accent** (phone-only: CTAs, selected states, today-ring, hero glow) is emerald `#34E27A` — deliberately the *same* green as the `run` semantic, chosen by the user over the earlier Electric Lime `#C6FF3D` so the phone reads as one coherent green. Green=run / **cool sky-blue (`#3EC5FF`) = recover/walk** / royal-blue=strength / red=hot are **workout-state semantics**, a separate language tied to the watch's haptics and learned mid-run — the watch never uses the brand accent. (Walk was amber until a real run showed green↔amber fails at a glance — sunlight/motion/red-green CVD; amber now serves only *gradient* jobs: the zone ladder's threshold step and the strength rest ring. Compliance with the instruction is signaled by **motion** — pulsing label/zone bar via cadence-verified `WalkComplianceMonitor` — never by re-mapping hue.) Scheduling a routine writes a recurring **Calendar event** (EventKit, `CalendarService`), not a local notification. Tokens live in a `Theme` enum per target (`Adaptive Fitness Coach/Views/Components/Theme.swift` and `Adaptive Fitness Coach Watch App/Views/Theme.swift`). The implemented look is dark/neon and intentionally diverges from the light-mode `docs/design/*.html` handoffs (use those for screen *flows*, not visual style).
 

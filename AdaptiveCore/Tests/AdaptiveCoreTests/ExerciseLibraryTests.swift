@@ -36,11 +36,14 @@ struct ExerciseLibraryTests {
                 // Every band supports double progression: sane bottom, real headroom.
                 #expect(repRange.lowerBound >= 1)
                 #expect(repRange.count >= 3)
-                // Seed loads are conservative: present ones sit in a sane beginner band, and
-                // the load step is a real increment (2.5 or 5 lb) only for weighted moves.
+                // Seed loads are conservative: dumbbell seeds sit in a beginner band; barbell
+                // seeds start at the empty 45 lb bar (deadlift with light plates); machine
+                // stacks a bit higher. Steps are real increments: 2.5/5 lb plates, or 10 lb
+                // for machine stacks and big pulls.
                 if let seedWeight {
-                    #expect(seedWeight.pounds > 0 && seedWeight.pounds <= 60)
-                    #expect(exercise.weightStepPounds == 2.5 || exercise.weightStepPounds == 5)
+                    let ceiling: Double = exercise.equipment.contains(.machine) ? 100 : 65
+                    #expect(seedWeight.pounds > 0 && seedWeight.pounds <= ceiling)
+                    #expect([2.5, 5, 10].contains(exercise.weightStepPounds))
                 }
             case let .hold(defaultSeconds):
                 // Hold seeds start inside the policy's [floor, cap] band.
@@ -55,6 +58,27 @@ struct ExerciseLibraryTests {
     @Test func isometricArchetypeMatchesHoldKind() {
         for exercise in ExerciseLibrary.all {
             #expect(exercise.kind.isHold == (exercise.archetype == .isometric))
+        }
+    }
+
+    /// Every entry declares its gear (the P3 coach narrows the vocabulary by what the user
+    /// has), and loaded movements never claim to be bodyweight-only.
+    @Test func equipmentTagsAreCoherent() {
+        for exercise in ExerciseLibrary.all {
+            #expect(!exercise.equipment.isEmpty)
+            if case let .reps(_, seedWeight) = exercise.kind, seedWeight != nil {
+                #expect(exercise.equipment != [.bodyweight],
+                        "\(exercise.id) has a seed load but claims to need no equipment")
+            }
+        }
+    }
+
+    /// The coach's equipment intake only works if the catalog actually spans the gear it asks
+    /// about — every equipment kind must unlock at least one movement.
+    @Test func everyEquipmentKindHasMovements() {
+        for equipment in Equipment.allCases {
+            #expect(ExerciseLibrary.all.contains { $0.equipment.contains(equipment) },
+                    "no movement uses \(equipment.rawValue)")
         }
     }
 

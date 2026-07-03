@@ -96,6 +96,21 @@ public enum RoutineExchange {
     /// schema, or an empty set. Exercise cards with ids outside the library are dropped (N6); a
     /// routine that ends up with no cards is dropped.
     public static func importRoutines(fromJSON text: String) throws -> [Routine] {
+        try importRoutinesDetailed(fromJSON: text).routines
+    }
+
+    /// `importRoutines(fromJSON:)` plus an account of what validation dropped, so callers (the
+    /// P3 coach) can be honest about a shrunken plan instead of silently swallowing cards.
+    public struct DetailedImportResult: Sendable {
+        public var routines: [Routine]
+        /// Cards dropped for an unknown type or an exercise id outside the library (N6).
+        public var droppedCardCount: Int
+        /// Routines dropped because no card survived.
+        public var droppedRoutineCount: Int
+    }
+
+    /// See `importRoutines(fromJSON:)` — same parsing and rules, with drop counts.
+    public static func importRoutinesDetailed(fromJSON text: String) throws -> DetailedImportResult {
         guard let data = extractJSONObject(from: text) else { throw ExchangeError.notJSON }
 
         let decoder = JSONDecoder()
@@ -110,9 +125,24 @@ public enum RoutineExchange {
             throw ExchangeError.notJSON
         }
 
-        let routines = exchangeRoutines.compactMap { $0.toRoutine() }
+        var routines: [Routine] = []
+        var droppedCards = 0
+        var droppedRoutines = 0
+        for exchangeRoutine in exchangeRoutines {
+            let builtCards = exchangeRoutine.cards.compactMap { $0.toWorkoutCard() }
+            droppedCards += exchangeRoutine.cards.count - builtCards.count
+            if builtCards.isEmpty {
+                droppedRoutines += 1
+            } else {
+                routines.append(exchangeRoutine.toRoutine(cards: builtCards))
+            }
+        }
         guard !routines.isEmpty else { throw ExchangeError.noRoutines }
-        return routines
+        return DetailedImportResult(
+            routines: routines,
+            droppedCardCount: droppedCards,
+            droppedRoutineCount: droppedRoutines
+        )
     }
 
     // MARK: - Card description (Markdown)
@@ -201,10 +231,8 @@ private struct ExchangeRoutine: Codable {
         cards = routine.cards.map(ExchangeCard.init(_:))
     }
 
-    /// Import: build a `Routine`, validating cards against the library. Returns nil if no card survives.
-    func toRoutine() -> Routine? {
-        let builtCards = cards.compactMap { $0.toWorkoutCard() }
-        guard !builtCards.isEmpty else { return nil }
+    /// Import: build a `Routine` around already-validated cards (see `toWorkoutCard()`).
+    func toRoutine(cards builtCards: [WorkoutCard]) -> Routine {
         let parsedDays = Set((days ?? []).compactMap(DayOfWeek.parse(_:)))
         return Routine(
             name: name.isEmpty ? "Routine" : name,

@@ -9,7 +9,10 @@ struct WeekView: View {
     let store: RoutineStore
     @State private var showingNewRoutine = false
 
-    // Claude round-trip (RoutineExchange): export the set into Claude, import the revised JSON back.
+    // P3 coach: a tapped entry point stages an intent; the sheet owns the conversation.
+    @State private var coachLaunch: CoachLaunch?
+
+    // Manual Claude round-trip (RoutineExchange) — kept as the coach's fallback path.
     @State private var pendingImport: ImportCandidate?
     @State private var copied = false
     @State private var importError: String?
@@ -42,6 +45,9 @@ struct WeekView: View {
             .sheet(isPresented: $showingNewRoutine) {
                 NewRoutineView(store: store)
             }
+            .sheet(item: $coachLaunch) { launch in
+                CoachChatView(store: store, intent: launch.intent)
+            }
             .sheet(item: $pendingImport) { candidate in
                 ImportRoutinesSheet(candidate: candidate,
                                     existingNames: Set(store.routines.map(\.name))) { incoming in
@@ -71,28 +77,44 @@ struct WeekView: View {
         }
     }
 
-    /// Export to / import from the Claude app — the workaround round-trip until in-app AI (P3).
+    /// The coach menu (P3): the native trainer conversation first, with the manual Claude-app
+    /// round-trip retained underneath as the fallback when the model isn't available.
     private var claudeMenu: some View {
         Menu {
+            Button {
+                coachLaunch = CoachLaunch(intent: .buildNewPlan)
+            } label: {
+                Label("Plan my week", systemImage: "wand.and.stars")
+            }
+            .accessibilityIdentifier("coachPlanWeek")
             if !store.routines.isEmpty {
-                ShareLink(item: RoutineExchange.primingPrompt(store.routines)) {
-                    Label("Share for Claude", systemImage: "square.and.arrow.up")
+                Button {
+                    coachLaunch = CoachLaunch(intent: .reviseAll)
+                } label: {
+                    Label("Rework my routines", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .accessibilityIdentifier("coachReviseAll")
+            }
+            Section("Manual (Claude app)") {
+                if !store.routines.isEmpty {
+                    ShareLink(item: RoutineExchange.primingPrompt(store.routines)) {
+                        Label("Share for Claude", systemImage: "square.and.arrow.up")
+                    }
+                    Button {
+                        UIPasteboard.general.string = RoutineExchange.primingPrompt(store.routines)
+                        copied = true
+                    } label: {
+                        Label("Copy Claude prompt", systemImage: "doc.on.doc")
+                    }
                 }
                 Button {
-                    UIPasteboard.general.string = RoutineExchange.primingPrompt(store.routines)
-                    copied = true
+                    importFromClipboard()
                 } label: {
-                    Label("Copy Claude prompt", systemImage: "doc.on.doc")
+                    Label("Import from clipboard", systemImage: "square.and.arrow.down")
                 }
-                Divider()
-            }
-            Button {
-                importFromClipboard()
-            } label: {
-                Label("Import from clipboard", systemImage: "square.and.arrow.down")
             }
         } label: {
-            Label("Claude", systemImage: "sparkles")
+            Label("Coach", systemImage: "sparkles")
         }
         .accessibilityIdentifier("claudeMenu")
     }
@@ -175,6 +197,17 @@ struct WeekView: View {
             }
             .accessibilityIdentifier("newRoutineEmptyState")
             .padding(.top, 4)
+            // Quiet secondary door to the coach — the manual builder stays dominant (the app
+            // is fully usable without AI).
+            Button {
+                coachLaunch = CoachLaunch(intent: .buildNewPlan)
+            } label: {
+                Label("Or let the coach build your week", systemImage: "sparkles")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("coachEmptyState")
         }
         .padding(32)
     }
