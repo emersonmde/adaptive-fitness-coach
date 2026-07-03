@@ -197,10 +197,13 @@ guessing; Apple Health is the record (C5 — no private food store). Implemented
     `DecodeError` on consecutive items = keyless-tier rate limiting under a 10-item burst
     (client now retries once with a fresh session + 700ms backoff; real per-meal usage
     doesn't burst like the lab).
-  - **agentic tool loop: 0/9, all context overflows** — a tool loop's transcript
-    (instructions + schemas + tool results + turns) cannot fit the local model's fixed
-    4,096-token window. **Verdict: rung 3 ships disabled (`agent: nil`); revisit only when
-    the PCC grant lands (32K).**
+  - **agentic tool loop: 0/9 → 1/9 across runs (~36s avg)** — a tool loop's transcript
+    (instructions + schemas + tool results + turns) cannot reliably fit the local model's
+    fixed 4,096-token window; the one success (Wendy's, 7.2s) proves the mechanism, the
+    other eight overflowed. **Verdict: rung 3 ships disabled (`agent: nil`); revisit only
+    when the PCC grant lands (32K).** Confirmation run (round 3, after budget tightening +
+    rate-limit retry): barcode 2/2, search+adjudicate 8/10 @ ~5.3s (misses: one dropped
+    network connection + the homemade item that *should* miss), agentic 1/9.
   - **Two hard-won platform facts:** (1) instantiating `PrivateCloudComputeLanguageModel`
     without `com.apple.developer.private-cloud-compute` is a **fatal error**, not
     `.unavailable` — and the entitlement is a *gated Apple grant* (Small Business Program,
@@ -209,8 +212,10 @@ guessing; Apple Health is the record (C5 — no private food store). Implemented
     have crashed on first device use — spike caught it). (2) All context budgets must be
     sized to the *running* model (`ExcerptBudget.onDevice` 3,600 chars vs `.privateCloud`),
     reduced query-aware by `ExcerptReducer` (keep item-term/nutrition lines only).
-  - User has requested the PCC entitlement; on grant, PCC (32K + reasoning) engages
-    automatically via `PCCEntitlement.isGranted` — no code change.
+  - User applied to the Small Business Program 2026-07-03 (the PCC prerequisite; the PCC
+    access request itself follows at developer.apple.com/private-cloud-compute). On grant:
+    re-add `com.apple.developer.private-cloud-compute` to the phone entitlements — PCC
+    (32K + reasoning) then engages automatically via `PCCEntitlement.isGranted`.
 - **Pending on-device**: LookupLab coverage numbers; real UPC → Apple Health write; receipt
   OCR→extraction quality; salad-benchmark timing (<10s, C1); HealthKit auth prompt;
   HKCorrelation delete semantics; DataScanner capture quality.
