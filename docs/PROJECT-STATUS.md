@@ -300,10 +300,21 @@ Watch polish + Effort/RPE + roadmap integrations. Committed + verified so far:
   returns the entity; phone `StartWorkoutIntent` (→ points to watch); watch `StartRoutineIntent`
   + `WorkoutLaunchRequest` routes `SessionContainerView.chosen` straight into a routine's
   adaptive flow. Full CoreSpotlight index deferred.
-- **Pending (device-only-verifiable, not yet built)**: next-workout Home/Lock widgets + a NEW
-  watchOS widget-extension target for Smart Stack + complications (uses `StartRoutineIntent`);
-  Live Activities (meal-lookup progress + pre-workout "Up next"). WorkoutKit scheduled
-  compositions deliberately skipped (would hand tracking to Apple's app).
+- **Next-workout widgets + watch complications** ✅ — phone `NextWorkoutWidget` (systemSmall +
+  Lock-Screen accessory) reads the App Group store's `nextOccurrence()` (nonisolated
+  `RoutineStore.routinesFromDisk()` + static `nextOccurrence(in:)`); NEW watchOS widget-
+  extension target `AdaptiveFitnessWatchWidgets` (Smart Stack + complication families) →
+  `afcoach://start/<id>` → watch `onOpenURL` → `WorkoutLaunchRequest` → straight into the
+  routine's adaptive flow. WorkoutKit scheduled compositions deliberately skipped (would hand
+  tracking to Apple's app). Widget/complication *render* needs on-device confirmation; timeline
+  + routing logic is unit-tested/exercised.
+- **Deferred: Live Activities** (meal-lookup progress + pre-workout "Up next") — the one slice
+  not built: `ActivityAttributes` must be shared app↔widget, which fights the file-system-
+  synchronized groups (retroactive-conformance plumbing), and the value is marginal (the in-app
+  "Looking up… → Saved" line already covers meal progress). Recommended as a focused follow-up.
+- **Verified**: 350 package tests, phone unit, all phone UI suites (serial), 59 watch tests;
+  safe-area fix screenshot-verified on Series 11 46mm + Ultra 3 49mm. On-device pass (effort
+  write to Health, complication/widget render, Siri start, deep-link) is the user's.
 - Decision recorded: hold TestFlight until the user validates the device-only integrations.
 
 ### Platform integration backlog (Apple-API leverage — researched at WWDC26/iOS 27, 2026-07-02)
