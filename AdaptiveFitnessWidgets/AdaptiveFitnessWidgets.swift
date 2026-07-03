@@ -9,6 +9,7 @@ import SwiftUI
 @main
 struct AdaptiveFitnessWidgetBundle: WidgetBundle {
     var body: some Widget {
+        NextWorkoutWidget()
         ScanMealWidget()
         TypeMealWidget()
     }

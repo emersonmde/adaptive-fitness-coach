@@ -30,12 +30,12 @@ public final class RoutineStore {
     /// The App Group that shares the routines file between the app and its extensions
     /// (widgets, complications — build 9). Widgets/complications read `nextOccurrence()` from
     /// the same store, so the file must live in a container both processes can reach.
-    public static let appGroupIdentifier = "group.com.memerson.Adaptive-Fitness-Coach"
+    public nonisolated static let appGroupIdentifier = "group.com.memerson.Adaptive-Fitness-Coach"
 
     /// The default routines file: the App Group container when available (so extensions see
     /// it), else the app's Documents directory (defensive fallback — e.g. entitlement missing
     /// in a test host). A one-time migration copies a pre-build-9 Documents file into the group.
-    public static func defaultFileURL() -> URL {
+    public nonisolated static func defaultFileURL() -> URL {
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let documentsFile = documents.appendingPathComponent("routines.json")
 
@@ -50,7 +50,7 @@ public final class RoutineStore {
 
     /// One-time copy of a pre-build-9 Documents routines file into the App Group container.
     /// Idempotent: never overwrites an existing group file (that would clobber newer data).
-    static func migrateIfNeeded(from source: URL, to destination: URL) {
+    nonisolated static func migrateIfNeeded(from source: URL, to destination: URL) {
         let fm = FileManager.default
         guard !fm.fileExists(atPath: destination.path),
               fm.fileExists(atPath: source.path) else { return }
@@ -251,6 +251,25 @@ public final class RoutineStore {
     /// next fires (its repeat-day at its scheduled time, or midnight if no time is set). Drives
     /// the phone's "Up Next" hero ("Tomorrow · 7:00 AM"). Returns nil if nothing is scheduled.
     public func nextOccurrence(now: Date = Date(), calendar: Calendar = .current) -> (routine: Routine, date: Date)? {
+        Self.nextOccurrence(in: routines, now: now, calendar: calendar)
+    }
+
+    // MARK: - Nonisolated reads for extensions (widgets / complications, build 9)
+
+    /// Decode the routines file without the `@MainActor` store — for a widget/complication
+    /// timeline provider running off the main actor. Defaults to the App Group file.
+    public nonisolated static func routinesFromDisk(fileURL: URL? = nil) -> [Routine] {
+        let url = fileURL ?? defaultFileURL()
+        guard let data = try? Data(contentsOf: url),
+              let routines = try? JSONDecoder().decode([Routine].self, from: data) else { return [] }
+        return routines
+    }
+
+    /// The next scheduled occurrence across a routine set — pure, nonisolated (the instance
+    /// method delegates here, and extensions call it directly on `routinesFromDisk()`).
+    public nonisolated static func nextOccurrence(
+        in routines: [Routine], now: Date = Date(), calendar: Calendar = .current
+    ) -> (routine: Routine, date: Date)? {
         var best: (routine: Routine, date: Date)?
         for routine in routines where !routine.repeatDays.isEmpty {
             for day in routine.repeatDays {
