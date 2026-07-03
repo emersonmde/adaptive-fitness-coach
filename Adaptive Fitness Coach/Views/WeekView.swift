@@ -18,6 +18,13 @@ struct WeekView: View {
     @State private var importError: String?
     @State private var importResult: String?
 
+    // P4 meal logging: one controller + recorder per launch (provider decides scripted vs
+    // production); capture is a full-screen cover, confirmation a sheet driven by phase.
+    @State private var mealController = MealPipelineProvider.makeController()
+    @State private var showingMealCapture = false
+    @State private var showingTodayEntries = false
+    private let mealRecorder = MealPipelineProvider.sharedRecorder
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -74,7 +81,36 @@ struct WeekView: View {
             .navigationDestination(for: Routine.self) { routine in
                 RoutineDetailView(store: store, routineID: routine.id)
             }
+            .fullScreenCover(isPresented: $showingMealCapture) {
+                MealCaptureView { capture in
+                    Task { await mealController.beginCapture(capture) }
+                }
+            }
+            .sheet(isPresented: Binding(
+                get: { mealController.phase == .confirming },
+                set: { presented in
+                    if !presented && mealController.phase == .confirming { mealController.cancel() }
+                }
+            )) {
+                MealConfirmationSheet(controller: mealController)
+            }
+            .sheet(isPresented: $showingTodayEntries) {
+                TodayEntriesSheet(recorder: mealRecorder)
+            }
+            .task {
+                // Finish any lookups that were mid-flight when the app last quit (C5 queue).
+                await mealController.resumePending()
+            }
         }
+    }
+
+    private var dailyIntakeLine: some View {
+        DailyIntakeLine(
+            controller: mealController,
+            recorder: mealRecorder,
+            onCapture: { showingMealCapture = true },
+            onShowEntries: { showingTodayEntries = true }
+        )
     }
 
     /// The coach menu (P3): the native trainer conversation first, with the manual Claude-app
@@ -152,6 +188,8 @@ struct WeekView: View {
                 WeekStrip(store: store)
                     .padding(.horizontal, 2)
 
+                dailyIntakeLine
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text("ROUTINES")
                         .font(.caption.weight(.semibold))
@@ -208,6 +246,11 @@ struct WeekView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("coachEmptyState")
+
+            // Meal logging is independent of routines — keep its door open on an empty week
+            // (also what lets the meal UI tests run against the clean -uiTesting store).
+            dailyIntakeLine
+                .padding(.top, 12)
         }
         .padding(32)
     }
