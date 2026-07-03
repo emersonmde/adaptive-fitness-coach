@@ -139,6 +139,26 @@ Stages 1–3 produce the confirmation screen; stage 4 runs *after* the user comm
 spend web lookups on items the user unchecks). The item list, not chat history, is the state
 that flows between stages.
 
+**Context discipline (binding — PCC is 32K total):** the model never sees raw HTML. Every
+`fetch_page` result is reduced on-device before it enters context:
+- **Search rung is already cheap**: Parallel Search MCP returns LLM-optimized excerpts, not
+  pages — prefer answering from excerpts before fetching at all.
+- **HTML → markdown-ish text** via **SwiftSoup** (single pure-Swift SPM package, no transitive
+  deps) plus a small readability-style reducer of our own: strip script/style/nav/footer,
+  pick the main content block, and — critically for nutrition pages — **serialize `<table>`
+  elements as markdown tables** and lists as bullets (nutrition facts live in tables;
+  a naive text dump destroys exactly the structure the model needs). Fallback with zero
+  dependencies: `NSAttributedString(html:)` → plain text (built-in, but flattens tables and
+  wants the main thread — acceptable only as the fallback).
+- **PDFs** (chains love publishing nutrition PDFs): built-in **PDFKit** text extraction, no
+  dependency at all.
+- **Hard cap per fetch** (~a few K tokens after reduction) with head+matched-section
+  selection — the tool can accept an optional `query` so the reducer keeps the sections
+  mentioning the item, not the page's first N paragraphs. One page in context at a time;
+  each new fetch replaces, never accumulates.
+- Per-item lookups are **independent sessions** (fresh context each), not one long
+  conversation — the item list is the state, so nothing needs to survive between items.
+
 **Engine reuse:** this rides the existing `CoachEngine` seam (`AdaptiveCore/Coach/`) — the
 multimodal extension point (`CoachMessage.Content.image`) was reserved for exactly this.
 Expect a sibling protocol shape for the pipeline (stage in → structured result out) rather
@@ -167,6 +187,7 @@ backends stay swappable (main PRD P3 decision).
 - **FoundationModels / provider seam** — pipeline stages behind the existing engine abstraction; backend choice per CQ1 (custom client-side `Tool`s for PCC; `ClaudeForFoundationModels` server tools as the escalation tier).
 - **Open Food Facts REST API** — free, keyless barcode→product resolution (the no-LLM fast path; CQ3).
 - **Parallel Search MCP** (`search.parallel.ai/mcp`) — free, keyless web search for the PCC `web_search` tool (CQ3); DuckDuckGo HTML as the keyless fallback. **No secrets ship in the app** — any credentialed escalation (Claude SSO / user key) is user-supplied at runtime.
+- **SwiftSoup** (SPM, pure Swift, no transitive deps) — HTML parsing for the on-device page reducer (§5 context discipline); **PDFKit** (built-in) for nutrition PDFs; `NSAttributedString(html:)` as the zero-dependency fallback.
 - **App Intents (iOS 27)** — the capture entry point (widget / Lock Screen / Action Button / Siri), and **`LongRunningIntent`** for the post-confirm research step: it manages the background task and **automatically surfaces progress as a Live Activity** — the "numbers finalize in the background behind an honest status" requirement (§4.4) nearly for free, visible on the Dynamic Island, StandBy, the watch Smart Stack, and CarPlay.
 - **WidgetKit** — quick-capture widget; iOS 27 widgets are customizable via App Intents.
 - **Camera** — capture UX; new `NSCameraUsageDescription`.
