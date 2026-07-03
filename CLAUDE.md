@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-A watch-first adaptive running app (iOS + watchOS, SwiftUI). For current status, milestone scope (P0 done; P1 next), and open TODOs, read **`docs/PROJECT-STATUS.md`** first, then the PRD `docs/adaptive-fitness-coach-spec.md`.
+A watch-first adaptive running app (iOS + watchOS, SwiftUI). For current status, milestone scope (P0–P2 done; P3 AI integration next), and open TODOs, read **`docs/PROJECT-STATUS.md`** first, then the PRD `docs/adaptive-fitness-coach-spec.md`.
 
 ## Build & test
 

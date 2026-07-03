@@ -2,7 +2,7 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated: P0 + dark/neon redesign + TestFlight (build 2 live) + P1 strength sequencing + **generic card-based routines (run/exercise/rest cards, rounds; run+strength unified)**. Sim-verified; device pending._
+_Last updated 2026-07-02: **P0–P2 complete.** P1.5 run coaching v2 (recovery-driven, zero-config, validated on a real run) shipped as TestFlight build 6 (live). P1.6 cleanup pass + `docs/DESIGN-PRINCIPLES.md`. **P2 adaptive strength merged to main (sim-verified; NOT yet on TestFlight, on-body validation pending).** Next: P3 (AI routine building, iOS 27 AI APIs) and P4 (calorie tracking)._
 
 > **Routines are now a generic card stack.** A `Routine` is `cards: [WorkoutCard]` (`.run` / `.exercise` / `.rest`) plus a `rounds` count that repeats the whole list (= sets; a trailing rest card becomes rest between rounds). The phone builds it from a typed card list; the watch walks it and starts/stops the right Apple workout per card type automatically (`workoutBlocks()`), reusing the existing run and strength screens. The old `type`/`durationMinutes`/`exercises` fields are gone (migrated on decode). WC payload is **v4** (progression channel v2). This supersedes the type-branched descriptions below — treat them as history.
 
@@ -161,6 +161,6 @@ Log food via barcode scan, receipt photos, and food images; AI identifies the br
 ## Resuming in a fresh session
 1. Read this file, then the PRD (`docs/adaptive-fitness-coach-spec.md`) and design handoffs (`docs/design/`).
 2. Confirm Xcode 27 beta is installed; build the watch scheme with `DEVELOPER_DIR=…Xcode-beta…` against a watchOS 27 sim. Demo: `-simulateWorkout` (run), `-simulateStrength` (strength), `-simulateMixed` (run→strength sequence). Phone: `-seedDemo`.
-3. `cd AdaptiveCore && swift test` should be ~194 green instantly.
-4. **Next: a planning session for Phase 3** (PRD §5 — learned/personalized adaptation). Note **P2** (deterministic strength adaptation: set-outcome progression + IMU heuristics keyed by `MovementArchetype`) is still open per the PRD — confirm P2-vs-P3 sequencing at the start of that session. Also open: P1 device-only checks (real strength workout in Health, real form-demo assets) and the post-P2 watch snapshot tests (see TODOs).
+3. `cd AdaptiveCore && swift test` should be ~221 green instantly. Full suites: watch scheme test (unit + UI, incl. the self-driving `-simulateStrength` E2E) and phone `RoutineFlowUITests` **serially**.
+4. **Next: P3 — AI routine building on the phone** (iOS 27 AI APIs, cloud Gemini models) replacing the RoutineExchange copy-paste loop; the exchange schema is the seam and *import-preserves-progression* is a test-pinned invariant. Then **P4 — calorie tracking** (barcode/receipt/photo → AI identification → verification against the maker's own website). Before or alongside P3: ship build 7 (P2) when the user asks, and treat their first real strength session as on-body validation of the P2 thresholds (rest band, 20 bpm recovery bar, crown feel). Deferred backlog (IMU heuristics, HR-zone circuit mode, snapshot tests, sequence finalize handoff) lives in the P1.6/P2 sections above. `docs/DESIGN-PRINCIPLES.md` is binding on any new screen.
 5. Releasing to TestFlight (significant milestones only): see **`docs/TESTFLIGHT.md`**.
