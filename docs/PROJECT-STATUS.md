@@ -2,7 +2,7 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-02 (evening): **P0–P3 complete and merged to `main`** (feature branch pruned). P1.5 run coaching v2 shipped as TestFlight build 6 (live). **P2 adaptive strength merged (sim-verified; NOT yet on TestFlight, on-body validation pending).** **P3 AI coach merged** (native trainer conversation via FoundationModels — PCC default; sim-verified end-to-end on the scripted engine; real-model on-device validation pending). Next: P3 on-device validation, then P4 (calorie tracking)._
+_Last updated 2026-07-03: **P0–P4 implemented** (P0–P3 on `main`; **P4 calorie tracking on branch `p4-calorie-tracking`**, all suites sim-green, merging with build 7). P1.5 shipped as TestFlight build 6 (live). Pending on-device: **P4 LookupLab spike** (per-rung lookup coverage — decides rung-3 config), P3 coach real-model validation, P2 strength thresholds — **build 7 (P2+P3+P4) is the vehicle for all three**. Next: LookupLab on the user's iPhone → ship build 7._
 
 > **Routines are now a generic card stack.** A `Routine` is `cards: [WorkoutCard]` (`.run` / `.exercise` / `.rest`) plus a `rounds` count that repeats the whole list (= sets; a trailing rest card becomes rest between rounds). The phone builds it from a typed card list; the watch walks it and starts/stops the right Apple workout per card type automatically (`workoutBlocks()`), reusing the existing run and strength screens. The old `type`/`durationMinutes`/`exercises` fields are gone (migrated on decode). WC payload is **v4** (progression channel v2). This supersedes the type-branched descriptions below — treat them as history.
 
@@ -146,7 +146,58 @@ The native trainer conversation replacing the RoutineExchange copy-paste loop. S
 - **Deterministic testing**: `ScriptedCoachEngine` in the package (unit tests drive `CoachConversation`); phone `-simulateCoach` launch arg runs the same script for demos and `CoachFlowUITests` (intake → proposal → apply → week screen). Library expanded to ~36 movements with `Equipment` tags (barbell/kettlebell/bands/pull-up bar/machines) so the equipment intake has teeth. **Phone deployment target is now iOS 27.0** (FoundationModels' `LanguageModel` abstraction needs it).
 - **Pending**: real-model behavior on device (sim can't grant Apple Intelligence) — persona quality, tool-call reliability (fallback design: explicit `respond(generating:)` on "Draft" if tool-proposing is flaky), PCC quota/latency feel.
 
-### P4 — Calorie tracking (phone) — SPEC'D, not started
+### P4 — Calorie tracking (phone) ✅ IMPLEMENTED (sim-verified; on-device spike + validation pending)
+Spec: `docs/calorie-tracking-spec.md` (C1–C7 binding). Identification + retrieval, never photo
+guessing; Apple Health is the record (C5 — no private food store). Implemented in one pass
+(slices 0/A/B/C/D), all suites green in the sim:
+- **The seam (`AdaptiveCore/Nutrition/`)**: `MealPipeline` — a *sibling* of `CoachEngine`,
+  deliberately non-conversational (three async funcs: `identify` stages 1–3 / `resolve` stage 4,
+  fresh context per item / `estimate` stage 5). `CoachMessage.Content.image` stays reserved;
+  images travel in `MealCapture {barcodes, ocrLines, imageData}`.
+- **The lookup ladder (`MealResolver`, CQ1/CQ3 resolved free-first)**: rungs injected as
+  protocols, cost-ordered — (1) barcode → **Open Food Facts** REST (keyless, no LLM);
+  (2) **Parallel Search MCP** (`search.parallel.ai/mcp`, keyless, plain URLSession JSON-RPC —
+  no MCP framework) → one PCC structured call adjudicating excerpts; (3) agentic tool loop
+  (`web_search`/`fetch_page` FoundationModels Tools + SwiftSoup→`ReducedBlock`→`PageReducer`
+  §5 context discipline, PDFKit for PDFs) — **wired but ships `nil` until the LookupLab spike
+  justifies it**; (4) honest estimate range. A parsed nutrition label short-circuits the whole
+  ladder as `.verified` (`NutritionLabelParser` — deterministic, no model). The resolver never
+  throws to the UI; the bottom rung always answers. `ProvenanceGrader` encodes C3
+  (seller-domain → verified; aggregators → database — the spike showed aggregators dominate
+  even for `site:` queries, so *database* is the normal good case).
+- **Flow state (`MealLogController`, @Observable)**: capture → identify → confirm → commit;
+  generation-token guard; sequential post-commit fan-out with honest per-item statuses
+  ("Looking up…" → "Saved" only after the recorder confirms — N6); deferred-contextual Health
+  auth at first Log; `PendingMealQueue` (the only file — in-flight rows deleted on write
+  confirm, C5) resumes interrupted lookups at launch.
+- **Health as the record**: `HealthKitNutritionRecorder` (first phone HealthKit code +
+  entitlement) writes `HKCorrelation(.food)` with provenance/source-URL/range/quantity in
+  metadata; daily line reconstructs entries from Health queries; estimates store the midpoint
+  scalar with the range in metadata (ranges re-render as ranges in the app, C3).
+- **UI**: `MealCaptureView` (VisionKit DataScanner — live barcode auto-fires with zero shutter
+  taps; still → Vision OCR), `MealConfirmationSheet` (checkbox rows, inline rename, qty, C4
+  tap-only chips with pre-selected defaults, one Log CTA, **no kcal pre-commit** — lookups run
+  after Log, §5), `DailyIntakeLine` on WeekView (quiet glyph-anchored line, one reserved status
+  slot, hidden until first use — C6), `TodayEntriesSheet` (swipe-to-delete = Health delete).
+  Plate photos → deterministic fallback draft (inline-nameable + portion chips) → estimate
+  range. `CaptureMealIntent` (Action Button/Siri/Shortcuts → camera); widget extension +
+  LongRunningIntent/Live Activity deferred to the next build.
+- **Testing**: `-simulateMealScan` (scripted pipeline + in-memory recorder; receipt / barcode /
+  label / plate demo captures) — the sim path, used by `MealFlowUITests` (5 tests, serial).
+  ~53 new package tests (codecs, reducer, grader, ladder, label parser, controller);
+  `MealSchemaDriftTests` + `SwiftSoupBlockParserTests` in the phone unit target.
+  **SwiftSoup 2.13.6** = the project's first remote SPM dep (exact-pinned, phone target only;
+  AdaptiveCore stays zero-dependency).
+- **`LookupLabView` (`-lookupLab`)**: the CQ1 spike instrument — ~10 real items × each rung
+  independently, per-rung coverage/provenance/latency. **Pending: run on a physical iPhone**
+  (decides whether rung 3 ships enabled; doubles as the first real-device PCC exercise →
+  informs P3's pending validation). Network rungs validated from macOS during planning:
+  OFF resolves real UPCs; Parallel returns nutrition tables in excerpts keylessly.
+- **Pending on-device**: LookupLab coverage numbers; real UPC → Apple Health write; receipt
+  OCR→extraction quality; salad-benchmark timing (<10s, C1); HealthKit auth prompt;
+  HKCorrelation delete semantics; DataScanner capture quality.
+
+### P4 original spec pointer (history)
 Full product spec: **`docs/calorie-tracking-spec.md`** (read it first — it carries the P4
 non-negotiables C1–C7, the staged LLM pipeline, open questions CQ1–CQ5, and §9 "Direction for
 the planning session"). The one-paragraph version: **identification + retrieval, not photo
