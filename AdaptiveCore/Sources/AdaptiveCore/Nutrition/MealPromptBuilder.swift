@@ -68,13 +68,19 @@ public enum MealPromptBuilder {
     }
 
     /// The single structured call judging search excerpts (rung 2b). Embeds the C3 grading
-    /// rules so every engine grades identically.
+    /// rules so every engine grades identically. Excerpts are reduced to `budget` here —
+    /// query-aware, nutrition lines kept — so the prompt fits the *running* model's context
+    /// (the on-device model is 4,096 tokens total; oversized prompts were the spike's top
+    /// failure).
     public static func adjudicationPrompt(
         item: DraftItem,
         seller: Seller?,
         answers: [QuestionAnswer],
-        excerpts: [SearchExcerpt]
+        excerpts rawExcerpts: [SearchExcerpt],
+        budget: ExcerptBudget
     ) -> String {
+        let query = [item.name, seller?.name].compactMap { $0 }.joined(separator: " ")
+        let excerpts = ExcerptReducer.reduce(rawExcerpts, query: query, budget: budget)
         var lines: [String] = []
         lines.append("Item: \(item.name)\(item.quantity > 1 ? " ×\(item.quantity) (give values for ONE)" : "")")
         if let seller {

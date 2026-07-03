@@ -16,6 +16,9 @@ struct WebSearchTool: Tool {
     """
 
     let searcher: any NutritionWebSearcher
+    /// Sized by the model the session runs on (on-device = 4,096 tokens *total* — the tool's
+    /// output shares that with instructions, the loop's history, and the answer).
+    var budget: ExcerptBudget = FoundationModelsMealPipeline.excerptBudget
 
     @Generable
     struct Arguments {
@@ -35,10 +38,16 @@ struct WebSearchTool: Tool {
         guard !excerpts.isEmpty else {
             return "No results. Try a differently-worded query, or report that the lookup failed."
         }
-        // Cap count and size — PCC is 32K total (§5); excerpts are already LLM-optimized.
-        return excerpts.prefix(5).enumerated().map { index, hit in
-            let body = hit.excerpt.count > 2_000 ? String(hit.excerpt.prefix(2_000)) + "…" : hit.excerpt
-            return "[\(index + 1)] \(hit.title)\nURL: \(hit.url?.absoluteString ?? "none")\n\(body)"
+        // Query-aware reduction (§5): keep the nutrition-bearing lines, fit the budget. In a
+        // tool loop the budget is halved — history accumulates across calls.
+        let toolBudget = ExcerptBudget(
+            maxExcerpts: budget.maxExcerpts,
+            perExcerptCharacters: budget.perExcerptCharacters / 2,
+            totalCharacters: budget.totalCharacters / 2
+        )
+        let reduced = ExcerptReducer.reduce(excerpts, query: arguments.objective, budget: toolBudget)
+        return reduced.enumerated().map { index, hit in
+            "[\(index + 1)] \(hit.title)\nURL: \(hit.url?.absoluteString ?? "none")\n\(hit.excerpt)"
         }.joined(separator: "\n\n")
     }
 }
@@ -51,8 +60,9 @@ struct FetchPageTool: Tool {
     sections are kept.
     """
 
-    /// ~3K tokens per fetch after reduction — one page in context at a time (§5).
-    static let maxTokensPerFetch = 3_000
+    /// Per-fetch cap after reduction — one page in context at a time (§5), sized by the
+    /// running model (PCC affords ~3K tokens; the 4,096-total on-device model far less).
+    var maxTokensPerFetch: Int = PCCEntitlement.isGranted ? 3_000 : 900
 
     @Generable
     struct Arguments {
@@ -96,7 +106,7 @@ struct FetchPageTool: Tool {
         guard !blocks.isEmpty else {
             return "The page had no readable content. Try a different page."
         }
-        let reduced = PageReducer.reduce(blocks: blocks, query: arguments.query, maxTokens: Self.maxTokensPerFetch)
+        let reduced = PageReducer.reduce(blocks: blocks, query: arguments.query, maxTokens: maxTokensPerFetch)
         return reduced.isEmpty ? "Nothing relevant found on that page." : reduced
     }
 

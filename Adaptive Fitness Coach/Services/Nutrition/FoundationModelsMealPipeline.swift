@@ -132,6 +132,13 @@ struct FoundationModelsMealPipeline: MealPipeline {
         }
     }
 
+    /// The excerpt budget for whichever model a fresh session will actually run on — sizing
+    /// for the *preferred* model when the fallback runs was the spike's top failure (the
+    /// on-device model is 4,096 tokens total).
+    static var excerptBudget: ExcerptBudget {
+        PCCEntitlement.isGranted ? .privateCloud : .onDevice
+    }
+
     private func adjudicate(
         item: DraftItem,
         seller: Seller?,
@@ -145,7 +152,10 @@ struct FoundationModelsMealPipeline: MealPipeline {
         lookup failed. A wrong-but-confident number is the one unacceptable failure.
         """)
         let response = try await session.respond(
-            to: MealPromptBuilder.adjudicationPrompt(item: item, seller: seller, answers: answers, excerpts: excerpts),
+            to: MealPromptBuilder.adjudicationPrompt(
+                item: item, seller: seller, answers: answers,
+                excerpts: excerpts, budget: Self.excerptBudget
+            ),
             generating: GenerableLookupResult.self
         )
         return response.content.toPackage(seller: seller)
