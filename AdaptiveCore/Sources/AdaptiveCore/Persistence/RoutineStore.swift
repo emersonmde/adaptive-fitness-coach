@@ -27,9 +27,34 @@ public final class RoutineStore {
         self.routines = Self.loadRoutines(from: self.fileURL)
     }
 
+    /// The App Group that shares the routines file between the app and its extensions
+    /// (widgets, complications — build 9). Widgets/complications read `nextOccurrence()` from
+    /// the same store, so the file must live in a container both processes can reach.
+    public static let appGroupIdentifier = "group.com.memerson.Adaptive-Fitness-Coach"
+
+    /// The default routines file: the App Group container when available (so extensions see
+    /// it), else the app's Documents directory (defensive fallback — e.g. entitlement missing
+    /// in a test host). A one-time migration copies a pre-build-9 Documents file into the group.
     public static func defaultFileURL() -> URL {
-        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return dir.appendingPathComponent("routines.json")
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let documentsFile = documents.appendingPathComponent("routines.json")
+
+        guard let container = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: appGroupIdentifier) else {
+            return documentsFile   // no App Group (fallback) — behave exactly as before
+        }
+        let groupFile = container.appendingPathComponent("routines.json")
+        migrateIfNeeded(from: documentsFile, to: groupFile)
+        return groupFile
+    }
+
+    /// One-time copy of a pre-build-9 Documents routines file into the App Group container.
+    /// Idempotent: never overwrites an existing group file (that would clobber newer data).
+    static func migrateIfNeeded(from source: URL, to destination: URL) {
+        let fm = FileManager.default
+        guard !fm.fileExists(atPath: destination.path),
+              fm.fileExists(atPath: source.path) else { return }
+        try? fm.copyItem(at: source, to: destination)
     }
 
     private static func loadRoutines(from url: URL) -> [Routine] {

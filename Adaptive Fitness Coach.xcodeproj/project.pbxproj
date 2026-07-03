@@ -10,6 +10,7 @@
 		34704E322FECD82000C28688 /* Adaptive Fitness Coach Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 34704E312FECD82000C28688 /* Adaptive Fitness Coach Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		34704E832FECDA6200C28688 /* WorkoutKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34704E822FECDA6200C28688 /* WorkoutKit.framework */; };
 		FACE000000000000000000C1 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B1 /* AdaptiveCore */; };
+		FACE0000000000000000D011 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE0000000000000000D010 /* AdaptiveCore */; };
 		FACE000000000000000000C2 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B2 /* AdaptiveCore */; };
 		FACE000000000000000000C3 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B3 /* SwiftSoup */; };
 		FACE0000000000000000D007 /* AdaptiveFitnessWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -218,6 +219,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FACE0000000000000000D011 /* AdaptiveCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -424,6 +426,7 @@
 			);
 			name = AdaptiveFitnessWidgets;
 			packageProductDependencies = (
+				FACE0000000000000000D010 /* AdaptiveCore */,
 			);
 			productName = AdaptiveFitnessWidgets;
 			productReference = FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */;
@@ -1110,6 +1113,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				CODE_SIGN_ENTITLEMENTS = "AdaptiveFitnessWidgets/AdaptiveFitnessWidgets.entitlements";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-Coach.Widgets";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1136,6 +1140,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				CODE_SIGN_ENTITLEMENTS = "AdaptiveFitnessWidgets/AdaptiveFitnessWidgets.entitlements";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-Coach.Widgets";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -1254,6 +1259,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = FACE000000000000000000A2 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;
+		};
+		FACE0000000000000000D010 /* AdaptiveCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AdaptiveCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

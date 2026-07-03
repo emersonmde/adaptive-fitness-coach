@@ -16,6 +16,38 @@ struct RoutineStoreTests {
         Routine(name: name, repeatDays: days, scheduleTime: time, cards: [.run(RunCard())])
     }
 
+    // MARK: - App Group migration (build 9)
+
+    @Test func groupMigrationCopiesLegacyFileOnce() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agmig-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let legacy = dir.appendingPathComponent("routines.json")
+        let group = dir.appendingPathComponent("group-routines.json")
+
+        // A pre-build-9 Documents store with one routine.
+        let source = RoutineStore(fileURL: legacy)
+        source.add(run("Legacy Run"))
+
+        RoutineStore.migrateIfNeeded(from: legacy, to: group)
+        let migrated = RoutineStore(fileURL: group)
+        #expect(migrated.routines.map(\.name) == ["Legacy Run"])
+
+        // Idempotent: a second migration never clobbers newer group data.
+        migrated.add(run("Added In Group"))
+        RoutineStore.migrateIfNeeded(from: legacy, to: group)
+        let after = RoutineStore(fileURL: group)
+        #expect(after.routines.count == 2)
+    }
+
+    @Test func groupMigrationNoopsWithoutLegacyFile() {
+        let dir = FileManager.default.temporaryDirectory
+        let legacy = dir.appendingPathComponent("missing-\(UUID().uuidString).json")
+        let group = dir.appendingPathComponent("group-\(UUID().uuidString).json")
+        RoutineStore.migrateIfNeeded(from: legacy, to: group)
+        #expect(!FileManager.default.fileExists(atPath: group.path))
+    }
+
     @Test func addPersistsAcrossInstances() {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("routines-\(UUID().uuidString).json")
