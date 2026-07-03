@@ -11,6 +11,7 @@
 		34704E832FECDA6200C28688 /* WorkoutKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 34704E822FECDA6200C28688 /* WorkoutKit.framework */; };
 		FACE000000000000000000C1 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B1 /* AdaptiveCore */; };
 		FACE000000000000000000C2 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B2 /* AdaptiveCore */; };
+		FACE000000000000000000C3 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B3 /* SwiftSoup */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -127,6 +128,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FACE000000000000000000C1 /* AdaptiveCore in Frameworks */,
+				FACE000000000000000000C3 /* SwiftSoup in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,6 +230,7 @@
 			name = "Adaptive Fitness Coach";
 			packageProductDependencies = (
 				FACE000000000000000000B1 /* AdaptiveCore */,
+				FACE000000000000000000B3 /* SwiftSoup */,
 			);
 			productName = "Adaptive Fitness Coach";
 			productReference = 34704E0E2FECD81F00C28688 /* Adaptive Fitness Coach.app */;
@@ -393,6 +396,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				FACE000000000000000000A1 /* XCLocalSwiftPackageReference "AdaptiveCore" */,
+				FACE000000000000000000A2 /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 34704E0F2FECD81F00C28688 /* Products */;
@@ -1053,6 +1057,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		FACE000000000000000000A2 /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup.git";
+			requirement = {
+				kind = exactVersion;
+				version = 2.13.6;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		FACE000000000000000000B1 /* AdaptiveCore */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -1061,6 +1076,11 @@
 		FACE000000000000000000B2 /* AdaptiveCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = AdaptiveCore;
+		};
+		FACE000000000000000000B3 /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FACE000000000000000000A2 /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

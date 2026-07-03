@@ -47,16 +47,25 @@ struct Adaptive_Fitness_CoachApp: App {
 
     var body: some Scene {
         WindowGroup {
-            WeekView(store: store)
-                .preferredColorScheme(.dark) // dark/neon brand: force dark regardless of system
-                .tint(Theme.accent)
-                .task {
-                    // Push current routines to the watch on launch.
-                    PhoneConnectivityManager.shared.sync(routines: store.routines)
-                    // Re-sync calendar events for any scheduled routines. Never prompts: it only
-                    // touches events if full access was already granted (so UI tests stay clean).
-                    await CalendarService.shared.syncAll(store.routines)
-                }
+            if ProcessInfo.processInfo.arguments.contains("-lookupLab") {
+                // P4 spike/regression harness (CQ1/CQ3): per-rung lookup coverage on device.
+                LookupLabView()
+            } else {
+                mainContent
+            }
         }
+    }
+
+    private var mainContent: some View {
+        WeekView(store: store)
+            .preferredColorScheme(.dark) // dark/neon brand: force dark regardless of system
+            .tint(Theme.accent)
+            .task {
+                // Push current routines to the watch on launch.
+                PhoneConnectivityManager.shared.sync(routines: store.routines)
+                // Re-sync calendar events for any scheduled routines. Never prompts: it only
+                // touches events if full access was already granted (so UI tests stay clean).
+                await CalendarService.shared.syncAll(store.routines)
+            }
     }
 }
