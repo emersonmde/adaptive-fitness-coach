@@ -2,7 +2,7 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-03 (evening): **P0–P4 + the build-9 integration pass all on `main`**. **TestFlight build 10 is live** (`IN_BETA_TESTING`) — carries P2 + P3 + P4 + build-9 (watch safe-area fix, Effort/RPE→Health+progression, App Group, next-workout widgets/complication, Siri routine entities). Working tree clean. **Pending on-device validation (all ride build 10, the user's job):** watch cutoff on real hardware, effort score landing in Apple Fitness + Training Load, widget/complication render, Siri "start workout", P2 strength thresholds, P3 coach real-model. **Queued (committed, next upload):** phone-widget Mac opt-out (ITMS-90863 advisory). **Deferred:** Live Activities (cross-target ActivityAttributes vs. marginal value — see build-9 section). **On grant:** Small Business Program → PCC access = one-line switch to Apple's 32K server model for meal lookups + coach._
+_Last updated 2026-07-03 (night): **P0–P4 + build-9 + the build-11 review sweep all on `main`**. **TestFlight build 11 uploaded** (processing at last check — confirm `IN_BETA_TESTING`); carries everything in build 10 plus the meal-flow UX rework (numbers + provenance + calorie override on the confirmation screen, continuous identify→confirm surface), the first-Log HealthKit-auth crash fix (correlation type in the read set), and the four-area review-sweep fixes (see the Build 11 section: commit re-entrancy, observer-query leak, warm-start Siri routing, watch session recovery, staleness expiry, …). Working tree clean. **Pending on-device validation (now rides build 11, the user's job):** the whole meal-logging flow end-to-end (scan/type → numbers appear pre-Log → override → Health), watch cutoff on real hardware, effort score in Apple Fitness + Training Load, widget/complication render, Siri "start workout"/"log a meal" (incl. warm-start), P2 strength thresholds, P3 coach real-model. **Deferred:** Live Activities (see build-9 section). **On grant:** Small Business Program → PCC access = one-line switch to Apple's 32K server model for meal lookups + coach._
 
 > **Routines are now a generic card stack.** A `Routine` is `cards: [WorkoutCard]` (`.run` / `.exercise` / `.rest`) plus a `rounds` count that repeats the whole list (= sets; a trailing rest card becomes rest between rounds). The phone builds it from a typed card list; the watch walks it and starts/stops the right Apple workout per card type automatically (`workoutBlocks()`), reusing the existing run and strength screens. The old `type`/`durationMinutes`/`exercises` fields are gone (migrated on decode). WC payload is **v4** (progression channel v2). This supersedes the type-branched descriptions below — treat them as history.
 
@@ -262,7 +262,7 @@ target) answered in one build. All on existing seams; AdaptiveCore still zero-de
   evolution, controller when-state) → 339 total; MealFlowUITests grew 5 → 10 (typed+stated,
   backdate, target+gauge, edit, log again).
 
-### Build 10 on-device feedback fixes (2026-07-03, uncommitted → next build)
+### Build 10 on-device feedback fixes (2026-07-03, shipped in build 11)
 First real-device meal-logging session surfaced three issues; all fixed:
 - **Crash on Log (fixed)**: `HealthKitNutritionRecorder.requestAuthorization` had
   `HKCorrelationType(.food)` in its *read* set — correlation types are disallowed in
@@ -284,7 +284,7 @@ First real-device meal-logging session surfaced three issues; all fixed:
   what the screen showed (no re-lookup); §5's rule survives — unchecked items still never
   spend a lookup. ~6 new controller tests (incl. a counting-adjudicator reuse pin) → 355.
 
-### Build 11 — senior-engineer review sweep (2026-07-03, whole project)
+### Build 11 — senior-engineer review sweep (2026-07-03, whole project; shipped)
 A four-area review (package nutrition / package engine+coach / phone / watch) surfaced and
 fixed, all pinned by new tests where the seam allows (369 package tests):
 - **Meal logging**: commit re-entrancy (double-tap Log recorded every item twice — now an
