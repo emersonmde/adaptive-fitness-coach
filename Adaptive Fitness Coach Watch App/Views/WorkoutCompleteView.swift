@@ -74,7 +74,7 @@ struct WorkoutCompleteView: View {
                 }
 
                 Button("Done") { onDone(effort) }
-                    .tint(.green)
+                    .tint(WatchTheme.run)
                     .padding(.top, 4)
             }
             .padding(.horizontal, 6)

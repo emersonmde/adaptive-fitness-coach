@@ -5,6 +5,9 @@ import Foundation
 /// so a routine that mixes a run and strength records as one Health workout per block, switching
 /// automatically on card type (the app's core convenience).
 public struct WorkoutBlock: Sendable, Hashable, Identifiable {
+    /// Fresh per `workoutBlocks()` call — two evaluations over the same cards yield
+    /// different ids. Fine for the one-shot session build; never key persistent state or
+    /// diffing on it.
     public let id: UUID
     public var kind: WorkoutKind
     public var cards: [WorkoutCard]

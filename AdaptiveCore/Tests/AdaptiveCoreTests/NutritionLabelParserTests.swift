@@ -42,6 +42,14 @@ struct NutritionLabelParserTests {
         #expect(parsed.facts.fatGrams == 5)
     }
 
+    @Test func caloriesFromFatIsNeverTheEnergy() throws {
+        // Pre-2016 US panels: "Calories from Fat 40" must not substring-match as the
+        // item's calories, whether it precedes or follows the real row.
+        let legacy = ["Nutrition Facts", "Calories from Fat 40", "Calories 230", "Total Fat 5g"]
+        let parsed = try #require(NutritionLabelParser.parse(ocrLines: legacy))
+        #expect(parsed.facts.energy == .exact(kcal: 230))
+    }
+
     @Test func percentDailyValueIsNeverTheValue() throws {
         // "Total Fat 10%" alone (value column lost) must not read 10 as grams… the first
         // number is inside a percent — skip it, take none.

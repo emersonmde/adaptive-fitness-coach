@@ -26,8 +26,11 @@ struct CoachChatView: View {
     @State private var unavailableReason: String?
     @State private var input = ""
     @State private var pendingImport: ImportCandidate?
-    /// Honest post-apply status ("Updated 1, added 2"), shown quietly under the proposal.
-    @State private var applyResult: String?
+    /// Honest post-apply status ("Updated 1, added 2"), keyed by the proposal's transcript
+    /// entry — a single value marked EVERY proposal applied, so a revised proposal after one
+    /// apply rendered without its Review button (the revision loop dead-ended).
+    @State private var appliedResults: [UUID: String] = [:]
+    @State private var applyingEntryID: UUID?
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -53,7 +56,9 @@ struct CoachChatView: View {
                                     existingNames: Set(store.routines.map(\.name))) { incoming in
                     let result = store.importRoutines(incoming)
                     Task { await CalendarService.shared.syncAll(store.routines) }
-                    applyResult = "Applied — updated \(result.updated), added \(result.added)."
+                    if let applyingEntryID {
+                        appliedResults[applyingEntryID] = "Applied — updated \(result.updated), added \(result.added)."
+                    }
                 }
             }
         }
@@ -173,7 +178,7 @@ struct CoachChatView: View {
         case let .coach(text):
             coachBubble(text, isCurrent: entry.id == currentCoachEntryID)
         case let .proposal(proposal):
-            proposalCard(proposal)
+            proposalCard(proposal, entryID: entry.id)
         case let .failure(message, _):
             VStack(alignment: .leading, spacing: 8) {
                 Text(message)
@@ -209,7 +214,7 @@ struct CoachChatView: View {
 
     // MARK: - Proposal
 
-    private func proposalCard(_ proposal: CoachProposal) -> some View {
+    private func proposalCard(_ proposal: CoachProposal, entryID: UUID) -> some View {
         let existingNames = Set(store.routines.map(\.name))
         return VStack(alignment: .leading, spacing: 12) {
             ForEach(proposal.routines) { routine in
@@ -240,12 +245,13 @@ struct CoachChatView: View {
                     .foregroundStyle(Theme.textTertiary)
             }
 
-            if let applyResult {
-                Text(applyResult)
+            if let applied = appliedResults[entryID] {
+                Text(applied)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(Theme.accent)
             } else {
                 Button {
+                    applyingEntryID = entryID
                     pendingImport = ImportCandidate(routines: proposal.routines)
                 } label: {
                     Text("Review & apply")

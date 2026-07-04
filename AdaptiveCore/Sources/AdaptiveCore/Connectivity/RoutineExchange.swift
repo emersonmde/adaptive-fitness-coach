@@ -23,6 +23,9 @@ public enum RoutineExchange {
         /// (rather than best-effort parsing) mirrors `WCMessageCodec`'s exact-version
         /// discipline — never silently mis-decode under old rules.
         case unsupportedVersion(Int)
+        /// The envelope IS ours (schema matched) but a field failed to decode — surfaced
+        /// with the decoder's detail so the user isn't told valid JSON "isn't JSON".
+        case malformedRoutines(String)
         case noRoutines
     }
 
@@ -115,10 +118,19 @@ public enum RoutineExchange {
 
         let decoder = JSONDecoder()
         let exchangeRoutines: [ExchangeRoutine]
-        if let envelope = try? decoder.decode(Envelope.self, from: data) {
-            guard envelope.schema == schemaName else { throw ExchangeError.unrecognizedSchema }
-            guard envelope.version <= schemaVersion else { throw ExchangeError.unsupportedVersion(envelope.version) }
-            exchangeRoutines = envelope.routines
+        // Peek the envelope header first: once the schema is recognizably ours, a decode
+        // failure is a *malformed payload* with a real reason — collapsing it into
+        // `.notJSON` told users their demonstrably-JSON paste wasn't JSON.
+        struct EnvelopePeek: Decodable { var schema: String?; var version: Int? }
+        if let peek = try? decoder.decode(EnvelopePeek.self, from: data), peek.schema != nil {
+            guard peek.schema == schemaName else { throw ExchangeError.unrecognizedSchema }
+            guard let version = peek.version else { throw ExchangeError.malformedRoutines("missing version") }
+            guard version <= schemaVersion else { throw ExchangeError.unsupportedVersion(version) }
+            do {
+                exchangeRoutines = try decoder.decode(Envelope.self, from: data).routines
+            } catch let error as DecodingError {
+                throw ExchangeError.malformedRoutines(Self.describeDecodingError(error))
+            }
         } else if let bare = try? decoder.decode([ExchangeRoutine].self, from: data) {
             exchangeRoutines = bare   // tolerate a bare array (no envelope)
         } else {
@@ -164,6 +176,30 @@ public enum RoutineExchange {
     /// Pull the payload JSON out of arbitrary text. A fenced ```json block is preferred when
     /// present (prose like "here's [1] your update" would otherwise win the first-bracket
     /// scan and sink the whole import); otherwise fall back to the first balanced object/array.
+    /// One human line for a Codable failure ("wrong type at routines[0].cards[2].minutes") —
+    /// shown to the user via `ExchangeError.malformedRoutines`.
+    private static func describeDecodingError(_ error: DecodingError) -> String {
+        func path(_ context: DecodingError.Context) -> String {
+            let joined = context.codingPath
+                .map { $0.intValue.map { "[\($0)]" } ?? $0.stringValue }
+                .joined(separator: ".")
+                .replacingOccurrences(of: ".[", with: "[")
+            return joined.isEmpty ? "top level" : joined
+        }
+        switch error {
+        case .keyNotFound(let key, let context):
+            return "missing \"\(key.stringValue)\" at \(path(context))"
+        case .typeMismatch(_, let context):
+            return "wrong value type at \(path(context))"
+        case .valueNotFound(_, let context):
+            return "null value at \(path(context))"
+        case .dataCorrupted(let context):
+            return context.debugDescription
+        @unknown default:
+            return String(describing: error)
+        }
+    }
+
     private static func extractJSONObject(from text: String) -> Data? {
         if let fenceRange = text.range(of: "```json"),
            let fenced = extractFirstBalanced(from: String(text[fenceRange.upperBound...])) {

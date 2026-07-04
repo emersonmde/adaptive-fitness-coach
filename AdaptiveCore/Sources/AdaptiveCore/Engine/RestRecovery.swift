@@ -96,10 +96,13 @@ public struct RestRecoveryModel: Sendable {
     }
 
     /// Seconds until the rest would end on time alone (shrinks toward 0 at the seed; during
-    /// an unrecovered extension it counts toward the cap).
+    /// an unrecovered extension it counts toward the cap). Seed-based until the seed
+    /// elapses — flipping on the instantaneous HR signal made the countdown jump ±60s while
+    /// HR hovered at the threshold mid-rest.
     public var remaining: TimeInterval {
-        if peakHeartRate == nil { return max(seedDuration - elapsed, 0) }
-        return max((isRecoveredNow ? seedDuration : maxDuration) - elapsed, 0)
+        if elapsed < seedDuration { return seedDuration - elapsed }
+        if peakHeartRate == nil || isRecoveredNow { return 0 }
+        return max(maxDuration - elapsed, 0)
     }
 
     /// The instantaneous recovered signal (unsmoothed — the decision uses the leaky window).

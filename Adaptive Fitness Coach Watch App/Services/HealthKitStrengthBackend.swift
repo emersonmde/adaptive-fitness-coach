@@ -35,7 +35,16 @@ final class HealthKitStrengthBackend: NSObject, WorkoutBackend {
 
         let startDate = Date()
         session.startActivity(with: startDate)
-        try await builder.beginCollection(at: startDate)
+        do {
+            try await builder.beginCollection(at: startDate)
+        } catch {
+            // Same leak guard as the run backend: `startActivity` already ran, so end the
+            // session before rethrowing or the orphan blocks the next start (sensors hot).
+            session.end()
+            self.session = nil
+            self.builder = nil
+            throw error
+        }
     }
 
     /// Retained after `finishWorkout` so a post-summary effort rating can be related to it.
@@ -46,7 +55,9 @@ final class HealthKitStrengthBackend: NSObject, WorkoutBackend {
         session?.end()
         var saved = true
         do {
-            try await builder?.endCollection(at: endDate)
+            // Retry-once endCollection: absorbs the session.end()/endCollection state race
+            // that would otherwise intermittently report "not saved" for a healthy workout.
+            try await HealthKitWorkoutBackend.endCollectionSettling(builder, at: endDate)
             finishedWorkout = try await builder?.finishWorkout()
         } catch {
             // Fall through to whatever stats the builder gathered; never fabricate a value —

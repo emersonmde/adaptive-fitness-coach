@@ -100,6 +100,20 @@ struct RoutineExchangeTests {
         }
     }
 
+    @Test func malformedFieldInOurEnvelopeIsNotCalledNotJSON() {
+        // Build 11 pin: schema matched but "minutes" is a string — the user pasted real
+        // JSON in our format; the error must say what's wrong, not "isn't JSON".
+        let json = #"{"schema":"\#(RoutineExchange.schemaName)","version":1,"routines":[{"name":"X","cards":[{"type":"run","minutes":"20"}]}]}"#
+        do {
+            _ = try RoutineExchange.importRoutines(fromJSON: json)
+            Issue.record("should have thrown")
+        } catch let RoutineExchange.ExchangeError.malformedRoutines(detail) {
+            #expect(detail.contains("minutes"))
+        } catch {
+            Issue.record("wrong error: \(error)")
+        }
+    }
+
     @Test func rejectsEmptyAfterDropping() {
         // Only an unknown exercise → its routine drops → no routines.
         let json = #"{"schema":"adaptive-fitness-coach/routines","version":1,"routines":[{"name":"X","cards":[{"type":"exercise","exercise":"ghost"}]}]}"#

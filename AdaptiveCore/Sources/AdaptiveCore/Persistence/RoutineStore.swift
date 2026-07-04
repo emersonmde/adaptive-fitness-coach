@@ -163,13 +163,20 @@ public final class RoutineStore {
     @discardableResult
     public func importRoutines(_ incoming: [Routine]) -> (updated: Int, added: Int) {
         var updated = 0, added = 0
+        // Names match folded (trimmed, case-insensitive): the exchange contract tells the
+        // model "the app matches routines by name", and an LLM's "morning run" for
+        // "Morning Run" must merge — a miss adds a duplicate and silently skips the
+        // progression graft. The existing routine keeps its own casing.
+        func folded(_ name: String) -> String {
+            name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
         // De-duplicate incoming by name (last wins) so two same-named payload entries can't
         // both merge into one existing routine and inflate the counts.
         var seenNames = Set<String>()
-        let deduped = incoming.reversed().filter { seenNames.insert($0.name).inserted }.reversed()
+        let deduped = incoming.reversed().filter { seenNames.insert(folded($0.name)).inserted }.reversed()
 
         for routine in deduped {
-            if let index = routines.firstIndex(where: { $0.name == routine.name }) {
+            if let index = routines.firstIndex(where: { folded($0.name) == folded(routine.name) }) {
                 let existing = routines[index]
                 // Preserve identity + scheduling; take the imported cards/rounds (and days/time if set).
                 var merged = existing

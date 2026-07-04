@@ -69,6 +69,19 @@ final class WorkoutSessionManager {
     /// Latest raw heart rate fed to the engine for recovery math; nil until the first sample
     /// so the engine never sees a fabricated 0 bpm (N6).
     private var latestHeartRate: Double?
+    /// Seconds since the last sensor sample (zone or HR), accumulated from tick deltas so the
+    /// expiry is clock-free and testable through the `autoTick: false` seam. Sensor dropout
+    /// (loose band, wrist off) stops the callbacks but would otherwise leave the *last* zone
+    /// driving adaptations forever — a fabricated signal (N6). Past the limit, the engine gets
+    /// `nil` and the UI shows "--" until a fresh sample arrives.
+    private var secondsSinceLastSample: TimeInterval = 0
+    /// How long a zone/HR sample stays trusted. Zone updates arrive sparsely (only on change),
+    /// but HR samples land every few seconds while the sensor has contact — so 15s of *total*
+    /// silence reliably means dropout, not a steady zone.
+    private let sampleStalenessLimit: TimeInterval = 15
+    /// True while the last sample is older than `sampleStalenessLimit` — the UI's cue to show
+    /// "--" instead of a confidently wrong BPM.
+    private(set) var heartRateIsStale = false
     /// Detects "started running" from cadence during the warmup, to end it early.
     private var cadenceDetector = RunningCadenceDetector()
     /// Detects "still running after the walk cue" from the same cadence stream, driving the
@@ -175,11 +188,17 @@ final class WorkoutSessionManager {
     func receiveHeartRate(_ hr: Double) {
         currentHeartRate = hr
         latestHeartRate = hr
+        secondsSinceLastSample = 0
+        heartRateIsStale = false
     }
 
     func receiveZone(_ zone: Int?) {
         latestZone = zone
         currentZoneIndex = zone
+        // Even a nil zone is a *fresh* report from the backend ("no zone data"), distinct
+        // from silence — either way the staleness clock restarts.
+        secondsSinceLastSample = 0
+        heartRateIsStale = false
     }
 
     /// Feed a cadence sample (steps/minute). During the warmup a sustained running cadence
@@ -232,6 +251,18 @@ final class WorkoutSessionManager {
     /// drive it deterministically.
     func tick(delta: TimeInterval) {
         guard var machine, sessionState == .active else { return }
+
+        // Staleness expiry: past the limit with no fresh sample, the last-known zone/HR stop
+        // driving the engine — degrade to the fixed-interval path rather than adapt against a
+        // signal that may be minutes old (N6). Cleared the moment a new sample arrives.
+        secondsSinceLastSample += delta
+        if secondsSinceLastSample > sampleStalenessLimit, !heartRateIsStale {
+            heartRateIsStale = true
+            latestZone = nil
+            latestHeartRate = nil
+            currentZoneIndex = nil
+            currentHeartRate = 0 // the HR readout renders 0 as "--"
+        }
 
         let sample = WorkoutSample(zone: latestZone, heartRate: latestHeartRate)
         let result = machine.tick(deltaTime: delta, sample: sample)
@@ -379,6 +410,8 @@ final class WorkoutSessionManager {
         machine = nil
         latestZone = nil
         latestHeartRate = nil
+        secondsSinceLastSample = 0
+        heartRateIsStale = false
         cadenceDetector = RunningCadenceDetector()
         complianceMonitor = WalkComplianceMonitor()
         gaitMismatch = false

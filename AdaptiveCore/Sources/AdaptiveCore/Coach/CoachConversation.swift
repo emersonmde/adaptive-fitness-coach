@@ -74,6 +74,8 @@ public final class CoachConversation {
     public func cancel() {
         turnTask?.cancel()
         session.cancel()
+        turnToken += 1        // a late event from the dead turn can't land
+        streamingText = ""    // don't leave half a reply rendering as if it were finished
         isResponding = false
     }
 
@@ -101,6 +103,8 @@ public final class CoachConversation {
         switch event {
         case let .textDelta(delta):
             streamingText += delta
+        case let .textReplace(full):
+            streamingText = full
         case let .proposal(proposal):
             // Prose before the proposal becomes its own entry so the card lands between
             // sentences the way the coach said them.

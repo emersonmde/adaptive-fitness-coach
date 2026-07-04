@@ -50,7 +50,8 @@ struct DailyIntakeLine: View {
         }
         .task(id: refreshTick) { await refresh() }
         .task {
-            recorder.observeChanges { Task { @MainActor in refreshTick += 1 } }
+            // The stream ends when this task is cancelled on disappear — no leaked observers.
+            for await _ in recorder.changes() { refreshTick += 1 }
         }
         .onChange(of: controller.phase) {
             refreshTick += 1

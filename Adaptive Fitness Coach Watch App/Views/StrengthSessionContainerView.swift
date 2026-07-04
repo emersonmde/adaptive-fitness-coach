@@ -48,9 +48,14 @@ struct StrengthSessionContainerView: View {
                         notePreview: { effort in manager.previewNotes(perceivedEffort: effort) },
                         onDone: { effort in
                             // Finalize (re-emit with effort + write Health) BEFORE reset, which
-                            // clears the retained backend the effort write needs.
+                            // clears the retained backend the effort write needs. Raced against
+                            // a timeout: progression emission happens synchronously up front, so
+                            // if the OS finalize wedges only the effort write is skipped —
+                            // Done must never hang on HealthKit bookkeeping.
                             Task {
-                                await manager.finalizeProgression(perceivedEffort: effort)
+                                await awaitBestEffort(timeoutSeconds: 5) {
+                                    await manager.finalizeProgression(perceivedEffort: effort)
+                                }
                                 manager.reset(); onFinish?()
                             }
                         }

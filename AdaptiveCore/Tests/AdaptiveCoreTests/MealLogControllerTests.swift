@@ -44,11 +44,16 @@ struct MealLogControllerTests {
             recorder: InMemoryNutritionRecorder()
         )
         await controller.beginCapture(MealCapture(ocrLines: ["blur"]))
-        #expect(controller.phase == .idle)
+        // Build 10: failure keeps the flow sheet up (phase .failed) with the error and a
+        // retry, instead of silently dropping to idle.
+        #expect(controller.phase == .failed)
         #expect(controller.error != nil)
-        // Retry works: same controller, new capture on a working pipeline path is separate —
-        // here we just confirm the controller isn't wedged.
+        // Retry re-runs identify on the same capture (still scripted to fail here).
+        await controller.retryCapture()
+        #expect(controller.phase == .failed)
+        // Cancel is always an exit.
         controller.cancel()
+        #expect(controller.phase == .idle)
         #expect(controller.error == nil)
     }
 
@@ -61,7 +66,7 @@ struct MealLogControllerTests {
             recorder: InMemoryNutritionRecorder()
         )
         await controller.beginCapture(MealCapture())
-        #expect(controller.phase == .idle)
+        #expect(controller.phase == .failed)
         #expect(controller.error?.contains("Couldn't find") == true)
     }
 
@@ -242,6 +247,240 @@ struct MealLogControllerTests {
         let entry = try #require(recorder.entries.first)
         #expect(entry.facts.energy == .exact(kcal: 400))
         #expect(entry.provenance == .userStated)
+    }
+
+    // MARK: - Build 10: pre-commit lookups on the confirmation screen
+
+    @Test func confirmationPreResolvesCheckedItemsOnly() async {
+        let (controller, _) = makeController()
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        await controller.resolveOutstandingItems()
+
+        // Checked items got numbers before any commit; the source rides along.
+        let salad = controller.displayedNutrition(for: ScriptedMealPipeline.DemoID.salad)
+        #expect(salad?.facts.energy == .exact(kcal: 460))
+        guard case .database = salad?.provenance else {
+            Issue.record("salad should show its database source pre-commit"); return
+        }
+        let curry = controller.displayedNutrition(for: ScriptedMealPipeline.DemoID.curry)
+        #expect(curry?.facts.energy.isRange == true)   // honest estimate range, pre-commit
+
+        // The pre-unchecked pantry item never spends a lookup (§5).
+        #expect(controller.displayedNutrition(for: ScriptedMealPipeline.DemoID.pasta) == nil)
+    }
+
+    @Test func checkingAnItemStartsItsLookup() async {
+        let (controller, _) = makeController()
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        await controller.resolveOutstandingItems()
+        controller.toggleItem(ScriptedMealPipeline.DemoID.pasta)   // check the pantry item
+        await controller.resolveOutstandingItems()
+        #expect(controller.displayedNutrition(for: ScriptedMealPipeline.DemoID.pasta) != nil)
+    }
+
+    @Test func calorieOverrideBecomesUserStatedAndKeepsMacros() async throws {
+        let (controller, recorder) = makeController()
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        await controller.resolveOutstandingItems()
+
+        controller.setCalories(ScriptedMealPipeline.DemoID.salad, kcal: 520)
+        let shown = controller.displayedNutrition(for: ScriptedMealPipeline.DemoID.salad)
+        #expect(shown?.facts.energy == .exact(kcal: 520))
+        #expect(shown?.provenance == .userStated)
+        #expect(shown?.facts.proteinGrams == 39)   // macros kept — the user restated energy
+
+        await controller.commit()
+        let salad = try #require(recorder.entries.first { $0.name.contains("Caesar") })
+        #expect(salad.facts.energy == .exact(kcal: 520))
+        #expect(salad.provenance == .userStated)
+    }
+
+    @Test func renameInvalidatesAndReResolves() async {
+        let (controller, _) = makeController()
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        await controller.resolveOutstandingItems()
+        #expect(controller.resolutions[ScriptedMealPipeline.DemoID.salad] != nil)
+
+        controller.editItemName(ScriptedMealPipeline.DemoID.salad, name: "Different Salad")
+        // Invalidated immediately (the row goes back to "Looking up…"), then re-resolves.
+        await controller.resolveOutstandingItems()
+        #expect(controller.resolutions[ScriptedMealPipeline.DemoID.salad] != nil)
+    }
+
+    @Test func commitReusesTheNumbersTheScreenShowed() async {
+        // A resolver whose adjudicator counts calls: pre-resolve spends the lookups, commit
+        // must NOT spend them again.
+        final class CountingAdjudicator: ExcerptAdjudicator, @unchecked Sendable {
+            let inner: ScriptedAdjudicator
+            var calls = 0
+            init(pipeline: ScriptedMealPipeline) { inner = ScriptedAdjudicator(pipeline: pipeline) }
+            func adjudicate(item: DraftItem, seller: Seller?, excerpts: [SearchExcerpt]) async throws -> ResolvedNutrition? {
+                calls += 1
+                return try await inner.adjudicate(item: item, seller: seller, excerpts: excerpts)
+            }
+        }
+        let pipeline = ScriptedMealPipeline.demoGroceryReceipt()
+        let counting = CountingAdjudicator(pipeline: pipeline)
+        let resolver = MealResolver(
+            barcodeDB: nil, searcher: ScriptedSearcher(), adjudicator: counting,
+            agent: nil, estimator: ScriptedEstimator(pipeline: pipeline)
+        )
+        let recorder = InMemoryNutritionRecorder()
+        let controller = MealLogController(
+            pipeline: pipeline, resolver: resolver, recorder: recorder
+        )
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        await controller.resolveOutstandingItems()
+        let callsAfterPreResolve = counting.calls
+        #expect(callsAfterPreResolve == 3)   // the three checked items
+
+        await controller.commit()
+        #expect(counting.calls == callsAfterPreResolve)   // no re-lookup at Log
+        #expect(recorder.entries.count == 3)
+    }
+
+    // MARK: - Review-hardening pins (build 11)
+
+    @Test func doubleCommitRecordsEveryItemOnce() async {
+        // The Log button can be tapped twice before phase flips (the auth await sits between
+        // the guard and phase = .logging) — re-entrancy must not double-record.
+        let (controller, recorder) = makeController()
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        async let first: Void = controller.commit()
+        async let second: Void = controller.commit()
+        _ = await (first, second)
+        #expect(recorder.entries.count == 3)
+    }
+
+    @Test func statedCaloriesSurviveTheQueueRoundTrip() async throws {
+        // App dies after Log but before the Health write confirms: the drain must record
+        // the USER'S number, not re-run the ladder from the name alone.
+        let queue = tempQueue()
+        let recorder = InMemoryNutritionRecorder()
+        recorder.failWrites = true
+        let (controller, _) = makeController(recorder: recorder, queue: queue)
+        await controller.beginCapture(MealCapture(typedText: "salmon salad, 400 calories"))
+        await controller.commit()
+        #expect(queue.pending.count == 1)
+
+        // "Next launch": a fresh controller + working recorder drain the same queue.
+        let (resumer, resumeRecorder) = makeController(queue: queue)
+        await resumer.resumePending()
+        let entry = try #require(resumeRecorder.entries.first)
+        #expect(entry.facts.energy == .exact(kcal: 400))
+        #expect(entry.provenance == .userStated)
+    }
+
+    @Test func chosenSlotSurvivesTheQueueRoundTrip() async throws {
+        let queue = tempQueue()
+        let recorder = InMemoryNutritionRecorder()
+        recorder.failWrites = true
+        let (controller, _) = makeController(recorder: recorder, queue: queue)
+        await controller.beginCapture(MealCapture(typedText: "pad thai"))
+        controller.setMealSlot(.dinner)   // explicit choice, whatever the hour
+        await controller.commit()
+
+        let (resumer, resumeRecorder) = makeController(queue: queue)
+        await resumer.resumePending()
+        let entry = try #require(resumeRecorder.entries.first)
+        #expect(entry.meal == .dinner)
+    }
+
+    @Test func abortedCommitLeavesEveryItemQueued() async {
+        // A new capture (generation bump) mid-commit must not lose items the record loop
+        // hadn't reached — the Log tap queues the whole checked set up front.
+        let pipeline = ScriptedMealPipeline.demoGroceryReceipt(delays: true)   // 500ms resolves
+        let queue = tempQueue()
+        let recorder = InMemoryNutritionRecorder()
+        let controller = MealLogController(
+            pipeline: pipeline, resolver: pipeline.scriptedResolver(),
+            recorder: recorder, queue: queue
+        )
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        let commitTask = Task { await controller.commit() }
+        while controller.phase != .logging { await Task.yield() }   // commit is under way
+        controller.cancel()                                          // abandon mid-loop
+        await commitTask.value
+        // 3 checked items were queued at Log; recorded ones were removed; the rest remain.
+        #expect(recorder.entries.count + queue.pending.count == 3)
+        #expect(!queue.pending.isEmpty)
+    }
+
+    @Test func answerFlowsIntoTheReResolvedEstimate() async {
+        // Answering a chip invalidates the item's number and re-resolves with the answer.
+        final class AnswerSpy: PlateEstimator, @unchecked Sendable {
+            var seen: [[QuestionAnswer]] = []
+            func estimate(item: DraftItem, capture: MealCapture?, answers: [QuestionAnswer]) async throws -> ResolvedNutrition {
+                seen.append(answers)
+                return ResolvedNutrition(
+                    facts: NutritionFacts(energy: .range(lowKcal: 100, highKcal: 200)),
+                    provenance: .estimate(assumptions: ["test"])
+                )
+            }
+        }
+        let pipeline = ScriptedMealPipeline.demoGroceryReceipt()
+        let spy = AnswerSpy()
+        let resolver = MealResolver(barcodeDB: nil, searcher: nil, adjudicator: nil, agent: nil, estimator: spy)
+        let controller = MealLogController(
+            pipeline: pipeline, resolver: resolver, recorder: InMemoryNutritionRecorder()
+        )
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        await controller.resolveOutstandingItems()
+
+        let chickenID = ScriptedMealPipeline.DemoID.chicken
+        controller.answer(QuestionAnswer(questionID: "portion", optionID: "whole"), itemID: chickenID)
+        #expect(controller.resolutions[chickenID] == nil)   // invalidated immediately
+        await controller.resolveOutstandingItems()
+        #expect(controller.resolutions[chickenID] != nil)
+        #expect(spy.seen.contains { $0.contains { $0.optionID == "whole" } })
+    }
+
+    @Test func renameDropsInheritedMacrosFromTheOverride() async {
+        let (controller, _) = makeController()
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        await controller.resolveOutstandingItems()
+        let saladID = ScriptedMealPipeline.DemoID.salad
+        controller.setCalories(saladID, kcal: 500)   // inherits the salad lookup's macros
+        controller.editItemName(saladID, name: "Pad Thai")
+        let shown = controller.displayedNutrition(for: saladID)
+        #expect(shown?.facts.energy == .exact(kcal: 500))   // the user's number survives
+        #expect(shown?.facts.proteinGrams == nil)           // the salad's macros don't
+    }
+
+    @Test func nonPositiveCalorieOverrideIsRejected() async {
+        let (controller, _) = makeController()
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        controller.setCalories(ScriptedMealPipeline.DemoID.salad, kcal: 0)
+        controller.setCalories(ScriptedMealPipeline.DemoID.salad, kcal: -50)
+        #expect(controller.draft?.items.first { $0.id == ScriptedMealPipeline.DemoID.salad }?.statedFacts == nil)
+    }
+
+    @Test func staleErrorClearsOnSuccessfulCommit() async {
+        let recorder = InMemoryNutritionRecorder()
+        recorder.failAuthorization = true
+        let (controller, _) = makeController(recorder: recorder)
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        await controller.commit()
+        #expect(controller.error != nil)
+        recorder.failAuthorization = false   // user fixed Health access
+        await controller.commit()
+        #expect(controller.phase == .done)
+        #expect(controller.error == nil)
+    }
+
+    @Test func futureCaptureDateIsClampedOnPrefill() async {
+        let future = Date().addingTimeInterval(7 * 86_400)
+        let draft = MealDraft(
+            classification: .receipt, seller: nil,
+            items: [DraftItem(name: "x")], capturedAt: future
+        )
+        let pipeline = ScriptedMealPipeline(script: .init(draft: draft))
+        let controller = MealLogController(
+            pipeline: pipeline, resolver: pipeline.scriptedResolver(),
+            recorder: InMemoryNutritionRecorder()
+        )
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        #expect(controller.loggedDate <= Date())
     }
 
     @Test func typedYesterdayPhraseBackdates() async throws {

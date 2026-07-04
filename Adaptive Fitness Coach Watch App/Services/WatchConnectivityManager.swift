@@ -1,5 +1,6 @@
 import Foundation
 import WatchConnectivity
+import WidgetKit
 import AdaptiveCore
 
 /// Receives the routine set pushed from the phone, and sends recorded progressions back.
@@ -13,6 +14,18 @@ import AdaptiveCore
 final class WatchConnectivityManager: NSObject {
     private let store: RoutineStore
 
+    /// The complication timeline kind (`AdaptiveFitnessWatchWidgets`). Anything that changes
+    /// the routine set — a sync from the phone or a locally-applied progression — must reload
+    /// it, or the "next workout" on the watch face keeps showing yesterday's answer.
+    private static let complicationKind = "NextWorkoutComplication"
+
+    /// Batches queued before WCSession activation completed. `transferUserInfo` on an
+    /// unactivated session is silently dropped by the OS — and progressions ride the
+    /// "guaranteed delivery" channel precisely because losing one loses a workout's learned
+    /// seeds — so pre-activation sends buffer here and flush on `activationDidCompleteWith`.
+    private var pendingTransfers: [[String: Any]] = []
+    private var isActivated = false
+
     init(store: RoutineStore) {
         self.store = store
         super.init()
@@ -24,11 +37,26 @@ final class WatchConnectivityManager: NSObject {
         WCSession.default.activate()
     }
 
-    /// Queue a progression batch for the phone. Guaranteed delivery (queued until reachable).
+    /// Queue a progression batch for the phone. Guaranteed delivery (queued until reachable) —
+    /// but only once the session is activated; earlier sends are buffered, not lost.
     func sendProgression(_ batch: ProgressionBatch) {
         guard WCSession.isSupported(),
               let message = try? WCMessageCodec.encode(progression: batch) else { return }
-        WCSession.default.transferUserInfo(message)
+        if isActivated, WCSession.default.activationState == .activated {
+            WCSession.default.transferUserInfo(message)
+        } else {
+            pendingTransfers.append(message)
+        }
+    }
+
+    /// Activation completed: hand the OS everything that queued up while it wasn't ready.
+    private func flushPendingTransfers() {
+        isActivated = true
+        let queued = pendingTransfers
+        pendingTransfers = []
+        for message in queued {
+            WCSession.default.transferUserInfo(message)
+        }
     }
 
     /// Record progressions from a finished session: apply them to the local store so the next watch
@@ -38,6 +66,7 @@ final class WatchConnectivityManager: NSObject {
     func recordProgressions(routineId: UUID, _ updates: [ProgressionUpdate]) {
         store.applyProgressions(updates, toRoutineId: routineId, broadcast: false)
         sendProgression(ProgressionBatch(routineId: routineId, updates: updates))
+        WidgetCenter.shared.reloadTimelines(ofKind: Self.complicationKind)
     }
 
     /// Record a finished run session's new interval seeds. Same contract as
@@ -46,6 +75,7 @@ final class WatchConnectivityManager: NSObject {
         let batch = ProgressionBatch(routineId: routineId, runUpdates: updates)
         store.applyProgressions(batch, broadcast: false)
         sendProgression(batch)
+        WidgetCenter.shared.reloadTimelines(ofKind: Self.complicationKind)
     }
 
     /// Apply a received context if it carries routines. Tolerates malformed payloads by
@@ -53,6 +83,9 @@ final class WatchConnectivityManager: NSObject {
     private func apply(context: [String: Any]) {
         guard let routines = try? WCMessageCodec.decodeRoutines(from: context) else { return }
         store.replaceFromSync(routines)
+        // The routine set just changed under the complication — refresh its timeline so the
+        // watch face's "next workout" reflects the new schedule.
+        WidgetCenter.shared.reloadTimelines(ofKind: Self.complicationKind)
     }
 }
 
@@ -62,6 +95,10 @@ extension WatchConnectivityManager: WCSessionDelegate {
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {
+        // Release any progression transfers that were queued before activation completed.
+        if activationState == .activated {
+            Task { @MainActor in self.flushPendingTransfers() }
+        }
         // Pick up whatever context already arrived before activation completed.
         let context = session.receivedApplicationContext
         guard !context.isEmpty else { return }

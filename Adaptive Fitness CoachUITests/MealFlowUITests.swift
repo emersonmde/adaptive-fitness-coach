@@ -136,6 +136,42 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["475 kcal"].waitForExistence(timeout: 10))
     }
 
+    /// Build 10: the confirmation screen shows each item's number + source before Log, and
+    /// tapping the number overrides it — the override records as the user's number.
+    func testConfirmationShowsNumbersAndOverride() throws {
+        let app = launchApp()
+        openCapture(app)
+
+        app.buttons["meal.capture.simulated.receipt"].tap()
+        XCTAssertTrue(app.staticTexts["meal.confirm.header"].waitForExistence(timeout: 5))
+
+        // Pre-commit lookups land row by row (scripted 500ms each): the salad shows its
+        // database number, the curry an honest range — before anything is logged.
+        let saladKcal = app.buttons["meal.confirm.kcal.Chicken Caesar Salad"]
+        XCTAssertTrue(saladKcal.waitForExistence(timeout: 8))
+        XCTAssertTrue(saladKcal.label.contains("460 kcal"))
+        XCTAssertTrue(saladKcal.label.contains("Open Food Facts"))
+        let curryKcal = app.buttons["meal.confirm.kcal.Deli Lentil Curry"]
+        XCTAssertTrue(curryKcal.waitForExistence(timeout: 8))
+        XCTAssertTrue(curryKcal.label.contains("350–600 kcal"))
+
+        // Override the salad to 520 → "your number" immediately, before Log.
+        saladKcal.tap()
+        let field = app.textFields["meal.confirm.kcalField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 2))
+        clear(field)
+        field.typeText("520")
+        app.buttons["meal.confirm.kcalDone"].tap()
+        XCTAssertTrue(saladKcal.waitForExistence(timeout: 3))
+        XCTAssertTrue(saladKcal.label.contains("520 kcal"))
+        XCTAssertTrue(saladKcal.label.contains("your number"))
+
+        // Log to today; the day total reflects the override: 520 + 300 + 475 = 1,295.
+        app.buttons["meal.when.today"].tap()
+        app.buttons["meal.confirm.log"].tap()
+        XCTAssertTrue(app.staticTexts["1,295 kcal"].waitForExistence(timeout: 12))
+    }
+
     /// Cancel is always an exit (principle 13): capture → Cancel → week intact, nothing logged.
     func testCancelExits() throws {
         let app = launchApp()

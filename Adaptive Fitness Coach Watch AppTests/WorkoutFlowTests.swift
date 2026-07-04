@@ -155,6 +155,69 @@ struct WorkoutFlowTests {
         #expect(manager.adaptationEvent != nil)
     }
 
+    // MARK: - Sample staleness (N6: a dropped sensor must not keep driving the engine)
+
+    @Test func staleZoneStopsDrivingAdaptations() async {
+        let manager = makeManager()
+        // A long run and a back-off window LONGER than the staleness limit: if the last-known
+        // hot zone kept driving the engine after dropout, the window would eventually fill and
+        // shorten the run. With expiry, the zone goes nil at ~15s and the window never fills.
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 2, runDuration: 120, walkDuration: 10, cycles: 1, cooldown: 2)
+        let adaptation = AdaptationConfig(backOffWindow: 25, minRunDuration: 2)
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test", adaptationConfig: adaptation)
+
+        tick(manager, seconds: 2)                  // warmup → run
+        #expect(manager.currentPhase == .run)
+
+        manager.receiveHeartRate(165)
+        // One hot report (one zone above target — the soft back-off path, whose 25s window is
+        // what must never fill from a stale value)… then the sensor goes silent.
+        manager.receiveZone(3)
+        tick(manager, seconds: 40)                 // well past the limit AND the back-off window
+
+        #expect(manager.currentPhase == .run)      // the stale zone never forced a back-off
+        #expect(manager.adaptationEvent == nil)
+        #expect(manager.heartRateIsStale)
+        #expect(manager.currentZoneIndex == nil)   // zone bar back to "no reading"
+        #expect(manager.currentHeartRate == 0)     // HR readout renders 0 as "--"
+    }
+
+    @Test func freshSamplesKeepTheSignalAlive() async {
+        let manager = makeManager()
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 2, runDuration: 120, walkDuration: 10, cycles: 1, cooldown: 2)
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test")
+        tick(manager, seconds: 2)
+
+        // Samples every 10s — always inside the 15s staleness limit — never expire.
+        for _ in 0..<4 {
+            manager.receiveZone(2)
+            manager.receiveHeartRate(150)
+            tick(manager, seconds: 10)
+        }
+        #expect(!manager.heartRateIsStale)
+        #expect(manager.currentZoneIndex == 2)
+        #expect(manager.currentHeartRate == 150)
+    }
+
+    @Test func aFreshSampleAfterDropoutClearsStaleness() async {
+        let manager = makeManager()
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 2, runDuration: 120, walkDuration: 10, cycles: 1, cooldown: 2)
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test")
+        tick(manager, seconds: 2)
+
+        manager.receiveZone(2)
+        tick(manager, seconds: 20)                 // dropout → stale
+        #expect(manager.heartRateIsStale)
+        #expect(manager.currentZoneIndex == nil)
+
+        manager.receiveZone(3)                     // the band re-seats; signal is trusted again
+        manager.receiveHeartRate(148)
+        tick(manager, seconds: 1)
+        #expect(!manager.heartRateIsStale)
+        #expect(manager.currentZoneIndex == 3)
+        #expect(manager.currentHeartRate == 148)
+    }
+
     @Test func heartRateReachesDisplayState() async {
         let manager = makeManager()
         await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")

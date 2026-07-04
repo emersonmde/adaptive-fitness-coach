@@ -26,7 +26,9 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
     }
 
     private let store = HKHealthStore()
-    private var observerQuery: HKObserverQuery?
+    private let observerLock = NSLock()
+    private var observerContinuations: [UUID: AsyncStream<Void>.Continuation] = [:]
+    private var observerQueryStarted = false
 
     private static let energyType = HKQuantityType(.dietaryEnergyConsumed)
     private static let proteinType = HKQuantityType(.dietaryProtein)
@@ -43,13 +45,17 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw CocoaError(.featureUnsupported)
         }
-        // Share to write; read the same types (+ the correlation, + active energy for the
-        // day screen's informational burn line). A user denial is not a throw — HealthKit
-        // reports it through the write path (and hides read denial by design; the daily line
-        // degrades honestly).
+        // Share to write; read the same types (+ active energy for the day screen's
+        // informational burn line). A user denial is not a throw — HealthKit reports it
+        // through the write path (and hides read denial by design; the daily line degrades
+        // honestly). The .food CORRELATION type must NOT appear here: correlation types are
+        // disallowed in authorization requests and raise NSInvalidArgumentException
+        // ("Authorization to read the following types is disallowed") — authorization lives
+        // on the contained quantity types; correlation queries need no grant of their own.
+        // Source: HKHealthStore.requestAuthorization docs / HKCorrelationType.
         try await store.requestAuthorization(
             toShare: Self.allQuantityTypes,
-            read: Self.allQuantityTypes.union([Self.foodType, Self.activeEnergyType])
+            read: Self.allQuantityTypes.union([Self.activeEnergyType])
         )
     }
 
@@ -165,13 +171,38 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
         return HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
     }
 
-    func observeChanges(_ handler: @escaping @Sendable () -> Void) {
-        let query = HKObserverQuery(sampleType: Self.energyType, predicate: nil) { _, completion, _ in
-            handler()
-            completion()
+    /// ONE long-running observer query per process, started lazily, fanned out to every
+    /// active stream. Streams end (and unregister) when their consuming `.task` is
+    /// cancelled — executing a fresh HKObserverQuery per screen appearance leaked a live
+    /// query (HealthKit keeps executed queries alive; `stop` was never called).
+    func changes() -> AsyncStream<Void> {
+        AsyncStream { continuation in
+            let id = UUID()
+            observerLock.lock()
+            observerContinuations[id] = continuation
+            let needsQuery = !observerQueryStarted
+            observerQueryStarted = true
+            observerLock.unlock()
+
+            continuation.onTermination = { [weak self] _ in
+                guard let self else { return }
+                self.observerLock.lock()
+                self.observerContinuations[id] = nil
+                self.observerLock.unlock()
+            }
+
+            if needsQuery {
+                let query = HKObserverQuery(sampleType: Self.energyType, predicate: nil) { [weak self] _, completion, _ in
+                    guard let self else { completion(); return }
+                    self.observerLock.lock()
+                    let continuations = Array(self.observerContinuations.values)
+                    self.observerLock.unlock()
+                    continuations.forEach { $0.yield() }
+                    completion()
+                }
+                store.execute(query)
+            }
         }
-        observerQuery = query
-        store.execute(query)
     }
 
     // MARK: -

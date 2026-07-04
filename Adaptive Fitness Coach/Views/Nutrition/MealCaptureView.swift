@@ -14,6 +14,7 @@ struct MealCaptureView: View {
     let onCapture: (MealCapture) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var isCapturing = false
+    @State private var cancelled = false
     @State private var cameraFailed = false
     @State private var showingTypedEntry = false
 
@@ -32,6 +33,9 @@ struct MealCaptureView: View {
             VStack {
                 HStack {
                     Button {
+                        // A still may be mid-OCR — Cancel must also cancel ITS forward, or
+                        // the confirmation sheet pops up over the screen the user returned to.
+                        cancelled = true
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
@@ -68,7 +72,7 @@ struct MealCaptureView: View {
     }
 
     private func forward(_ capture: MealCapture) {
-        guard !isCapturing else { return }
+        guard !isCapturing, !cancelled else { return }
         isCapturing = true
         onCapture(capture)
         dismiss()
@@ -109,7 +113,12 @@ struct MealCaptureView: View {
     static func recognizeText(_ image: UIImage) async -> [String] {
         guard let cgImage = image.cgImage else { return [] }
         return await withCheckedContinuation { continuation in
+            // Vision can invoke the request's completion (with an error) AND `perform` can
+            // still throw for the same request — a checked continuation resumed from both
+            // paths traps. `Once` guarantees exactly one resume.
+            let once = Once()
             let request = VNRecognizeTextRequest { request, _ in
+                guard once.claim() else { return }
                 let lines = (request.results as? [VNRecognizedTextObservation])?
                     .compactMap { $0.topCandidates(1).first?.string } ?? []
                 continuation.resume(returning: lines)
@@ -118,11 +127,23 @@ struct MealCaptureView: View {
             request.usesLanguageCorrection = true
             DispatchQueue.global(qos: .userInitiated).async {
                 let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up)
-                if (try? handler.perform([request])) == nil {
+                if (try? handler.perform([request])) == nil, once.claim() {
                     continuation.resume(returning: [])
                 }
             }
         }
+    }
+}
+
+/// One-shot latch for continuation safety (first `claim` wins, thread-safe).
+private final class Once: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+    func claim() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if claimed { return false }
+        claimed = true
+        return true
     }
 }
 

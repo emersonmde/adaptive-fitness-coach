@@ -31,8 +31,11 @@ public protocol NutritionRecorder: Sendable {
     /// Total active energy burned that day (all sources), kcal. Informational only — the
     /// budget is fixed by decision; burn never expands it.
     func activeEnergyBurned(on day: Date) async throws -> Double
-    /// Fires whenever dietary energy changes in Health (any source) — refresh the daily line.
-    func observeChanges(_ handler: @escaping @Sendable () -> Void)
+    /// A stream that yields whenever dietary energy changes in Health (any source) — drive
+    /// the daily line / day screen with `for await` inside `.task`, whose cancellation on
+    /// disappear ends the observation. (The old register-a-closure API leaked one observer
+    /// per screen appearance — nothing ever unregistered.)
+    func changes() -> AsyncStream<Void>
 }
 
 public extension NutritionRecorder {
@@ -62,7 +65,7 @@ public final class InMemoryNutritionRecorder: NutritionRecorder, @unchecked Send
     private let lock = NSLock()
     private var stored: [MealEntry] = []
     private var activeEnergy: [Date: Double] = [:]   // keyed by startOfDay
-    private var observers: [@Sendable () -> Void] = []
+    private var observers: [UUID: AsyncStream<Void>.Continuation] = [:]
     private let calendar: Calendar
     /// Test hooks: make authorization or writes fail to exercise the honest error paths.
     public var failAuthorization = false
@@ -105,17 +108,17 @@ public final class InMemoryNutritionRecorder: NutritionRecorder, @unchecked Send
         if shouldFail { throw CocoaError(.fileWriteUnknown) }
         let observers = lock.withLock {
             stored.append(entry)
-            return self.observers
+            return Array(self.observers.values)
         }
-        observers.forEach { $0() }
+        observers.forEach { $0.yield() }
     }
 
     public func delete(entryID: UUID) async throws {
         let observers = lock.withLock {
             stored.removeAll { $0.id == entryID }
-            return self.observers
+            return Array(self.observers.values)
         }
-        observers.forEach { $0() }
+        observers.forEach { $0.yield() }
     }
 
     public func intake(on day: Date) async throws -> DailyIntake {
@@ -134,7 +137,14 @@ public final class InMemoryNutritionRecorder: NutritionRecorder, @unchecked Send
         return lock.withLock { activeEnergy[key] ?? 0 }
     }
 
-    public func observeChanges(_ handler: @escaping @Sendable () -> Void) {
-        lock.withLock { observers.append(handler) }
+    public func changes() -> AsyncStream<Void> {
+        AsyncStream { continuation in
+            let id = UUID()
+            lock.withLock { observers[id] = continuation }
+            continuation.onTermination = { [weak self] _ in
+                guard let self else { return }
+                self.lock.withLock { self.observers[id] = nil }
+            }
+        }
     }
 }

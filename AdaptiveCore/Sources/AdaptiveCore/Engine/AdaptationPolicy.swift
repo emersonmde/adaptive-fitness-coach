@@ -199,6 +199,11 @@ public struct AdaptationPolicy: Sendable {
     ) -> WalkDecision {
         guard let recovered = isRecovered(zone: currentZone, heartRate: heartRate,
                                           peakRunHeartRate: peakRunHeartRate, targetZone: targetZone) else {
+            // A signal gap never proves recovery (N6): leak the accumulator down exactly as
+            // a not-recovered reading would, so credit earned before a dropout can't end
+            // the walk on one post-gap tick. (Freezing it here was the one place stale
+            // evidence survived a gap.)
+            Self.integrate(&timeRecovered, active: false, deltaTime: deltaTime)
             return .keepGoing
         }
 

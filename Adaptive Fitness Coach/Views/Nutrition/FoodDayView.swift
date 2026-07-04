@@ -18,7 +18,8 @@ struct FoodDayView: View {
     @State private var activeKcal: Double?
     @State private var editingEntry: MealEntry?
     @State private var showingTargetSheet = false
-    @State private var reloggedName: String?
+    @State private var reloggedID: UUID?
+    @State private var deleteError: String?
     @State private var refreshTick = 0
 
     private var calendar: Calendar { .current }
@@ -39,10 +40,13 @@ struct FoodDayView: View {
         }
         .navigationTitle("Food")
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: anchorDay) { await refresh() }
-        .task(id: refreshTick) { await refresh() }
+        .task(id: refreshTick) { await refresh() }   // appear + every bump (one fetch, not two)
+        .onChange(of: anchorDay) { refreshTick += 1 }
         .task {
-            recorder.observeChanges { Task { @MainActor in refreshTick += 1 } }
+            // The stream ends when this task is cancelled on disappear — no leaked observers.
+            for await _ in recorder.changes() { refreshTick += 1 }
+        }
+        .task {
             // First run: offer the target once, skippable (a target is opt-in — C6).
             if targetStore.target == nil && !targetStore.wasOffered {
                 targetStore.markOffered()
@@ -50,6 +54,14 @@ struct FoodDayView: View {
             }
         }
         .onChange(of: controller.phase) { refreshTick += 1 }
+        .alert("Couldn't delete", isPresented: Binding(
+            get: { deleteError != nil },
+            set: { if !$0 { deleteError = nil } }
+        )) {
+            Button("OK") {}
+        } message: {
+            Text(deleteError ?? "")
+        }
         .sheet(isPresented: $showingTargetSheet) {
             TargetSetupSheet(targetStore: targetStore, bodyProfileSource: bodyProfileSource)
         }
@@ -221,7 +233,7 @@ struct FoodDayView: View {
                             Text(entry.provenance.label)
                                 .font(.caption2)
                                 .foregroundStyle(Theme.textTertiary)
-                            if reloggedName == entry.name {
+                            if reloggedID == entry.id {
                                 Text("· logged again")
                                     .font(.caption2)
                                     .foregroundStyle(Theme.accent)
@@ -237,7 +249,6 @@ struct FoodDayView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("meal.day.entry.\(entry.name)")
-        .swipeActions(edge: .leading, allowsFullSwipe: true) { }   // List-only; kept via context menu
         .contextMenu {
             Button {
                 Task { await logAgain(entry) }
@@ -246,7 +257,13 @@ struct FoodDayView: View {
             }
             Button(role: .destructive) {
                 Task {
-                    try? await recorder.delete(entryID: entry.id)
+                    do {
+                        try await recorder.delete(entryID: entry.id)
+                    } catch {
+                        // An entry that silently stays after "Delete" reads as a bug —
+                        // failure must be as visible as success (principle 13).
+                        deleteError = "Health couldn't delete that entry. Try again."
+                    }
                     refreshTick += 1
                 }
             } label: {
@@ -268,7 +285,7 @@ struct FoodDayView: View {
     private func logAgain(_ entry: MealEntry) async {
         let fresh = entry.relogged()
         if (try? await recorder.record(fresh)) != nil {
-            reloggedName = entry.name
+            reloggedID = fresh.id   // badge exactly the new entry, not every same-named row
             anchorDay = calendar.startOfDay(for: Date())   // the new entry lives today
             refreshTick += 1
         }

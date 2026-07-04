@@ -83,6 +83,10 @@ public struct CoachMessage: Sendable, Hashable {
 public enum CoachEvent: Sendable {
     /// A chunk of streamed persona prose. Append to the in-flight coach message.
     case textDelta(String)
+    /// The full in-flight reply, REPLACING everything streamed so far this turn. For
+    /// providers whose cumulative snapshots can rewrite earlier content (seen around tool
+    /// calls) — append-only deltas would garble or duplicate the text.
+    case textReplace(String)
     /// A validated plan draft. Engines validate raw model output through
     /// `CoachProposalValidator` before emitting — the UI never sees an unvalidated plan.
     case proposal(CoachProposal)

@@ -43,6 +43,10 @@ public struct Routine: Codable, Sendable, Identifiable, Hashable {
     // MARK: - Derived display
 
     /// The card list expanded by `rounds` — the actual ordered sequence the watch performs.
+    ///
+    /// IDENTITY TRAP: rounds > 1 repeats the same card VALUES, so the result contains
+    /// duplicate `Identifiable` ids. Consume by position (as all current call sites do) —
+    /// never feed this to `ForEach` or key state by card id.
     public var expandedCards: [WorkoutCard] {
         guard rounds > 1 else { return cards }
         return (0..<rounds).flatMap { _ in cards }

@@ -1,10 +1,14 @@
 import SwiftUI
 import AdaptiveCore
 
-/// The confirmation screen (spec §4.3): identified items with checkboxes, inline name fixes,
-/// quantity, and C4's tap-only clarifying chips — then one button, **Log**. No calorie numbers
-/// here: lookups run *after* commit (C2/§5 — never spend lookups on unchecked items), so this
-/// screen never has to show a number it would later contradict.
+/// The whole capture→confirm flow's one surface (build 10). Presents the moment identify
+/// starts (progress), becomes the confirmation screen (spec §4.3), and holds identify
+/// failures honestly with a retry — the user never watches a screen close into silence.
+///
+/// Confirmation shows each item's number and its source *before* Log (lookups start when the
+/// screen opens, sequentially), and the calorie value is editable inline — an override is the
+/// user's number (`.userStated`), same semantics as the day screen's post-hoc edit. §5's
+/// rule survives: unchecked items still never spend a lookup.
 struct MealConfirmationSheet: View {
     @Bindable var controller: MealLogController
     @Environment(\.dismiss) private var dismiss
@@ -13,58 +17,14 @@ struct MealConfirmationSheet: View {
         NavigationStack {
             ZStack {
                 Theme.bg.ignoresSafeArea()
-                if let draft = controller.draft {
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
-                            header(draft)
-                            VStack(spacing: 10) {
-                                ForEach(draft.items) { item in
-                                    ItemRow(
-                                        item: item,
-                                        onToggle: { controller.toggleItem(item.id) },
-                                        onRename: { controller.editItemName(item.id, name: $0) },
-                                        onQuantity: { controller.setQuantity(item.id, quantity: $0) },
-                                        onAnswer: { controller.answer($0, itemID: item.id) }
-                                    )
-                                }
-                            }
-                            // The when-row (build 8): meal chips + day control, prefilled
-                            // from the capture when it carried a date (labeled honestly).
-                            WhenRow(
-                                mealSlot: Binding(
-                                    get: { controller.mealSlot },
-                                    set: { controller.setMealSlot($0) }
-                                ),
-                                date: Binding(
-                                    get: { controller.loggedDate },
-                                    set: { controller.setLoggedDate($0) }
-                                ),
-                                prefillCaption: controller.prefilledFromCapture
-                                    ? "From the capture · " + controller.loggedDate
-                                        .formatted(.dateTime.month(.abbreviated).day().hour().minute())
-                                    : nil
-                            )
-                            .padding(.top, 2)
-
-                            if let error = controller.error {
-                                Text(error)
-                                    .font(.footnote)
-                                    .foregroundStyle(Theme.hot)
-                                    .accessibilityIdentifier("meal.confirm.error")
-                            }
-                            PrimaryButton(
-                                title: checkedCount(draft) == 0 ? "Nothing selected" : "Log \(checkedCount(draft)) item\(checkedCount(draft) == 1 ? "" : "s")",
-                                systemImage: "checkmark"
-                            ) {
-                                Task {
-                                    await controller.commit()
-                                    if controller.phase != .confirming { dismiss() }
-                                }
-                            }
-                            .disabled(checkedCount(draft) == 0)
-                            .accessibilityIdentifier("meal.confirm.log")
-                        }
-                        .padding(16)
+                switch controller.phase {
+                case .identifying:
+                    identifyingView
+                case .failed:
+                    failedView
+                default:
+                    if let draft = controller.draft {
+                        confirmationList(draft)
                     }
                 }
             }
@@ -84,8 +44,127 @@ struct MealConfirmationSheet: View {
         .interactiveDismissDisabled()   // Cancel is explicit; a swipe shouldn't silently drop edits
     }
 
+    // MARK: - Identifying (the previously-invisible gap)
+
+    private var identifyingView: some View {
+        VStack(spacing: 14) {
+            ProgressView()
+                .controlSize(.large)
+                .tint(Theme.accent)
+            Text("Reading your meal…")
+                .font(.subheadline)
+                .foregroundStyle(Theme.textSecondary)
+                .accessibilityIdentifier("meal.confirm.identifying")
+        }
+    }
+
+    // MARK: - Identify failed (honest, retryable — principle 13)
+
+    private var failedView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.title2)
+                .foregroundStyle(Theme.textTertiary)
+            Text(controller.error ?? "Couldn't read that capture.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier("meal.confirm.failedError")
+            PrimaryButton(title: "Try Again", systemImage: "arrow.counterclockwise") {
+                Task { await controller.retryCapture() }
+            }
+            .accessibilityIdentifier("meal.confirm.retry")
+        }
+        .padding(24)
+    }
+
+    // MARK: - Confirmation
+
+    private func confirmationList(_ draft: MealDraft) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                header(draft)
+                VStack(spacing: 10) {
+                    ForEach(draft.items) { item in
+                        ItemRow(
+                            item: item,
+                            nutrition: controller.displayedNutrition(for: item.id),
+                            onToggle: { controller.toggleItem(item.id) },
+                            onRename: { controller.editItemName(item.id, name: $0) },
+                            onQuantity: { controller.setQuantity(item.id, quantity: $0) },
+                            onAnswer: { controller.answer($0, itemID: item.id) },
+                            onCalories: { controller.setCalories(item.id, kcal: $0) }
+                        )
+                    }
+                }
+                // The when-row (build 8): meal chips + day control, prefilled
+                // from the capture when it carried a date (labeled honestly).
+                WhenRow(
+                    mealSlot: Binding(
+                        get: { controller.mealSlot },
+                        set: { controller.setMealSlot($0) }
+                    ),
+                    date: Binding(
+                        get: { controller.loggedDate },
+                        set: { controller.setLoggedDate($0) }
+                    ),
+                    prefillCaption: controller.prefilledFromCapture
+                        ? "From the capture · " + controller.loggedDate
+                            .formatted(.dateTime.month(.abbreviated).day().hour().minute())
+                        : nil
+                )
+                .padding(.top, 2)
+
+                if let total = totalText(draft) {
+                    HStack {
+                        Spacer()
+                        Text(total)
+                            .font(.subheadline.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(Theme.textPrimary)
+                            .accessibilityIdentifier("meal.confirm.total")
+                    }
+                }
+
+                if let error = controller.error {
+                    Text(error)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.hot)
+                        .accessibilityIdentifier("meal.confirm.error")
+                }
+                PrimaryButton(
+                    title: checkedCount(draft) == 0 ? "Nothing selected" : "Log \(checkedCount(draft)) item\(checkedCount(draft) == 1 ? "" : "s")",
+                    systemImage: "checkmark"
+                ) {
+                    Task {
+                        await controller.commit()
+                        if controller.phase != .confirming { dismiss() }
+                    }
+                }
+                .disabled(checkedCount(draft) == 0)
+                .accessibilityIdentifier("meal.confirm.log")
+            }
+            .padding(16)
+        }
+    }
+
     private func checkedCount(_ draft: MealDraft) -> Int {
         draft.items.filter(\.isChecked).count
+    }
+
+    /// The running day-impact of what's checked — shown once every checked item has a
+    /// number ("≈" whenever any of them is an estimate range). Nothing while lookups run:
+    /// a partial sum reads as a final one.
+    private func totalText(_ draft: MealDraft) -> String? {
+        let checked = draft.items.filter(\.isChecked)
+        guard !checked.isEmpty else { return nil }
+        var total = 0.0
+        var approximate = false
+        for item in checked {
+            guard let nutrition = controller.displayedNutrition(for: item.id) else { return nil }
+            total += nutrition.facts.energy.midpointKcal * Double(item.quantity)
+            if nutrition.facts.energy.isRange { approximate = true }
+        }
+        return "Total \(approximate ? "≈ " : "")\(Int(total.rounded()).formatted()) kcal"
     }
 
     private func header(_ draft: MealDraft) -> some View {
@@ -119,8 +198,8 @@ struct MealConfirmationSheet: View {
         case .receipt: "doc.text"
         case .nutritionLabel: "tablecells"
         case .plate: "fork.knife"
-        case .typed: "keyboard"
         case .unknown: "questionmark.circle"
+        case .typed: "keyboard"
         }
     }
 }
@@ -129,14 +208,19 @@ struct MealConfirmationSheet: View {
 
 private struct ItemRow: View {
     let item: DraftItem
+    let nutrition: ResolvedNutrition?
     let onToggle: () -> Void
     let onRename: (String) -> Void
     let onQuantity: (Int) -> Void
     let onAnswer: (QuestionAnswer) -> Void
+    let onCalories: (Double) -> Void
 
     @State private var isEditing = false
     @State private var draftName = ""
     @FocusState private var nameFocused: Bool
+    @State private var isEditingKcal = false
+    @State private var draftKcal = ""
+    @FocusState private var kcalFocused: Bool
 
     var body: some View {
         Card {
@@ -171,12 +255,109 @@ private struct ItemRow: View {
                         quantityControl
                     }
                 }
+                if item.isChecked {
+                    nutritionLine
+                }
                 if item.isChecked, let question = item.question {
                     QuestionnaireOptionRow(question: question, onAnswer: onAnswer)
                 }
             }
         }
         .opacity(item.isChecked ? 1 : 0.65)
+        // Tapping away is as common as tapping Done: commit whatever was typed when focus
+        // leaves an inline editor, so no edit is silently stranded in a stuck field.
+        .onChange(of: nameFocused) {
+            if !nameFocused, isEditing { commitRename() }
+        }
+        .onChange(of: kcalFocused) {
+            if !kcalFocused, isEditingKcal { commitKcal() }
+        }
+    }
+
+    // MARK: The number + its source, pre-commit (build 10)
+
+    /// "460 kcal · Open Food Facts", "350–600 kcal · estimate", "520 kcal · your number" —
+    /// or an honest "Looking up…" while the ladder runs. Tapping the number edits it.
+    @ViewBuilder
+    private var nutritionLine: some View {
+        if isEditingKcal {
+            HStack(spacing: 6) {
+                TextField("kcal", text: $draftKcal)
+                    .keyboardType(.numberPad)
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(Theme.textPrimary)
+                    .focused($kcalFocused)
+                    .frame(width: 80)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 8))
+                    .submitLabel(.done)
+                    .onSubmit(commitKcal)
+                    .accessibilityIdentifier("meal.confirm.kcalField")
+                Text("kcal")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                Button("Done", action: commitKcal)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+                    .accessibilityIdentifier("meal.confirm.kcalDone")
+                Spacer()
+            }
+            .padding(.leading, 34)   // aligns under the name, past the checkbox
+        } else if let nutrition {
+            Button(action: beginKcalEdit) {
+                HStack(spacing: 5) {
+                    Text(energyText(nutrition))
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(Theme.textPrimary)
+                    Text("· \(sourceText(nutrition.provenance))")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                    Image(systemName: "pencil")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 34)
+            .accessibilityIdentifier("meal.confirm.kcal.\(item.name)")
+        } else {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.mini)
+                Text("Looking up…")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .padding(.leading, 34)
+            .accessibilityIdentifier("meal.confirm.lookingUp.\(item.name)")
+        }
+    }
+
+    private func energyText(_ nutrition: ResolvedNutrition) -> String {
+        let each = item.quantity > 1 ? " each" : ""
+        switch nutrition.facts.energy {
+        case .exact(let kcal):
+            return "\(Int(kcal.rounded())) kcal\(each)"
+        case .range(let low, let high):
+            return "\(Int(low.rounded()))–\(Int(high.rounded())) kcal\(each)"
+        }
+    }
+
+    /// Where the number came from (C3), quiet but always present: the seller's own site,
+    /// the database's name, an estimate, or the user's number.
+    private func sourceText(_ provenance: Provenance) -> String {
+        switch provenance {
+        case .verified(let url):
+            if let host = url?.host() { return "verified · \(host)" }
+            return "verified"
+        case .database(let name, _):
+            return name
+        case .estimate:
+            return "estimate"
+        case .userStated:
+            return "your number"
+        }
     }
 
     private var quantityControl: some View {
@@ -201,5 +382,18 @@ private struct ItemRow: View {
     private func commitRename() {
         onRename(draftName)
         isEditing = false
+    }
+
+    private func beginKcalEdit() {
+        draftKcal = nutrition.map { String(Int($0.facts.energy.midpointKcal.rounded())) } ?? ""
+        isEditingKcal = true
+        kcalFocused = true
+    }
+
+    private func commitKcal() {
+        if let kcal = Double(draftKcal.trimmingCharacters(in: .whitespaces)), kcal > 0 {
+            onCalories(kcal)
+        }
+        isEditingKcal = false
     }
 }

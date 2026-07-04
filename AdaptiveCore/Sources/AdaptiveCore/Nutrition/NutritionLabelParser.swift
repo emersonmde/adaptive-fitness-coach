@@ -45,6 +45,9 @@ public enum NutritionLabelParser {
         for (index, line) in lines.enumerated() {
             let lowered = line.lowercased()
             guard lowered.contains(field) else { continue }
+            // Pre-2016 US panels print "Calories from Fat 40" — a substring match on
+            // "calories" must never read that 40 as the item's energy.
+            if field == "calories", lowered.contains("calories from") { continue }
             // "Total Fat 8g 10%" → first number after the field name, not the %DV.
             let tail = lowered.range(of: field).map { String(lowered[$0.upperBound...]) } ?? ""
             if let number = firstNumber(in: tail, excludingPercent: true) {

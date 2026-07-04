@@ -224,10 +224,15 @@ struct FoundationModelsAgenticLookup: AgenticLookup {
         #if targetEnvironment(simulator)
         throw CocoaError(.featureUnsupported)
         #else
-        let model: any LanguageModel = {
+        let model: any LanguageModel = try {
             if PCCEntitlement.isGranted {
                 let pcc = PrivateCloudComputeLanguageModel()
                 if case .available = pcc.availability { return pcc }
+            }
+            // Same honest-unavailability discipline as makeSession(): never build a session
+            // on an unavailable on-device model (surfaces as a raw session error otherwise).
+            guard SystemLanguageModel.default.isAvailable else {
+                throw CocoaError(.featureUnsupported)
             }
             return SystemLanguageModel.default
         }()

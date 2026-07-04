@@ -191,11 +191,14 @@ struct StrengthGlanceView: View {
         .accessibilityLabel("Reps this set")
         .accessibilityValue("\(manager.repsPending)")
         .accessibilityAdjustableAction { direction in
+            // Keep the crown-bound mirror in step: adjusting only `repsPending` would leave
+            // `crownValue` at the old detent, so the next crown turn snaps the count back.
             switch direction {
             case .increment: manager.repsPending += 1
             case .decrement: manager.repsPending = max(0, manager.repsPending - 1)
             @unknown default: break
             }
+            crownValue = Double(manager.repsPending)
         }
     }
 

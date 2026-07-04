@@ -84,7 +84,16 @@ private struct ComplicationView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Label("UP NEXT", systemImage: glyph).font(.caption2.weight(.semibold))
                     Text(name).font(.headline).lineLimit(1)
-                    if let fires = entry.fires { Text(fires, style: .time).font(.caption2) }
+                    if let fires = entry.fires {
+                        // A bare time reads as *today* — an occurrence days out needs its day
+                        // ("Sat 7:00 AM"), or Tuesday's glance claims a workout this morning.
+                        if Calendar.current.isDateInToday(fires) {
+                            Text(fires, style: .time).font(.caption2)
+                        } else {
+                            Text("\(fires, format: .dateTime.weekday(.abbreviated)) \(fires, style: .time)")
+                                .font(.caption2)
+                        }
+                    }
                 }
             } else {
                 Text("No workout scheduled").font(.caption)

@@ -28,9 +28,11 @@ struct WeekView: View {
     private let mealRecorder = MealPipelineProvider.sharedRecorder
     private let mealTargetStore = MealPipelineProvider.sharedTargetStore
     @ObservedObject private var mealCaptureRequest = MealCaptureRequest.shared
+    /// Programmatic pushes (the widget's afcoach://start/<id> deep link).
+    @State private var navigationPath = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 Theme.bg.ignoresSafeArea()
                 if store.routines.isEmpty {
@@ -90,10 +92,15 @@ struct WeekView: View {
                     Task { await mealController.beginCapture(capture) }
                 }
             }
+            // One continuous surface for the whole capture→confirm flow: the sheet appears
+            // the moment identify starts (progress), becomes the confirmation, and holds a
+            // failure honestly (retry) — never a silent gap where nothing seems to happen.
             .sheet(isPresented: Binding(
-                get: { mealController.phase == .confirming },
+                get: { [.identifying, .confirming, .failed].contains(mealController.phase) },
                 set: { presented in
-                    if !presented && mealController.phase == .confirming { mealController.cancel() }
+                    if !presented && [.identifying, .confirming, .failed].contains(mealController.phase) {
+                        mealController.cancel()
+                    }
                 }
             )) {
                 MealConfirmationSheet(controller: mealController)
@@ -120,14 +127,31 @@ struct WeekView: View {
                 await mealController.resumePending()
             }
             .onReceive(mealCaptureRequest.$pending) { pending in
-                // Warm start: the intent/link fires while the week is on screen.
-                if pending != nil { routeCaptureRequest() }
+                // Warm start: the intent/link fires while the week is on screen. @Published
+                // publishes during willSet, so `pending` (the new value) arrives as a
+                // parameter while the property still holds the OLD one — consuming
+                // synchronously here read nil and stranded the request (Siri "Log a meal"
+                // did nothing on a warm app). Defer one main-actor turn so consume() sees it.
+                if pending != nil {
+                    Task { @MainActor in routeCaptureRequest() }
+                }
             }
             .onOpenURL { url in
                 mealCaptureRequest.handle(url: url)   // afcoach://log/scan | /type (widgets)
                 routeCaptureRequest()
+                routeStartLink(url)                   // afcoach://start/<id> (next-workout widget)
             }
         }
+    }
+
+    /// The next-workout widget deep-links the routine it shows. The phone can't start the
+    /// watch session, so "start" here means: land the user on that routine's detail.
+    /// (Previously the id was parsed by nobody — the tap just opened the app.)
+    private func routeStartLink(_ url: URL) {
+        guard url.scheme == "afcoach", url.host == "start",
+              let id = UUID(uuidString: url.lastPathComponent),
+              let routine = store.routines.first(where: { $0.id == id }) else { return }
+        navigationPath = NavigationPath([routine])
     }
 
     private func routeCaptureRequest() {
@@ -211,6 +235,8 @@ struct WeekView: View {
             importError = "That JSON isn't in this app's routine format. Ask Claude to return the set in the exact schema from the prompt."
         } catch RoutineExchange.ExchangeError.noRoutines {
             importError = "No routines could be read — the exercises may be ones this app doesn't have yet."
+        } catch RoutineExchange.ExchangeError.malformedRoutines(let detail) {
+            importError = "The JSON is in this app's format but part of it couldn't be read (\(detail)). Ask Claude to fix that field and copy it again."
         } catch {
             importError = "Couldn't read that import."
         }

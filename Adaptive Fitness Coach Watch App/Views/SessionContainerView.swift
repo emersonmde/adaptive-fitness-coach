@@ -55,14 +55,20 @@ struct SessionContainerView: View {
             RoutineLaunchPicker(routines: orderedRoutines, initialIndex: initialIndex) { chosen = $0 }
                 .task { routeLaunchRequest() }
                 .onReceive(launchRequest.$pendingRoutineId) { _ in routeLaunchRequest() }
+                // The complication can fire before the phone's routine context has synced —
+                // re-run the match when routines arrive so the request lands instead of dying.
+                .onChange(of: store.routines) { _, _ in routeLaunchRequest() }
         }
     }
 
     /// A `StartRoutineIntent` (complication/Siri/widget) targets a routine by id — jump the
-    /// picker straight into its adaptive flow.
+    /// picker straight into its adaptive flow. Peek-then-consume: the pending id is only
+    /// consumed on a successful match, so a request arriving before the routines have synced
+    /// stays queued and is retried when the store changes (see `onChange` above).
     private func routeLaunchRequest() {
-        guard chosen == nil, let id = launchRequest.consume(),
+        guard chosen == nil, let id = launchRequest.pendingRoutineId,
               let routine = store.routines.first(where: { $0.id.uuidString == id }) else { return }
+        _ = launchRequest.consume()
         chosen = routine
     }
 
@@ -121,6 +127,21 @@ struct SessionContainerView: View {
 
 }
 
+/// Await a post-workout finalization step, but never let it wedge the Done button: if
+/// `operation` hasn't returned within `timeoutSeconds`, give up and proceed. Used for the
+/// effort-score write, which awaits the OS's background workout finalize — a hang there is the
+/// OS's problem, not something to make the user stare at (the write is best-effort anyway, N6).
+@MainActor
+func awaitBestEffort(timeoutSeconds: TimeInterval, _ operation: @escaping @MainActor () async -> Void) async {
+    await withTaskGroup(of: Void.self) { group in
+        group.addTask { await operation() }
+        group.addTask { try? await Task.sleep(for: .seconds(timeoutSeconds)) }
+        // First finisher wins: either the operation completed, or the timeout says move on.
+        await group.next()
+        group.cancelAll()
+    }
+}
+
 /// The run flow: A1 launch → A2/A3 active (+ A4 overlay) → A5 complete. State lives in the
 /// `WorkoutSessionManager`; this view maps it to a screen. (Previously `SessionContainerView`.)
 struct RunSessionContainerView: View {
@@ -175,10 +196,16 @@ struct RunSessionContainerView: View {
                         onDone: { effort in
                             // Emit progression ONCE, on Done, with the rating (so a high rating
                             // holds rather than advances). Then write Health and tear down —
-                            // reset clears the backend the write needs.
+                            // reset clears the backend the write needs. The write awaits the
+                            // background finalize, so it races a timeout: if the OS wedges,
+                            // the effort is skipped (best-effort) rather than wedging Done.
                             recordOutcome(summary, effort: effort)
                             Task {
-                                if let effort { await manager.writeEffort(effort) }
+                                if let effort {
+                                    await awaitBestEffort(timeoutSeconds: 5) {
+                                        await manager.writeEffort(effort)
+                                    }
+                                }
                                 manager.reset(); onFinish?()
                             }
                         }

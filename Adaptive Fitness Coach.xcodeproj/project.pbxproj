@@ -14,10 +14,9 @@
 		FACE000000000000000000C3 /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = FACE000000000000000000B3 /* SwiftSoup */; };
 		FACE0000000000000000D007 /* AdaptiveFitnessWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FACE0000000000000000D011 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE0000000000000000D010 /* AdaptiveCore */; };
-/* End PBXBuildFile section */
-
 		FACE0000000000000000E007 /* AdaptiveFitnessWatchWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = FACE0000000000000000E001 /* AdaptiveFitnessWatchWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FACE0000000000000000E010 /* AdaptiveCore in Frameworks */ = {isa = PBXBuildFile; productRef = FACE0000000000000000E00F /* AdaptiveCore */; };
+/* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		34704E1C2FECD82000C28688 /* PBXContainerItemProxy */ = {
@@ -114,9 +113,9 @@
 		34704E312FECD82000C28688 /* Adaptive Fitness Coach Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Adaptive Fitness Coach Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E402FECD82100C28688 /* Adaptive Fitness Coach Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Adaptive Fitness Coach Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E4A2FECD82100C28688 /* Adaptive Fitness Coach Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Adaptive Fitness Coach Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		FACE0000000000000000E001 /* AdaptiveFitnessWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AdaptiveFitnessWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		34704E822FECDA6200C28688 /* WorkoutKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WorkoutKit.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.5.sdk/System/Library/Frameworks/WorkoutKit.framework; sourceTree = DEVELOPER_DIR; };
 		FACE0000000000000000D001 /* AdaptiveFitnessWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AdaptiveFitnessWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		FACE0000000000000000E001 /* AdaptiveFitnessWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AdaptiveFitnessWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -141,7 +140,7 @@
 			);
 			target = FACE0000000000000000D002 /* AdaptiveFitnessWidgets */;
 		};
-		FACE0000000000000000E00E /* Exceptions for AdaptiveFitnessWatchWidgets folder */ = {
+		FACE0000000000000000E00E /* Exceptions for "AdaptiveFitnessWatchWidgets" folder in "AdaptiveFitnessWatchWidgets" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -198,7 +197,7 @@
 		FACE0000000000000000E00A /* AdaptiveFitnessWatchWidgets */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				FACE0000000000000000E00E /* Exceptions for AdaptiveFitnessWatchWidgets folder */,
+				FACE0000000000000000E00E /* Exceptions for "AdaptiveFitnessWatchWidgets" folder in "AdaptiveFitnessWatchWidgets" target */,
 			);
 			path = AdaptiveFitnessWatchWidgets;
 			sourceTree = "<group>";
@@ -1207,11 +1206,11 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-Coach.Widgets";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1236,11 +1235,11 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.memerson.Adaptive-Fitness-Coach.Widgets";
-				SUPPORTS_MACCATALYST = NO;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -1250,7 +1249,7 @@
 		FACE0000000000000000E00C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "AdaptiveFitnessWatchWidgets/AdaptiveFitnessWatchWidgets.entitlements";
+				CODE_SIGN_ENTITLEMENTS = AdaptiveFitnessWatchWidgets/AdaptiveFitnessWatchWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = 7542Q96HNF;
@@ -1277,7 +1276,7 @@
 		FACE0000000000000000E00D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = "AdaptiveFitnessWatchWidgets/AdaptiveFitnessWatchWidgets.entitlements";
+				CODE_SIGN_ENTITLEMENTS = AdaptiveFitnessWatchWidgets/AdaptiveFitnessWatchWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = 7542Q96HNF;

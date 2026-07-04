@@ -40,7 +40,17 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
 
         let startDate = Date()
         session.startActivity(with: startDate)
-        try await builder.beginCollection(at: startDate)
+        do {
+            try await builder.beginCollection(at: startDate)
+        } catch {
+            // `startActivity` already ran, so a failed `beginCollection` would otherwise leak
+            // a live session — sensors hot, and the *next* start blocked by the orphan. End it
+            // before surfacing the failure so "couldn't start" really means nothing is running.
+            session.end()
+            self.session = nil
+            self.builder = nil
+            throw error
+        }
         startCadenceUpdates(from: startDate)
     }
 
@@ -64,12 +74,25 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
         let endDate = Date()
         session?.end()
         do {
-            try await builder?.endCollection(at: endDate)
+            try await Self.endCollectionSettling(builder, at: endDate)
             let workout = try await builder?.finishWorkout()
             finishedWorkout = workout
             return readTotals(workout: workout, saved: true)
         } catch {
             return readTotals(workout: nil, saved: false)
+        }
+    }
+
+    /// `session.end()` is asynchronous under the hood, so an immediate `endCollection` can race
+    /// the state transition and throw even though the workout is perfectly healthy — which would
+    /// falsely report "not saved" (N6 says be honest, not pessimistic). One short-sleep retry
+    /// absorbs the race; a second failure is a real error and propagates to the failure path.
+    static func endCollectionSettling(_ builder: HKLiveWorkoutBuilder?, at endDate: Date) async throws {
+        do {
+            try await builder?.endCollection(at: endDate)
+        } catch {
+            try? await Task.sleep(for: .seconds(1))
+            try await builder?.endCollection(at: endDate)
         }
     }
 

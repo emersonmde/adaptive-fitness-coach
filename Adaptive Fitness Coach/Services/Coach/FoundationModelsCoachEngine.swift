@@ -124,8 +124,15 @@ private final class FoundationModelsCoachSession: CoachSession, @unchecked Senda
                     var streamed = ""
                     for try await snapshot in session.streamResponse(to: message.text) {
                         let full = snapshot.content
-                        if full.count > streamed.count {
-                            continuation.yield(.textDelta(String(full.dropFirst(streamed.count))))
+                        if full.hasPrefix(streamed) {
+                            if full.count > streamed.count {
+                                continuation.yield(.textDelta(String(full.dropFirst(streamed.count))))
+                                streamed = full
+                            }
+                        } else if !full.isEmpty {
+                            // A snapshot that rewrote earlier content (seen around tool
+                            // calls) — count-based slicing would emit a garbled suffix.
+                            continuation.yield(.textReplace(full))
                             streamed = full
                         }
                     }

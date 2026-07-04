@@ -260,6 +260,27 @@ struct AdaptationPolicyTests {
         #expect(result.decision == .keepGoing)
     }
 
+    @Test func recoveryCreditLeaksAwayAcrossASignalGap() {
+        // Build 11 pin (N6): 9s of recovered evidence, then a long total dropout, then one
+        // recovered second — the pre-gap credit must NOT survive frozen and end the walk on
+        // that single post-gap reading. The gap leaks the accumulator like not-recovered.
+        var policy = AdaptationPolicy(config: AdaptationConfig(recoverWindow: 10, minWalkDuration: 0))
+        var elapsed: TimeInterval = 0
+        var decision: WalkDecision = .keepGoing
+        for signal in [Int?](repeating: 1, count: 9)          // zone 1 < target: recovered
+                     + [Int?](repeating: nil, count: 120)     // total dropout
+                     + [Int?](repeating: 1, count: 1) {       // one post-gap reading
+            elapsed += 1
+            decision = policy.evaluateWalk(
+                currentZone: signal, heartRate: nil, peakRunHeartRate: nil,
+                targetZone: targetZone, intervalElapsed: elapsed,
+                segmentTarget: 300, deltaTime: 1
+            )
+            if decision != .keepGoing { break }
+        }
+        #expect(decision == .keepGoing)
+    }
+
     @Test func recoverySignalNeedsToSustainTheConfirmWindow() {
         var policy = AdaptationPolicy(config: AdaptationConfig(recoverWindow: 10, minWalkDuration: 15))
         var elapsed: TimeInterval = 0

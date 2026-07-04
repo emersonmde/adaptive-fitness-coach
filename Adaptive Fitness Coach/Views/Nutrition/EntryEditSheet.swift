@@ -16,6 +16,10 @@ struct EntryEditSheet: View {
     @State private var date: Date
     @State private var error: String?
     @State private var saving = false
+    /// The number becomes "yours" only if you actually touched the field — inferring from
+    /// value comparison converted a range estimate to `.userStated` on ANY edit (slot/day),
+    /// silently destroying the honest range and its assumptions.
+    @State private var kcalEdited = false
     @Environment(\.dismiss) private var dismiss
 
     init(entry: MealEntry, recorder: any NutritionRecorder, onSaved: @escaping () -> Void) {
@@ -45,6 +49,7 @@ struct EntryEditSheet: View {
                                     .keyboardType(.numberPad)
                                     .font(.body.monospacedDigit())
                                     .foregroundStyle(Theme.textPrimary)
+                                    .onChange(of: kcalText) { kcalEdited = true }
                                     .accessibilityIdentifier("meal.edit.kcal")
                                 Text("kcal")
                                     .font(.subheadline)
@@ -74,9 +79,15 @@ struct EntryEditSheet: View {
 
                         Button(role: .destructive) {
                             Task {
-                                try? await recorder.delete(entryID: entry.id)
-                                onSaved()
-                                dismiss()
+                                do {
+                                    try await recorder.delete(entryID: entry.id)
+                                    onSaved()
+                                    dismiss()
+                                } catch {
+                                    // Same honesty as save(): a failed delete keeps the
+                                    // sheet open and says so, never a silent success.
+                                    self.error = "Couldn't delete the entry — try again."
+                                }
                             }
                         } label: {
                             Text("Delete entry")
@@ -103,7 +114,7 @@ struct EntryEditSheet: View {
     }
 
     private var kcalChanged: Bool {
-        Int(kcalText) != Int(entry.facts.energy.midpointKcal.rounded()) || entry.facts.energy.isRange
+        kcalEdited && Double(kcalText) != nil
     }
 
     private func save() async {

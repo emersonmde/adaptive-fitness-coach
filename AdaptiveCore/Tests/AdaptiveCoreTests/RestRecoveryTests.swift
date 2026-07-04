@@ -81,6 +81,21 @@ struct RestRecoveryModelTests {
         #expect(result!.endedAt < 120) // before the cap
     }
 
+    @Test func remainingIsSeedBasedUntilTheSeedThenCountsTheExtension() {
+        // Build 11 pin: the countdown must not flap ±extension on the instantaneous HR
+        // signal mid-rest — seed-based before the seed, cap-based only once actually in an
+        // unrecovered extension, 0 the moment recovery (or a time-only rest's seed) is met.
+        var model = RestRecoveryModel(seedDuration: 90, peakHeartRate: 160)
+        _ = model.tick(heartRate: 155, deltaTime: 30)   // unrecovered, mid-rest
+        #expect(model.remaining == 60)                  // seed − elapsed, NOT cap − elapsed
+        _ = model.tick(heartRate: 130, deltaTime: 1)    // instantaneously recovered
+        #expect(model.remaining == 59)                  // still seed-based — no jump
+        _ = model.tick(heartRate: 155, deltaTime: 65)   // past the seed, unrecovered again
+        #expect(model.remaining == 150 - 96)            // counts toward the cap (seed+60)
+        _ = model.tick(heartRate: 120, deltaTime: 1)    // recovered past the seed
+        #expect(model.remaining == 0)
+    }
+
     @Test func progressValuesAreClampedAndMeaningful() {
         var model = RestRecoveryModel(seedDuration: 60, peakHeartRate: 160)
         #expect(model.recoveryProgress == nil) // no sample yet

@@ -116,6 +116,22 @@ struct RoutineStoreTests {
         #expect(push?.exerciseItems.first?.seedWeight == .lb(25))
     }
 
+    @Test func importMatchesNamesFoldedSoTheGraftNeverMissesOnCase() {
+        // Build 11 pin: the exchange contract tells the model "the app matches by name" —
+        // an LLM's "push day " for "Push Day" must merge (else: duplicate routine, silent
+        // graft bypass). The existing routine keeps its own casing and identity.
+        let store = makeStore()
+        let existing = run("Push Day", days: [.monday])
+        store.add(existing)
+        let revised = run("  push day ", days: [.friday])
+        let result = store.importRoutines([revised])
+        #expect(result.updated == 1)
+        #expect(result.added == 0)
+        #expect(store.routines.count == 1)
+        #expect(store.routines.first?.name == "Push Day")
+        #expect(store.routines.first?.id == existing.id)
+    }
+
     @Test func routinesOnDaySortedByTime() {
         let store = makeStore()
         store.add(run("Evening", at: ScheduleTime(hour: 18, minute: 0), days: [.monday]))

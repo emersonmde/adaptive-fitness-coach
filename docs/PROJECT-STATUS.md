@@ -262,6 +262,64 @@ target) answered in one build. All on existing seams; AdaptiveCore still zero-de
   evolution, controller when-state) → 339 total; MealFlowUITests grew 5 → 10 (typed+stated,
   backdate, target+gauge, edit, log again).
 
+### Build 10 on-device feedback fixes (2026-07-03, uncommitted → next build)
+First real-device meal-logging session surfaced three issues; all fixed:
+- **Crash on Log (fixed)**: `HealthKitNutritionRecorder.requestAuthorization` had
+  `HKCorrelationType(.food)` in its *read* set — correlation types are disallowed in
+  authorization requests and raise `NSInvalidArgumentException` the moment the first commit
+  asks for Health access (before anything was queued/written, hence "nothing logged" after
+  relaunch). Correlations need no grant of their own; the contained quantity types carry
+  authorization. The sim never hit it because `-simulateMealScan` uses the in-memory recorder.
+- **Continuous flow surface**: the confirmation sheet now presents the moment identify starts
+  (progress state), not seconds later — previously the typed/capture sheet closed into
+  silence while the model ran. Identify failure is a new `Phase.failed` shown in-sheet with
+  Try Again (was: silent drop to idle with the error invisible).
+- **Numbers before Log (supersedes C2's "no calories on confirmation")**: user verdict from
+  on-device use — seller/calories/source are needed *before* confirming, particularly to
+  adjust them. `MealLogController` now pre-resolves checked items sequentially while the
+  confirmation screen is open (`resolutions`, epoch-guarded invalidation on rename/answer);
+  each row shows "460 kcal · Open Food Facts"-style number+provenance (or "Looking up…"),
+  tappable to override → `statedFacts`/`.userStated` (macros kept, same semantics as the
+  post-hoc edit). A checked-set total shows once every number is in. Commit records exactly
+  what the screen showed (no re-lookup); §5's rule survives — unchecked items still never
+  spend a lookup. ~6 new controller tests (incl. a counting-adjudicator reuse pin) → 355.
+
+### Build 11 — senior-engineer review sweep (2026-07-03, whole project)
+A four-area review (package nutrition / package engine+coach / phone / watch) surfaced and
+fixed, all pinned by new tests where the seam allows (369 package tests):
+- **Meal logging**: commit re-entrancy (double-tap Log recorded every item twice — now an
+  `isCommitting` latch); the Log tap now queues ALL checked items up front (an abort
+  mid-commit no longer loses unreached items); `statedFacts` + chosen meal slot survive the
+  pending-queue round trip (a crash no longer replaces the user's number with a lookup);
+  stale auth error cleared on success; itemStatuses reset per session; capture-date prefill
+  clamped to now; resolve loops chain strictly sequentially (PCC-rate); rename drops the
+  override's inherited macros; "Calories from Fat" can't parse as energy.
+- **Recorder/HealthKit (phone)**: `observeChanges` closure API → `changes() AsyncStream`
+  (the old one executed a fresh never-stopped HKObserverQuery per screen appearance); one
+  lazy observer query fans out to auto-cancelling streams. Delete failures now surface.
+- **Phone**: warm-start Siri/App-Intent routing read `@Published` during willSet and dropped
+  the request (deferred one main-actor turn); Vision OCR continuation could double-resume
+  (crash) — one-shot latch; coach proposal "Review & apply" now keyed per transcript entry
+  (was: one apply hid the button on every later proposal); `afcoach://start/<id>` now
+  navigates to the routine; range-estimate entries no longer silently become `.userStated`
+  on unrelated edits; capture Cancel cancels an in-flight OCR forward; inline editors commit
+  on focus loss; coach stream gains `textReplace` for snapshot rewrites.
+- **Engine/coach (package)**: rest countdown no longer flaps ±60s on instantaneous HR
+  (seed-based until the seed); a walk's recovery credit now leaks across signal dropouts
+  (N6 — was frozen); `importRoutines` matches names folded (trimmed/case-insensitive — the
+  graft contract the coach prompt promises); `CoachConversation.cancel()` clears the
+  streaming slot + bumps the turn token; exchange decode failures in our own schema surface
+  as `malformedRoutines(detail)` instead of "isn't JSON".
+- **Watch**: see the watch-fixes summary in this section's companion commit — session
+  recovery after a crash (recover-and-finalize), leaked-session guard on failed starts,
+  zone/HR staleness expiry (N6), endCollection retry, complication invalidation on sync,
+  effort-write timeout, pre-activation progression buffering, launch-request re-match.
+- **Deferred knowingly**: record→remove at-least-once window (rare duplicate beats a lost
+  meal — documented in commit()); watch context-vs-userInfo seed regression window
+  (converges; needs seed versioning); expandedCards/WorkoutBlock identity traps documented
+  instead of re-keyed; engine elapsed-clamp drift vs HKWorkout duration (deliberate,
+  documented).
+
 ### P4 original spec pointer (history)
 Full product spec: **`docs/calorie-tracking-spec.md`** (read it first — it carries the P4
 non-negotiables C1–C7, the staged LLM pipeline, open questions CQ1–CQ5, and §9 "Direction for
