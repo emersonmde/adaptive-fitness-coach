@@ -56,20 +56,36 @@ public enum MealPromptBuilder {
         Rules:
         - One typed description is usually ONE item; split only when two foods are clearly \
         listed ("burger and fries" stays one meal item only if it's a named combo).
+        - "from X" or "at X" at the end of the text names the seller: extract X as the \
+        seller (official branding, domain if you know it) and REMOVE the clause from the \
+        item name. Never leave a named seller out of your answer.
         - Never invent details that aren't in the text; keep unknown foods as written, \
         spelling-corrected.
         - Ask a clarifying question ONLY when the answer would materially change calories.
         """
     }
 
-    public static func typedEntryPrompt(text: String) -> String {
-        """
+    /// `sellerCandidate` is `TypedSellerParser`'s structural read of a trailing "from/at X"
+    /// clause — handed to the model as a hint so parser and model cooperate: the model
+    /// confirms it, corrects it to official branding (with domain), or rejects it when the
+    /// clause isn't really a seller. Code still floors on the parsed candidate if the model
+    /// returns none (the user's words outrank a small model's omission).
+    public static func typedEntryPrompt(text: String, sellerCandidate: String? = nil) -> String {
+        var prompt = """
         Typed description:
         ---
         \(text)
         ---
         Identify the seller (if any) and the food item(s).
         """
+        if let sellerCandidate {
+            prompt += """
+            \nThe text appears to name the seller "\(sellerCandidate)" — confirm it \
+            (correcting to the official brand name and domain), or reject it if it is not \
+            actually a store/restaurant/brand.
+            """
+        }
+        return prompt
     }
 
     // MARK: - Stage 4: search + adjudication (rung 2)
@@ -132,13 +148,15 @@ public enum MealPromptBuilder {
 
         From these excerpts only, determine the calories (kcal) and macros for one serving of \
         this exact item. Rules:
-        - Use a number only if an excerpt actually states it for this item (same seller, same \
-        size). Do not average unrelated items or guess.
-        - Prefer the seller's own site; otherwise a nutrition database or menu aggregator is \
-        acceptable — report which source URL you used.
-        - If the excerpts do not contain a defensible number for this item, say the lookup \
-        failed rather than approximating. A wrong-but-confident number is the one \
-        unacceptable failure.
+        - Use a number only if an excerpt actually states it. Never average unrelated items \
+        or guess; report the single source URL you used.
+        - Source preference, in strict order: (1) the seller's own site or menu data for \
+        this exact item; (2) this seller's item in a nutrition database or menu aggregator; \
+        (3) ONLY when the excerpts contain nothing for this seller — many restaurants \
+        publish no nutrition data — a clearly comparable generic version of the same dish \
+        from a reputable database is acceptable.
+        - If not even a comparable generic item appears, say the lookup failed rather than \
+        approximating. A wrong-but-confident number is the one unacceptable failure.
         """)
         return lines.joined(separator: "\n")
     }

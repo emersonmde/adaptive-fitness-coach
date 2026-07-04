@@ -320,6 +320,86 @@ fixed, all pinned by new tests where the seam allows (369 package tests):
   instead of re-keyed; engine elapsed-clamp drift vs HKWorkout duration (deliberate,
   documented).
 
+### Post-build-11 on-device feedback: typed seller extraction + graded lookup fallback (2026-07-03)
+"chicken ceaser salad from salad works" logged with NO seller (the on-device model silently
+dropped it) and a generic eatthismuch.com hit. Two changes, both user-directed:
+- **`TypedSellerParser`** (package): trailing "from/at <seller>" clauses parse
+  deterministically. Division of labor (refined after user review): the MODEL stays the
+  primary seller extractor (branding, spelling, domain — and the only reader of
+  receipts/labels; its `sellerName` guide was receipt-biased "as printed", likely the real
+  root cause of the drop); the parser's candidate now goes INTO the typed prompt as a hint
+  the model confirms/corrects/rejects, and code floors on it only when the model returns no
+  seller (accepted trade: omission ≫ deliberate rejection from a small model; a wrong
+  seller is visible+editable, a dropped one silently degrades the lookup). Wired in both
+  typed paths; blocklist covers home/preparation sources ("from scratch/a mix/powder/…");
+  last-marker-wins ("deli counter at Wegmans" → Wegmans).
+- **Graded adjudication fallback** (user decision): source preference in strict order —
+  seller's own site → this seller's item in a database/aggregator → a clearly comparable
+  GENERIC dish when the seller publishes nothing (many restaurants don't) → only then fail
+  to the estimate rung. Previously a seller match was all-or-nothing: no seller data meant
+  skipping a usable generic number and landing on the wide estimate range.
+Pinned: TypedSellerParserTests (7 cases), typed-seller controller test, prompt-ladder pin
+in ExcerptReducerTests.
+
+Second feedback round (same session):
+- **`MealEntry.seller`** (additive Codable + AFCSellerName/Domain HK metadata): the seller
+  now survives to the day rows ("Saladworks · verified · saladworks.com") and the edit
+  sheet. `Provenance.detailLabel` names the actual source everywhere — the bare word
+  "database" answered nothing.
+- **Edit sheet: restaurant field + "Look up again"** — edit name/seller and re-run the
+  ladder (`MealPipelineProvider.makeResolver()`, scripted in the sim); the fresh
+  facts/provenance record on Save unless the user types over the kcal (→ `.userStated`,
+  macros kept). This is the "fix the seller, find MY salad" loop.
+- **Day pager: tap the title on a past day to jump back to Today** (was: page one day at a
+  time). "Trends in Health" now tries `x-apple-health://browse/nutrition` (undocumented but
+  community-established; unrecognized paths degrade to just opening Health — verify the
+  room actually opens on device).
+→ 379 package tests; MealFlowUITests 12 (rescan flow + title jump).
+
+### Build 12 — design-review sweep (2026-07-03/04, both apps; user-selected all four batches)
+A senior-designer pass over every screen (novice + experienced personas), then fixes:
+- **Watch**: crown no longer auto-focuses the effort rater (scrolling the summary silently
+  SET A RATING — the progression signal; now tap-to-focus with the crown glyph affordance +
+  VoiceOver adjustable); rest renders inside the pager so End stays one swipe away
+  (was: wedged for the whole rest); the interval timer counts DOWN
+  (`intervalRemaining`, tests pinned) — "how much longer" is the glance answer; crown rep
+  cap raised to max(30, 2×prescription) so overshoots (progression evidence!) record.
+- **Meal flow**: commit bar (total + Log) pinned via safeAreaInset — it scrolled away on
+  big receipts; Log disabled while any checked item is still looking up (never commit an
+  unseen number; bounded by the ladder's always-answers guarantee); stable CTA label;
+  reserved quantity-stepper slot; rename pencil affordance on item names; shutter now
+  freezes the frame + haptic + "Reading…" during OCR (zero-feedback tap read as a miss);
+  typed pill moved clear of the shutter; camera-unavailable gained Open Settings.
+- **Routines/coach**: routine RENAME (detail view — name is the coach-merge key);
+  exercise library search; builder back-swipe guarded by a discard dialog (silently lost
+  the whole card stack); unscheduled routines allowed (empty repeat days verified safe);
+  ImportRoutinesSheet brought to parity with the chat proposal card (NEW/UPDATES badges,
+  days, "replaces N cards — progression carries over" diff, pinned Apply); coach
+  unavailable state gained "Build it yourself" → manual builder; "Draft the plan now" is
+  a real chip; run notation humanized ("5 warm · 20 run · 5 cool").
+- **Hub/day (earlier in the sweep)**: gauge caption shows kcal LEFT (was a duplicate of
+  the target); meal-section subtotals; delete = confirm-first everywhere; keyboard Done;
+  week strip shows DONE checks read back from Health (`WorkoutWeekHistory`,
+  workoutType read rides the meal-auth prompt; facts not streaks); bottom "New routine"
+  CTA removed once routines exist; day-title tap jumps back to Today;
+  `x-apple-health://browse/nutrition` deep-link attempt.
+- **Contrast pass**: provenance/"Looking up…"/prefill/honesty strings promoted from the
+  lowest tier (caption2+tertiary) to legible secondary, per the Theme's own floor.
+- Checkbox/effort VoiceOver labels + adjustable actions.
+- **Cross-suite MealFlow flake ROOT-CAUSED** (supersedes the earlier "launch-storm timing"
+  guess, and my first race hypothesis): the Xcode TEMPLATE UI tests were the poison —
+  `Adaptive_Fitness_CoachUITestsLaunchTests` (`runsForEachTargetApplicationUIConfiguration`)
+  leaves the Xcode-27-beta simulator's UI configuration wedged (`simctl ui appearance` →
+  "unknown"), after which **fullScreenCover presentation silently fails app-wide** while
+  sheets/navigation keep working — so every MealFlow test died at the capture cover
+  whenever the full bundle ran (template suites run first alphabetically), yet every
+  hand-picked suite combination passed. Both template files deleted (a launch screenshot
+  and an unread launch metric; the real coverage is the three flow suites). MealFlow
+  helpers also hardened while diagnosing (settle on sheet nonexistence, waited taps, one
+  scan retry + explicit cover assertion) — kept, they make the suite honest about
+  presentation failures.
+Watch: 55 unit tests green (2 new); phone suites green serially; package 380.
+
 ### P4 original spec pointer (history)
 Full product spec: **`docs/calorie-tracking-spec.md`** (read it first — it carries the P4
 non-negotiables C1–C7, the staged LLM pipeline, open questions CQ1–CQ5, and §9 "Direction for

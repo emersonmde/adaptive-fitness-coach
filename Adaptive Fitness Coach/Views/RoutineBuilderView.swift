@@ -18,8 +18,17 @@ struct RoutineBuilderView: View {
     @State private var rounds = 1
     @State private var showingLibrary = false
     @State private var loaded = false
+    @State private var confirmingDiscard = false
+    @Environment(\.dismiss) private var dismiss
 
     private var addedIDs: Set<String> { Set(cards.compactMap(\.exercise).map(\.exerciseId)) }
+
+    /// Whether the working stack differs from what the builder was opened with. Gates the
+    /// discard guard: back stays a plain instant pop until there's actually work to lose
+    /// (`WorkoutCard` is Hashable, so this is a real value comparison, not identity).
+    private var hasChanges: Bool {
+        loaded && (cards != initialCards || rounds != max(1, initialRounds))
+    }
 
     /// Rounds only matters once there's something to repeat beyond a single run.
     private var showsRounds: Bool {
@@ -37,7 +46,22 @@ struct RoutineBuilderView: View {
         }
         .navigationTitle("Build Routine")
         .navigationBarTitleDisplayMode(.inline)
+        // Backing out silently threw away the assembled stack. Once there are unsaved
+        // changes, replace the system back button (which also disables the edge-swipe pop —
+        // the gesture would bypass any guard) with one that asks first. With no changes the
+        // system button and swipe-back remain, so the common case stays instant.
+        .navigationBarBackButtonHidden(hasChanges)
         .toolbar {
+            if hasChanges {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        confirmingDiscard = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.backward")
+                    }
+                    .accessibilityIdentifier("builderBack")
+                }
+            }
             if cards.count > 1 {
                 ToolbarItem(placement: .topBarLeading) { EditButton() }
             }
@@ -45,6 +69,10 @@ struct RoutineBuilderView: View {
                 Button("Save") { onCommit(cards, rounds) }
                     .disabled(cards.isEmpty)
             }
+        }
+        .confirmationDialog("Discard changes?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
+            Button("Discard Changes", role: .destructive) { dismiss() }
+            Button("Keep Editing", role: .cancel) {}
         }
         .sheet(isPresented: $showingLibrary) {
             ExerciseLibraryView(alreadyAdded: addedIDs) { picks in
@@ -85,7 +113,13 @@ struct RoutineBuilderView: View {
                 .onMove { cards.move(fromOffsets: $0, toOffset: $1) }
                 .onDelete { cards.remove(atOffsets: $0) }
             } footer: {
-                Text("Drag to reorder · swipe to remove. Weights are a starting point — adjust them on your watch any time.")
+                // Honest affordance copy: these rows are dense with buttons and steppers that
+                // swallow a long-press, so drag-to-reorder only reliably works in the List's
+                // edit mode (the toolbar Edit button, shown once there are 2+ cards) — don't
+                // advertise a gesture the screen can't deliver.
+                Text(cards.count > 1
+                     ? "Tap Edit to reorder · swipe to remove. Weights are a starting point — adjust them on your watch any time."
+                     : "Swipe to remove. Weights are a starting point — adjust them on your watch any time.")
                     .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
             }

@@ -16,18 +16,33 @@ struct StrengthSessionPager: View {
     private enum Page { case controls, glance, exercise }
 
     var body: some View {
-        if manager.activity == .rest {
-            // A rest card takes over the whole screen — nothing to do but recover. State is
-            // manager-owned and resets per card, so back-to-back rests just work.
-            RestView(manager: manager)
-        } else {
-            TabView(selection: $selection) {
-                StrengthControlsView(manager: manager).tag(Page.controls)
-                StrengthGlanceView(manager: manager) { withAnimation { selection = .exercise } }
-                    .tag(Page.glance)
+        TabView(selection: $selection) {
+            StrengthControlsView(manager: manager).tag(Page.controls)
+            // During a rest the *glance page* becomes the rest card — inside the pager, not
+            // replacing it, so End stays one swipe away for the whole rest ("always an exit",
+            // DESIGN-PRINCIPLES #13; an earlier build swapped the entire TabView for RestView
+            // and wedged the user until READY). Rest state is manager-owned and resets per
+            // card, so back-to-back rests just work.
+            Group {
+                if manager.activity == .rest {
+                    RestView(manager: manager)
+                } else {
+                    StrengthGlanceView(manager: manager) { withAnimation { selection = .exercise } }
+                }
+            }
+            .tag(Page.glance)
+            // The Exercise page is setup for the *current* movement; a rest card has none, so
+            // the page drops out rather than showing an eternal spinner. Dropping it also
+            // means a swipe right from the rest card can't land anywhere confusing.
+            if manager.activity != .rest {
                 ExerciseDetailView(manager: manager).tag(Page.exercise)
             }
-            .tabViewStyle(.page)
+        }
+        .tabViewStyle(.page)
+        .onChange(of: manager.activity) { _, activity in
+            // Snap home when a rest begins: the recovery ring should greet the user wherever
+            // they were, and the selection must leave the Exercise page before it vanishes.
+            if activity == .rest { withAnimation { selection = .glance } }
         }
     }
 }
@@ -177,7 +192,12 @@ struct StrengthGlanceView: View {
         .digitalCrownRotation(
             $crownValue,
             from: 0,
-            through: Double((item?.reps ?? 0) + 5),
+            // Headroom above the prescription, not a lid on it: an athlete repping 20 when 10
+            // was prescribed is producing exactly the progression evidence the app exists to
+            // capture — the old `prescription + 5` cap silently discarded it. Double the
+            // prescription (with a 30-rep floor for low prescriptions) covers any plausible
+            // set without turning the crown into an endless dial.
+            through: Double(max(30, (item?.reps ?? 0) * 2)),
             by: 1,
             sensitivity: .medium,
             isContinuous: false,
@@ -331,8 +351,9 @@ struct ExerciseDetailView: View {
     }
 }
 
-/// A rest card — full-screen recovery between sets, rendered from manager state (the manager
-/// owns the clock and the `RestRecoveryModel`).
+/// A rest card — the glance page during recovery between sets, rendered from manager state
+/// (the manager owns the clock and the `RestRecoveryModel`). Lives *inside* the session pager
+/// (controls stay one swipe away), so it uses the paged background idiom like its siblings.
 ///
 /// Two honest modes, one ring, one variable (DESIGN-PRINCIPLES): with heart rate on an
 /// adaptive rest, a **strength-blue ring fills** with recovery progress while the falling HR
@@ -349,69 +370,67 @@ struct RestView: View {
     private var ringColor: Color { hrMode ? WatchTheme.strength : WatchTheme.heat }
 
     var body: some View {
-        ZStack {
-            WatchTheme.strengthField.ignoresSafeArea()
-            VStack(spacing: 12) {
-                Text(ready ? "READY" : "REST")
-                    .font(.caption.weight(.semibold))
-                    .tracking(2)
-                    .foregroundStyle(ready ? WatchTheme.strength : ringColor)
-                    .animation(.easeInOut(duration: 0.3), value: ready)
+        VStack(spacing: 12) {
+            Text(ready ? "READY" : "REST")
+                .font(.caption.weight(.semibold))
+                .tracking(2)
+                .foregroundStyle(ready ? WatchTheme.strength : ringColor)
+                .animation(.easeInOut(duration: 0.3), value: ready)
 
-                ZStack {
-                    Circle().stroke(ringColor.opacity(0.18), lineWidth: 7)
-                    Circle()
-                        .trim(from: 0, to: hrMode ? manager.restReadiness : timeFraction)
-                        .stroke(ringColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .shadow(color: ready ? WatchTheme.strength.opacity(0.5) : .clear, radius: 5)
-                        .animation(.easeInOut(duration: reduceMotion ? 0 : 0.6), value: hrMode ? manager.restReadiness : timeFraction)
+            ZStack {
+                Circle().stroke(ringColor.opacity(0.18), lineWidth: 7)
+                Circle()
+                    .trim(from: 0, to: hrMode ? manager.restReadiness : timeFraction)
+                    .stroke(ringColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .shadow(color: ready ? WatchTheme.strength.opacity(0.5) : .clear, radius: 5)
+                    .animation(.easeInOut(duration: reduceMotion ? 0 : 0.6), value: hrMode ? manager.restReadiness : timeFraction)
 
-                    if hrMode {
-                        // The falling heart rate is the hero — watching it refill the ring is
-                        // the point; the clock is ambient.
-                        VStack(spacing: 2) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "heart.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(WatchTheme.hot)
-                                Text(manager.currentHeartRate > 0 ? "\(Int(manager.currentHeartRate))" : "--")
-                                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                                    .monospacedDigit()
-                                    .contentTransition(.numericText())
-                                    .foregroundStyle(.white)
-                            }
-                            Text(manager.restRemaining.clockString)
-                                .font(.caption2)
+                if hrMode {
+                    // The falling heart rate is the hero — watching it refill the ring is
+                    // the point; the clock is ambient.
+                    VStack(spacing: 2) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "heart.fill")
+                                .font(.caption)
+                                .foregroundStyle(WatchTheme.hot)
+                            Text(manager.currentHeartRate > 0 ? "\(Int(manager.currentHeartRate))" : "--")
+                                .font(.system(size: 28, weight: .bold, design: .rounded))
                                 .monospacedDigit()
-                                .foregroundStyle(WatchTheme.textSecondary)
+                                .contentTransition(.numericText())
+                                .foregroundStyle(.white)
                         }
-                    } else {
                         Text(manager.restRemaining.clockString)
-                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .font(.caption2)
                             .monospacedDigit()
-                            .foregroundStyle(.white)
+                            .foregroundStyle(WatchTheme.textSecondary)
                     }
-                }
-                .frame(width: 104, height: 104)
-
-                if ready {
-                    Button {
-                        manager.advance()
-                    } label: {
-                        Label("Start next set", systemImage: "arrow.right")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(WatchTheme.strength)
                 } else {
-                    Button("Skip rest") { manager.skipRest() }
-                        .buttonStyle(.bordered)
-                        .tint(ringColor)
+                    Text(manager.restRemaining.clockString)
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
                 }
             }
+            .frame(width: 104, height: 104)
+
+            if ready {
+                Button {
+                    manager.advance()
+                } label: {
+                    Label("Start next set", systemImage: "arrow.right")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(WatchTheme.strength)
+            } else {
+                Button("Skip rest") { manager.skipRest() }
+                    .buttonStyle(.bordered)
+                    .tint(ringColor)
+            }
         }
+        .pagedWorkoutBackground(WatchTheme.strengthField)
         .animation(.easeInOut(duration: 0.25), value: ready)
     }
 

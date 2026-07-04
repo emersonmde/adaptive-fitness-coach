@@ -47,8 +47,11 @@ final class CoachFlowUITests: XCTestCase {
         XCTAssertTrue(review.waitForExistence(timeout: 10))
         review.tap()
 
-        XCTAssertTrue(app.staticTexts["NEW · COACHED STRENGTH A"].waitForExistence(timeout: 5))
-        app.buttons["Apply"].tap()
+        // The review sheet shows each incoming routine with a NEW/UPDATES badge (both
+        // scripted routines are new against the empty -uiTesting store).
+        XCTAssertTrue(app.staticTexts["Coached Strength A"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["NEW"].firstMatch.exists)
+        app.buttons["Apply"].firstMatch.tap()
 
         // Applied confirmation shows in the chat; done → routines are on the week screen.
         XCTAssertTrue(app.staticTexts["Applied — updated 0, added 2."].waitForExistence(timeout: 5))
@@ -101,7 +104,12 @@ final class CoachFlowUITests: XCTestCase {
         coachDoor.tap()
 
         XCTAssertTrue(app.staticTexts["Coach unavailable"].waitForExistence(timeout: 5))
-        app.buttons["coachDone"].tap()
+
+        // The unavailable state is never a dead end: "Build it yourself" exits to the manual
+        // path (dismisses the sheet; the presenter may then open the builder).
+        let fallback = app.buttons["coachBuildManually"]
+        XCTAssertTrue(fallback.waitForExistence(timeout: 5))
+        fallback.tap()
         XCTAssertTrue(app.staticTexts["No routines yet"].waitForExistence(timeout: 5))
     }
 }

@@ -19,6 +19,11 @@ struct CoachLaunch: Identifiable {
 struct CoachChatView: View {
     let store: RoutineStore
     let intent: CoachIntent
+    /// Invoked (after this sheet dismisses) when the user taps "Build it yourself" on the
+    /// unavailable state — the presenter opens the manual builder. Optional so presenters that
+    /// haven't wired a manual path yet still get a working exit: with no callback the button
+    /// simply dismisses, which is strictly better than the dead end it replaces (principle 13).
+    var onFallbackToManual: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
 
@@ -53,7 +58,9 @@ struct CoachChatView: View {
             }
             .sheet(item: $pendingImport) { candidate in
                 ImportRoutinesSheet(candidate: candidate,
-                                    existingNames: Set(store.routines.map(\.name))) { incoming in
+                                    existingNames: Set(store.routines.map(\.name)),
+                                    existingCardCounts: Dictionary(store.routines.map { ($0.name, $0.cards.count) },
+                                                                   uniquingKeysWith: { first, _ in first })) { incoming in
                     let result = store.importRoutines(incoming)
                     Task { await CalendarService.shared.syncAll(store.routines) }
                     if let applyingEntryID {
@@ -240,9 +247,11 @@ struct CoachChatView: View {
 
             if proposal.droppedCardCount > 0 {
                 // Honesty line (N6): validation removed movements the app can't coach yet.
+                // Load-bearing string, so legible: footnote (13pt) + secondary, never tertiary
+                // (the Theme token itself says tertiary is for >= 13pt, sparingly).
                 Text("\(proposal.droppedCardCount) movement\(proposal.droppedCardCount == 1 ? " was" : "s were") left out — the app can't coach them yet.")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
             }
 
             if let applied = appliedResults[entryID] {
@@ -302,12 +311,20 @@ struct CoachChatView: View {
                         }
                     }
                 } else if conversation.latestProposal == nil, !conversation.isResponding {
-                    // Quiet skip-ahead for users done talking (the model normally decides).
-                    Button("Draft the plan now") {
+                    // Skip-ahead for users done talking (the model normally decides when to
+                    // draft). Rendered as the same capsule chip as the one-tap answers above —
+                    // a bare tertiary caption read as a status line, not a control.
+                    Button {
                         conversation.send("Draft the plan now with what you know so far.")
+                    } label: {
+                        Label("Draft the plan now", systemImage: "wand.and.stars")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(Theme.textPrimary)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(Theme.surface2, in: Capsule())
+                            .overlay(Capsule().strokeBorder(Theme.hairline))
                     }
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Theme.textTertiary)
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("coachDraftNow")
                 }
             }
@@ -356,12 +373,23 @@ struct CoachChatView: View {
             Text("Coach unavailable")
                 .font(.title3.bold())
                 .foregroundStyle(Theme.textPrimary)
+                // The state marker lives on the title, NOT the enclosing VStack: a container
+                // identifier propagates onto every descendant element in the XCUI tree,
+                // clobbering the fallback button's own identifier below.
+                .accessibilityIdentifier("coachUnavailable")
             Text(reason)
                 .font(.subheadline)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
+            // Failure screens always have an exit (principle 13): the coach being down never
+            // blocks building a plan — hand the user straight to the manual card builder.
+            PrimaryButton(title: "Build it yourself", systemImage: "square.stack.3d.up") {
+                dismiss()
+                onFallbackToManual?()
+            }
+            .accessibilityIdentifier("coachBuildManually")
+            .padding(.top, 10)
         }
         .padding(32)
-        .accessibilityIdentifier("coachUnavailable")
     }
 }

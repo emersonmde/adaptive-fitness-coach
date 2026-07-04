@@ -76,4 +76,35 @@ struct ExcerptReducerTests {
         #expect(prompt.count < 5_100, "prompt is \(prompt.count) chars")
         #expect(prompt.contains("460 Cal"))
     }
+
+    @Test func adjudicationPromptCarriesTheSourcePreferenceLadder() {
+        // Pin the graded-fallback policy (user decision, 2026-07-03): seller's own data
+        // first, this seller's item in a database second, a comparable GENERIC dish only
+        // when the seller publishes nothing — never a flat refusal that skips a usable
+        // generic number and dead-ends into the estimate range.
+        let prompt = MealPromptBuilder.adjudicationPrompt(
+            item: DraftItem(name: "Chicken Caesar Salad"),
+            seller: Seller(name: "Saladworks"),
+            answers: [],
+            excerpts: [SearchExcerpt(title: "t", excerpt: "e")],
+            budget: .privateCloud
+        )
+        #expect(prompt.contains("Seller: Saladworks"))
+        #expect(prompt.contains("strict order"))
+        #expect(prompt.contains("comparable generic version"))
+        #expect(prompt.contains("say the lookup failed"))
+    }
+
+    @Test func typedPromptHandsTheModelTheParsedSellerCandidate() {
+        // Parser + model cooperate: the structural "from X" read goes into the prompt as a
+        // hint the model confirms/corrects/rejects — not a silent post-hoc override.
+        let hinted = MealPromptBuilder.typedEntryPrompt(
+            text: "chicken ceaser salad from salad works",
+            sellerCandidate: "Salad Works"
+        )
+        #expect(hinted.contains("appears to name the seller \"Salad Works\""))
+        #expect(hinted.contains("reject it"))
+        // No candidate → no hint block.
+        #expect(!MealPromptBuilder.typedEntryPrompt(text: "chicken salad").contains("appears to name"))
+    }
 }

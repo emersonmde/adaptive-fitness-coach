@@ -20,7 +20,7 @@ struct WorkoutActiveView: View {
     /// True in the final few seconds before a switch — when the timer brightens/pulses so the
     /// haptic isn't the user's only warning.
     private var nearingSwitch: Bool {
-        let remaining = manager.intervalTarget - manager.intervalElapsed
+        let remaining = manager.intervalRemaining
         return manager.intervalTarget > 0 && remaining > 0 && remaining <= 5
     }
 
@@ -81,10 +81,12 @@ struct WorkoutActiveView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)
                     .scaleEffect(mismatchPulse ? 1.12 : 1.0)
-                // The timer doubles as the pre-switch cue: in the final seconds it shifts to the
-                // phase color and gently pulses, so the upcoming switch is anticipated visually
-                // (N5) without adding another stacked line to the bottom.
-                Text(manager.intervalElapsed.clockString)
+                // The interval timer counts DOWN (remaining, not elapsed): mid-effort the only
+                // question is "how much longer" — the count-up job belongs to the session clock
+                // in the corner. It doubles as the pre-switch cue: in the final seconds it
+                // shifts to the phase color and gently pulses, so the upcoming switch is
+                // anticipated visually (N5) without adding another stacked line to the bottom.
+                Text(manager.intervalRemaining.clockString)
                     .font(.system(.title2, design: .rounded, weight: .bold))
                     .monospacedDigit()
                     .foregroundStyle(nearingSwitch ? tint : Color.white)

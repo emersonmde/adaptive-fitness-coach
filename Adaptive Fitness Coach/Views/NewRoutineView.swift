@@ -13,7 +13,11 @@ struct NewRoutineView: View {
     @State private var showingBuilder = false
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespaces) }
-    private var canContinue: Bool { !trimmedName.isEmpty && !selectedDays.isEmpty }
+    /// Only the name gates Next. Repeat days are optional: an unscheduled routine is a real
+    /// thing (started ad hoc from the watch, shown without day badges on the week screen),
+    /// and days stay editable later in the routine's detail — requiring them here forced a
+    /// fake commitment before the routine even existed.
+    private var canContinue: Bool { !trimmedName.isEmpty }
 
     var body: some View {
         NavigationStack {
@@ -28,7 +32,12 @@ struct NewRoutineView: View {
                         }
 
                         FieldSection(title: "REPEAT DAYS") {
-                            DayPicker(selection: $selectedDays)
+                            VStack(alignment: .leading, spacing: 10) {
+                                DayPicker(selection: $selectedDays)
+                                Text("Optional — leave empty for an unscheduled routine you start any time. You can add days later.")
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
                         }
 
                         Text("Next, build the routine from cards — a run, strength moves, and rests, in any order.")

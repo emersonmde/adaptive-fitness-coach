@@ -13,13 +13,27 @@ struct ExerciseLibraryView: View {
 
     @State private var selected: Set<String> = []
     @State private var infoExercise: Exercise?
+    @State private var query = ""
 
     /// The catalog grouped by the first muscle tag, in a stable order, for sectioned browsing.
+    /// Search filters within the same grouped layout (sections whose exercises all miss just
+    /// drop out) so results stay anchored to the muscle taxonomy the browse view teaches.
     private var groups: [(muscle: String, exercises: [Exercise])] {
-        let byMuscle = Dictionary(grouping: ExerciseLibrary.all) { $0.muscleTags.first ?? "Other" }
+        let byMuscle = Dictionary(grouping: ExerciseLibrary.all.filter(matchesQuery)) {
+            $0.muscleTags.first ?? "Other"
+        }
         return byMuscle
             .map { (muscle: $0.key, exercises: $0.value.sorted { $0.name < $1.name }) }
             .sorted { $0.muscle < $1.muscle }
+    }
+
+    /// Name or any muscle tag, case/diacritic-insensitively — "chest" finds the bench presses
+    /// even though the word appears only in their tags.
+    private func matchesQuery(_ exercise: Exercise) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return true }
+        if exercise.name.localizedStandardContains(trimmed) { return true }
+        return exercise.muscleTags.contains { $0.localizedStandardContains(trimmed) }
     }
 
     var body: some View {
@@ -28,6 +42,10 @@ struct ExerciseLibraryView: View {
                 Theme.bg.ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
+                        if groups.isEmpty {
+                            ContentUnavailableView.search(text: query)
+                                .padding(.top, 40)
+                        }
                         ForEach(groups, id: \.muscle) { group in
                             FieldSection(title: group.muscle.uppercased()) {
                                 VStack(spacing: 0) {
@@ -44,6 +62,8 @@ struct ExerciseLibraryView: View {
                     .padding(16)
                 }
             }
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
+                        prompt: "Exercise or muscle")
             .navigationTitle("Add Exercises")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(item: $infoExercise) { ExerciseInfoSheet(exercise: $0) }

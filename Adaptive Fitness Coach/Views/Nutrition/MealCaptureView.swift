@@ -17,6 +17,9 @@ struct MealCaptureView: View {
     @State private var cancelled = false
     @State private var cameraFailed = false
     @State private var showingTypedEntry = false
+    /// The captured frame, frozen on screen while OCR runs — a shutter tap with zero
+    /// feedback reads as a miss and invites a second tap.
+    @State private var frozenStill: UIImage?
 
     var body: some View {
         ZStack {
@@ -59,9 +62,28 @@ struct MealCaptureView: View {
                         .background(.ultraThinMaterial, in: Capsule())
                 }
                 .accessibilityIdentifier("meal.capture.typeInstead")
-                .padding(.bottom, 4)
+                // Clears the UIKit shutter (64pt, anchored -24 from the safe area) — both
+                // used to claim bottom-center and collided.
+                .padding(.bottom, MealPipelineProvider.isSimulated ? 4 : 100)
             }
             .padding(16)
+
+            // Frozen frame + progress while OCR runs (the shutter's honest "got it").
+            if let frozenStill {
+                Image(uiImage: frozenStill)
+                    .resizable()
+                    .scaledToFill()
+                    .ignoresSafeArea()
+                Color.black.opacity(0.35).ignoresSafeArea()
+                VStack(spacing: 10) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(Theme.accent)
+                    Text("Reading…")
+                        .font(.subheadline)
+                        .foregroundStyle(.white)
+                }
+            }
         }
         .statusBarHidden()
         .sheet(isPresented: $showingTypedEntry) {
@@ -84,6 +106,8 @@ struct MealCaptureView: View {
                 forward(MealCapture(barcodes: [payload]))
             },
             onStill: { image in
+                frozenStill = image   // immediate feedback — the OCR takes a beat
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 Task {
                     let lines = await Self.recognizeText(image)
                     forward(MealCapture(ocrLines: lines, imageData: image.jpegData(compressionQuality: 0.6)))
@@ -105,6 +129,12 @@ struct MealCaptureView: View {
             Text("Check camera access in Settings, then try again.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.textSecondary)
+            // Describing the fix without the door to it is a dead end (principle 13).
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                Link("Open Settings", destination: url)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+            }
         }
         .padding(24)
     }

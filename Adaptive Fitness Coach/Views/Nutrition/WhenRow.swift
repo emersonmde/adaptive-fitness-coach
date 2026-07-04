@@ -17,14 +17,15 @@ struct WhenRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let prefillCaption {
+                // Honesty string ("From the capture · …") — legible, not the lowest tier.
                 HStack(spacing: 4) {
                     Image(systemName: "doc.text.magnifyingglass")
-                        .font(.caption2)
+                        .font(.caption)
                     Text(prefillCaption)
-                        .font(.caption2)
+                        .font(.caption)
                         .accessibilityIdentifier("meal.when.prefill")
                 }
-                .foregroundStyle(Theme.textTertiary)
+                .foregroundStyle(Theme.textSecondary)
             }
 
             // Meal chips — auto-defaulted, one tap to correct (C1).

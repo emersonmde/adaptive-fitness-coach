@@ -30,6 +30,9 @@ struct WeekView: View {
     @ObservedObject private var mealCaptureRequest = MealCaptureRequest.shared
     /// Programmatic pushes (the widget's afcoach://start/<id> deep link).
     @State private var navigationPath = NavigationPath()
+    /// Days this week with a completed workout of ours (Health read-back → strip checks).
+    @State private var doneDays: Set<DayOfWeek> = []
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -59,7 +62,10 @@ struct WeekView: View {
                 NewRoutineView(store: store)
             }
             .sheet(item: $coachLaunch) { launch in
-                CoachChatView(store: store, intent: launch.intent)
+                CoachChatView(store: store, intent: launch.intent) {
+                    // Coach unavailable → the manual builder is the working exit.
+                    showingNewRoutine = true
+                }
             }
             .sheet(item: $pendingImport) { candidate in
                 ImportRoutinesSheet(candidate: candidate,
@@ -123,8 +129,15 @@ struct WeekView: View {
             .task {
                 // The App Intent / deep link may have fired before the scene existed.
                 routeCaptureRequest()
+                doneDays = await WorkoutWeekHistory.shared.doneDays()
                 // Finish any lookups that were mid-flight when the app last quit (C5 queue).
                 await mealController.resumePending()
+            }
+            .onChange(of: scenePhase) {
+                // A workout finished on the watch while we were backgrounded → re-glance.
+                if scenePhase == .active {
+                    Task { doneDays = await WorkoutWeekHistory.shared.doneDays() }
+                }
             }
             .onReceive(mealCaptureRequest.$pending) { pending in
                 // Warm start: the intent/link fires while the week is on screen. @Published
@@ -252,7 +265,7 @@ struct WeekView: View {
                     .buttonStyle(.plain)
                 }
 
-                WeekStrip(store: store)
+                WeekStrip(store: store, doneDays: doneDays)
                     .padding(.horizontal, 2)
 
                 dailyIntakeLine
@@ -276,10 +289,10 @@ struct WeekView: View {
                     }
                 }
 
-                PrimaryButton(title: "New routine", systemImage: "plus") {
-                    showingNewRoutine = true
-                }
-                .padding(.top, 4)
+                // No bottom "New routine" hero once routines exist: you create a routine a
+                // handful of times ever, and the toolbar's + already owns the action — the
+                // glow slot stays reserved for things done daily. (The empty state keeps
+                // its big CTA; that's where it earns the prominence.)
             }
             .padding(16)
         }

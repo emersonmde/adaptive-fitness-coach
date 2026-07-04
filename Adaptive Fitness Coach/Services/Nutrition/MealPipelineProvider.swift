@@ -45,6 +45,21 @@ enum MealPipelineProvider {
         )
     }
 
+    /// The lookup ladder on its own — the edit sheet's "Look up again" re-resolves an
+    /// already-logged entry against an edited name/seller. Same wiring as the controller's.
+    static func makeResolver() -> MealResolver {
+        if isSimulated {
+            return ScriptedMealPipeline.demo(delays: true).scriptedResolver()
+        }
+        return MealResolver(
+            barcodeDB: OpenFoodFactsClient(),
+            searcher: ParallelSearchClient(),
+            adjudicator: FoundationModelsAdjudicator(),
+            agent: nil,
+            estimator: FoundationModelsEstimator()
+        )
+    }
+
     /// One recorder per launch, shared by the controller and the daily line: in-memory under
     /// simulation (the sim can't grant HealthKit auth, and demos shouldn't write real data),
     /// HealthKit otherwise.

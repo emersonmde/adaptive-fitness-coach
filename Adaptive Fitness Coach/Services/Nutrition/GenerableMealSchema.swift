@@ -11,7 +11,7 @@ import AdaptiveCore
 
 @Generable
 struct GenerableMealDraft {
-    @Guide(description: "Who sold the food — store, restaurant, or brand name as printed.")
+    @Guide(description: "Who sold the food — store, restaurant, or brand. From a receipt/label: as printed. From typed text: as named ('caesar salad from salad works' names 'Saladworks'). Correct spelling to the official brand name.")
     var sellerName: String?
     @Guide(description: "The seller's official website domain if you are confident of it, e.g. traderjoes.com. Omit when unsure.")
     var sellerDomain: String?

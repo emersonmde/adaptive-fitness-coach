@@ -23,6 +23,8 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
         static let quantity = "AFCQuantity"           // servings; samples store totals
         static let serving = "AFCServing"
         static let meal = "AFCMeal"                   // MealSlot.rawValue (build 8)
+        static let sellerName = "AFCSellerName"       // who sold it (build 11)
+        static let sellerDomain = "AFCSellerDomain"
     }
 
     private let store = HKHealthStore()
@@ -55,7 +57,10 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
         // Source: HKHealthStore.requestAuthorization docs / HKCorrelationType.
         try await store.requestAuthorization(
             toShare: Self.allQuantityTypes,
-            read: Self.allQuantityTypes.union([Self.activeEnergyType])
+            // .workoutType() rides along for the hub strip's done-marks (WorkoutWeekHistory)
+            // — reads stay deferred-contextual behind the first meal Log rather than adding
+            // a second launch-time prompt.
+            read: Self.allQuantityTypes.union([Self.activeEnergyType, HKObjectType.workoutType()])
         )
     }
 
@@ -85,6 +90,12 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
             MetadataKey.quantity: entry.quantity,
             MetadataKey.meal: entry.meal.rawValue,
         ]
+        if let seller = entry.seller {
+            metadata[MetadataKey.sellerName] = seller.name
+            if let domain = seller.domainHint {
+                metadata[MetadataKey.sellerDomain] = domain
+            }
+        }
         switch entry.provenance {
         case .verified(let url):
             if let url { metadata[MetadataKey.sourceURL] = url.absoluteString }
@@ -253,6 +264,9 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
         }
 
         let meal = (metadata[MetadataKey.meal] as? String).flatMap(MealSlot.init(rawValue:))
+        let seller = (metadata[MetadataKey.sellerName] as? String).map {
+            Seller(name: $0, domainHint: metadata[MetadataKey.sellerDomain] as? String)
+        }
 
         return MealEntry(
             id: id,
@@ -267,7 +281,8 @@ final class HealthKitNutritionRecorder: NutritionRecorder, @unchecked Sendable {
                 servingDescription: metadata[MetadataKey.serving] as? String
             ),
             provenance: provenance,
-            meal: meal   // nil (build-7 entries) → init derives from the entry's time
+            meal: meal,   // nil (build-7 entries) → init derives from the entry's time
+            seller: seller
         )
     }
 

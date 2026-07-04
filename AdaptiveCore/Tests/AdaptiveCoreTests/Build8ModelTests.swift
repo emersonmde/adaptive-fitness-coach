@@ -84,6 +84,53 @@ struct ProvenanceEvolutionTests {
     }
 }
 
+struct TypedSellerParserTests {
+
+    @Test func trailingFromClauseBecomesTheSeller() {
+        let r = TypedSellerParser.parse("chicken ceaser salad from salad works")
+        #expect(r.cleanText == "chicken ceaser salad")
+        #expect(r.seller?.name == "Salad Works")
+    }
+
+    @Test func atClauseAndArticlesWork() {
+        let r = TypedSellerParser.parse("cobb salad at the Cheesecake Factory")
+        #expect(r.cleanText == "cobb salad")
+        #expect(r.seller?.name == "Cheesecake Factory")
+    }
+
+    @Test func lastMarkerWins() {
+        let r = TypedSellerParser.parse("salad from the deli counter at Wegmans")
+        #expect(r.seller?.name == "Wegmans")
+    }
+
+    @Test func userCapitalizationIsKept() {
+        #expect(TypedSellerParser.parse("market salad from Chick-fil-A").seller?.name == "Chick-fil-A")
+    }
+
+    @Test func nonSellersDoNotParse() {
+        #expect(TypedSellerParser.parse("banana bread from scratch").seller == nil)
+        #expect(TypedSellerParser.parse("leftover pasta from home").seller == nil)
+        #expect(TypedSellerParser.parse("granola bar from work").seller == nil)
+        // Preparation sources aren't sellers.
+        #expect(TypedSellerParser.parse("protein shake from powder").seller == nil)
+        #expect(TypedSellerParser.parse("pancakes from a mix").seller == nil)
+        #expect(TypedSellerParser.parse("lemonade from concentrate").seller == nil)
+        #expect(TypedSellerParser.parse("mac and cheese from the box").seller == nil)
+        // Digits mean a measurement, not a place.
+        #expect(TypedSellerParser.parse("cut sandwich from 6 inch sub").seller == nil)
+        // A clause that IS the whole text has no food to log.
+        #expect(TypedSellerParser.parse("from Saladworks").seller == nil)
+        // Long trailing prose isn't a name.
+        #expect(TypedSellerParser.parse("pasta from the place we went last weekend after the game").seller == nil)
+    }
+
+    @Test func noClauseIsUntouched() {
+        let r = TypedSellerParser.parse("chicken caesar salad")
+        #expect(r.cleanText == "chicken caesar salad")
+        #expect(r.seller == nil)
+    }
+}
+
 struct StatedCalorieParserTests {
 
     @Test func trailingClauseForms() {

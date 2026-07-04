@@ -78,6 +78,25 @@ public enum Provenance: Sendable, Hashable, Codable {
         }
     }
 
+    /// The label with the actual source attached — "verified · saladworks.com",
+    /// "eatthismuch.com" — so every surface can say WHERE a number came from, not just
+    /// what kind of source it was ("database" alone answers nothing).
+    public var detailLabel: String {
+        switch self {
+        case .verified(let url):
+            if let host = url?.host() { return "verified · \(host)" }
+            return "verified"
+        case .database(let name, let url):
+            // The grader names databases by host; older/odd rows fall back to the URL.
+            if name != "database" { return name }
+            return url?.host() ?? "database"
+        case .estimate:
+            return "estimate"
+        case .userStated:
+            return "your number"
+        }
+    }
+
     /// Stable machine string for Health metadata (never the UI label).
     public var metadataValue: String {
         switch self {
@@ -262,6 +281,9 @@ public struct MealEntry: Identifiable, Sendable, Codable, Hashable {
     public var provenance: Provenance
     /// Day-screen grouping (build 8). Auto-suggested from the entry's time; user-correctable.
     public var meal: MealSlot
+    /// Who sold it (build 11) — shown on the day rows and editable on the edit sheet, where
+    /// it re-keys "Look up again". Optional: home-cooked food has no seller.
+    public var seller: Seller?
 
     public init(
         id: UUID = UUID(),
@@ -270,7 +292,8 @@ public struct MealEntry: Identifiable, Sendable, Codable, Hashable {
         quantity: Int = 1,
         facts: NutritionFacts,
         provenance: Provenance,
-        meal: MealSlot? = nil
+        meal: MealSlot? = nil,
+        seller: Seller? = nil
     ) {
         self.id = id
         self.date = date
@@ -279,12 +302,14 @@ public struct MealEntry: Identifiable, Sendable, Codable, Hashable {
         self.facts = facts
         self.provenance = provenance
         self.meal = meal ?? MealSlot.suggested(for: date)
+        self.seller = seller
     }
 
-    // Custom decode only: build-7 PendingMealQueue rows have no `meal` key — derive it from
-    // the date instead of failing the whole queue at upgrade. Encoding stays synthesized.
+    // Custom decode only: build-7 PendingMealQueue rows have no `meal` key (and pre-build-11
+    // rows no `seller`) — derive/default instead of failing the whole queue at upgrade.
+    // Encoding stays synthesized.
     private enum CodingKeys: String, CodingKey {
-        case id, date, name, quantity, facts, provenance, meal
+        case id, date, name, quantity, facts, provenance, meal, seller
     }
 
     public init(from decoder: Decoder) throws {
@@ -297,7 +322,8 @@ public struct MealEntry: Identifiable, Sendable, Codable, Hashable {
             quantity: try container.decode(Int.self, forKey: .quantity),
             facts: try container.decode(NutritionFacts.self, forKey: .facts),
             provenance: try container.decode(Provenance.self, forKey: .provenance),
-            meal: try container.decodeIfPresent(MealSlot.self, forKey: .meal)
+            meal: try container.decodeIfPresent(MealSlot.self, forKey: .meal),
+            seller: try container.decodeIfPresent(Seller.self, forKey: .seller)
         )
     }
 }
@@ -327,14 +353,15 @@ public extension MealEntry {
     }
 
     /// "Log again": the same food as a brand-new entry, now. Fresh identity (delete-by-id
-    /// must never collide), slot re-suggested from the new time; facts/provenance copied.
+    /// must never collide), slot re-suggested from the new time; facts/provenance/seller copied.
     func relogged(at now: Date = Date()) -> MealEntry {
         MealEntry(
             date: now,
             name: name,
             quantity: quantity,
             facts: facts,
-            provenance: provenance
+            provenance: provenance,
+            seller: seller
         )
     }
 }

@@ -20,6 +20,8 @@ struct FoodDayView: View {
     @State private var showingTargetSheet = false
     @State private var reloggedID: UUID?
     @State private var deleteError: String?
+    /// Delete-by-long-press confirms first — Health deletion has no undo.
+    @State private var pendingDelete: MealEntry?
     @State private var refreshTick = 0
 
     private var calendar: Calendar { .current }
@@ -62,6 +64,28 @@ struct FoodDayView: View {
         } message: {
             Text(deleteError ?? "")
         }
+        .confirmationDialog(
+            "Delete \"\(pendingDelete?.name ?? "")\"?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let entry = pendingDelete else { return }
+                Task {
+                    do {
+                        try await recorder.delete(entryID: entry.id)
+                    } catch {
+                        // An entry that silently stays after "Delete" reads as a bug —
+                        // failure must be as visible as success (principle 13).
+                        deleteError = "Health couldn't delete that entry. Try again."
+                    }
+                    refreshTick += 1
+                }
+            }
+        }
         .sheet(isPresented: $showingTargetSheet) {
             TargetSetupSheet(targetStore: targetStore, bodyProfileSource: bodyProfileSource)
         }
@@ -87,10 +111,30 @@ struct FoodDayView: View {
             .accessibilityIdentifier("meal.day.prev")
 
             Spacer()
-            Text(dayTitle)
-                .font(.headline)
-                .foregroundStyle(Theme.textPrimary)
+            // On a past day the title is the way home: tap it to jump straight back to
+            // today (paging one day at a time was the only way back).
+            if isToday {
+                Text(dayTitle)
+                    .font(.headline)
+                    .foregroundStyle(Theme.textPrimary)
+                    .accessibilityIdentifier("meal.day.title")
+            } else {
+                Button {
+                    anchorDay = calendar.startOfDay(for: Date())
+                } label: {
+                    HStack(spacing: 5) {
+                        Text(dayTitle)
+                            .font(.headline)
+                            .foregroundStyle(Theme.textPrimary)
+                        Image(systemName: "arrow.uturn.forward")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                    }
+                }
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("meal.day.title")
+                .accessibilityHint("Jump back to today")
+            }
             Spacer()
 
             // Reserved slot: disabled-at-today, never removed (principle 7).
@@ -125,7 +169,11 @@ struct FoodDayView: View {
                 Button {
                     showingTargetSheet = true
                 } label: {
-                    Text("Target \(budget.targetKcal.formatted()) kcal")
+                    // The decision-driving number: what's LEFT (the center already says
+                    // "of 1,600" — repeating the target here wasted the slot). When over,
+                    // the center says "N over", so the target is the informative line again.
+                    Text(budget.remainingKcal.map { "\($0.formatted()) kcal left" }
+                        ?? "Target \(budget.targetKcal.formatted()) kcal")
                         .font(.caption)
                         .foregroundStyle(Theme.textTertiary)
                 }
@@ -164,7 +212,10 @@ struct FoodDayView: View {
                     .accessibilityIdentifier("meal.day.active")
             }
             Spacer()
-            if let url = URL(string: "x-apple-health://") {
+            // browse/nutrition is undocumented but community-established; an unrecognized
+            // path degrades to just opening Health (exactly the old behavior), so this is
+            // a free attempt at landing on the Nutrition room directly.
+            if let url = URL(string: "x-apple-health://browse/nutrition") {
                 Link(destination: url) {
                     HStack(spacing: 3) {
                         Text("Trends in Health")
@@ -186,11 +237,18 @@ struct FoodDayView: View {
                 let entries = intake.entries.filter { $0.meal == slot }
                 if !entries.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(slot.displayName.uppercased())
-                            .font(.caption.weight(.semibold))
-                            .tracking(1.5)
-                            .foregroundStyle(Theme.textTertiary)
-                            .padding(.horizontal, 4)
+                        HStack {
+                            Text(slot.displayName.uppercased())
+                                .font(.caption.weight(.semibold))
+                                .tracking(1.5)
+                                .foregroundStyle(Theme.textTertiary)
+                            Spacer()
+                            // Quiet subtotal — "dinner is where the calories went" at a glance.
+                            Text("\(Int(entries.reduce(0) { $0 + $1.facts.energy.midpointKcal * Double($1.quantity) }.rounded()).formatted())")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        .padding(.horizontal, 4)
                         ForEach(entries) { entry in
                             entryRow(entry)
                         }
@@ -230,9 +288,13 @@ struct FoodDayView: View {
                             .foregroundStyle(Theme.textPrimary)
                             .multilineTextAlignment(.leading)
                         HStack(spacing: 6) {
-                            Text(entry.provenance.label)
+                            // "Saladworks · verified · saladworks.com" — who sold it and
+                            // where the number came from, not just "database".
+                            Text([entry.seller?.name, entry.provenance.detailLabel]
+                                .compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption2)
-                                .foregroundStyle(Theme.textTertiary)
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
                             if reloggedID == entry.id {
                                 Text("· logged again")
                                     .font(.caption2)
@@ -256,16 +318,7 @@ struct FoodDayView: View {
                 Label("Log again", systemImage: "arrow.counterclockwise")
             }
             Button(role: .destructive) {
-                Task {
-                    do {
-                        try await recorder.delete(entryID: entry.id)
-                    } catch {
-                        // An entry that silently stays after "Delete" reads as a bug —
-                        // failure must be as visible as success (principle 13).
-                        deleteError = "Health couldn't delete that entry. Try again."
-                    }
-                    refreshTick += 1
-                }
+                pendingDelete = entry   // confirm first — there is no undo
             } label: {
                 Label("Delete", systemImage: "trash")
             }

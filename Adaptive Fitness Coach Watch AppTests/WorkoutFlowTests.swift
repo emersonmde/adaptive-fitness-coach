@@ -137,6 +137,38 @@ struct WorkoutFlowTests {
         _ = summary
     }
 
+    // MARK: - Interval countdown (the glance timer shows remaining, not elapsed)
+
+    @Test func intervalRemainingCountsDownFromTheSegmentTarget() async {
+        let manager = makeManager()
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        manager.receiveZone(nil)
+
+        // Warmup is 2s: the countdown starts at the target and falls with each tick.
+        #expect(manager.intervalRemaining == 2)
+        tick(manager, seconds: 1)
+        #expect(manager.intervalRemaining == 1)
+
+        // Crossing into the run resets the countdown to the new segment's target (5s).
+        tick(manager, seconds: 1)
+        #expect(manager.currentPhase == .run)
+        #expect(manager.intervalRemaining == 5)
+        tick(manager, seconds: 2)
+        #expect(manager.intervalRemaining == 3)
+    }
+
+    @Test func intervalRemainingNeverGoesNegative() async {
+        // Drive a whole session to completion checking the floor at every tick — an extended
+        // run bumps the target, but nothing may ever display a negative "remaining".
+        let manager = makeManager()
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        manager.receiveZone(nil)
+        for _ in 0..<40 {
+            manager.tick(delta: 1)
+            #expect(manager.intervalRemaining >= 0)
+        }
+    }
+
     // MARK: - Adaptation through the shell
 
     @Test func sustainedHotZoneShortensRunAndShowsBanner() async {

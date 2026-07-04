@@ -85,24 +85,40 @@ struct FoundationModelsMealPipeline: MealPipeline {
         let dated = TypedDatePhraseParser.parse(typed)
         let (strippedName, statedKcal) = StatedCalorieParser.parse(dated.cleanText)
         let statedFacts = statedKcal.map { NutritionFacts(energy: .exact(kcal: $0)) }
+        // "from/at <seller>" is parsed deterministically too — the seller drives the whole
+        // lookup ladder (seller-first queries, verified-on-their-domain grading), so naming
+        // one must not hinge on the model filling an optional field. Division of labor: the
+        // MODEL is the primary extractor (branding, spelling, domain — and the only reader
+        // of receipts); the parser's candidate goes into the prompt as a hint, and code
+        // floors on it only when the model returns no seller at all. Trade-off, accepted:
+        // a model that considered the hint and deliberately returned nil is overridden —
+        // omission is far likelier than rejection from a small model, and a wrong seller is
+        // visible + editable while a dropped one silently degrades the lookup to generic.
+        let sellerParse = TypedSellerParser.parse(strippedName)
 
         var draft: MealDraft
         if let session = try? makeSession(instructions: MealPromptBuilder.typedEntryInstructions()),
            let response = try? await session.respond(
-               to: MealPromptBuilder.typedEntryPrompt(text: strippedName),
+               to: MealPromptBuilder.typedEntryPrompt(
+                   text: strippedName,
+                   sellerCandidate: sellerParse.seller?.name
+               ),
                generating: GenerableMealDraft.self
            ),
            !response.content.items.isEmpty {
             draft = response.content.toPackage(classification: .typed)
         } else {
-            // Model unavailable/failed: the typed path never dead-ends — log the text as-is.
+            // Model unavailable/failed: the typed path never dead-ends — log the text as-is
+            // (minus the seller clause, which lives in `seller` below).
+            let name = sellerParse.cleanText
             draft = MealDraft(
                 classification: .typed,
                 seller: nil,
-                items: [DraftItem(name: strippedName.prefix(1).uppercased() + strippedName.dropFirst())]
+                items: [DraftItem(name: name.prefix(1).uppercased() + name.dropFirst())]
             )
         }
-        // The stated number is applied in code, after the funnel — the model can't touch it.
+        // Applied in code, after the funnel — the model can't drop either one.
+        if draft.seller == nil { draft.seller = sellerParse.seller }
         if let statedFacts, !draft.items.isEmpty {
             draft.items[0].statedFacts = statedFacts
         }

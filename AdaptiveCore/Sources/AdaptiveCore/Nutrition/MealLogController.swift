@@ -355,7 +355,8 @@ public final class MealLogController {
                 quantity: item.quantity,
                 facts: resolved.facts,
                 provenance: resolved.provenance,
-                meal: mealSlot
+                meal: mealSlot,
+                seller: draft.seller
             )
             do {
                 try await recorder.record(entry)
@@ -394,7 +395,8 @@ public final class MealLogController {
                 quantity: item.quantity,
                 facts: resolved.facts,
                 provenance: resolved.provenance,
-                meal: pending.meal   // nil (build-8 rows) → init derives from the date
+                meal: pending.meal,   // nil (build-8 rows) → init derives from the date
+                seller: pending.seller
             )
             if (try? await recorder.record(entry)) != nil {
                 queue.remove(id: pending.id)

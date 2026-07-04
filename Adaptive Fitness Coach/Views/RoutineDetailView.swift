@@ -17,6 +17,10 @@ struct RoutineDetailView: View {
     @State private var confirmingDelete = false
     @State private var editingCards = false
     @State private var coachLaunch: CoachLaunch?
+    /// Name edits buffer in the draft while the field has focus and commit once, on blur or
+    /// Return — not per keystroke, which would hammer the store (each `update` persists,
+    /// broadcasts to the watch, and re-syncs the Calendar event).
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         ZStack {
@@ -120,7 +124,9 @@ struct RoutineDetailView: View {
 
     private func cardDetail(_ card: WorkoutCard) -> String {
         switch card {
-        case let .run(c): return "~\(c.totalMinutes) min · \(c.warmupMinutes)/\(c.durationMinutes)/\(c.cooldownMinutes)"
+        // Spell the phases out ("5 warm · 20 run · 5 cool"), not the expert-only "5/20/5" —
+        // phone-side rendering only; the watch keeps its own compact strings.
+        case let .run(c): return "\(c.warmupMinutes) warm · \(c.durationMinutes) run · \(c.cooldownMinutes) cool"
         case let .exercise(item):
             if item.isHold { return "\(Int(item.holdSeconds ?? 0))s hold" }
             let load = item.seedWeight.map { " · \($0.displayString())" } ?? ""
@@ -143,6 +149,23 @@ struct RoutineDetailView: View {
                     }
                     .padding(14)
                     .background(Theme.surface1, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+
+                // The name is editable here because it's more than a label: it's the merge key
+                // a coach/Claude import matches on (`RoutineStore.importRoutines`). With no
+                // rename affordance, a routine could only be "renamed" by delete + recreate —
+                // which would sever its progression history.
+                FieldSection(title: "NAME") {
+                    TextField("Routine name", text: nameBinding)
+                        .textInputAutocapitalization(.words)
+                        .foregroundStyle(Theme.textPrimary)
+                        .focused($nameFocused)
+                        .submitLabel(.done)
+                        .onSubmit { commitName() }
+                        .onChange(of: nameFocused) {
+                            if !nameFocused { commitName() }
+                        }
+                        .accessibilityIdentifier("routineNameField")
                 }
 
                 FieldSection(title: "DAYS") {
@@ -228,6 +251,26 @@ struct RoutineDetailView: View {
 
     private func setDays(_ days: Set<DayOfWeek>) { commit { $0.repeatDays = days } }
     private func setTime(_ time: ScheduleTime) { commit { $0.scheduleTime = time } }
+
+    /// Buffers keystrokes in the draft only; `commitName()` persists once editing ends.
+    private var nameBinding: Binding<String> {
+        Binding(
+            get: { draft?.name ?? "" },
+            set: { draft?.name = $0 }
+        )
+    }
+
+    /// Persist the buffered rename. An empty name would break identity everywhere the app
+    /// matches by name (imports, watch sync display) — revert to the stored name instead of
+    /// saving it.
+    private func commitName() {
+        let trimmed = (draft?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            draft?.name = store.routines.first { $0.id == routineID }?.name ?? ""
+            return
+        }
+        commit { $0.name = trimmed }
+    }
 
     private func setReminders(_ on: Bool) {
         commit(promptCalendar: on) {

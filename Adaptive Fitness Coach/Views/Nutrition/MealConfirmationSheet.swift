@@ -115,24 +115,40 @@ struct MealConfirmationSheet: View {
                 )
                 .padding(.top, 2)
 
-                if let total = totalText(draft) {
-                    HStack {
-                        Spacer()
+            }
+            .padding(16)
+        }
+        // The commit bar is PINNED: on a six-item receipt the total and Log scrolled away,
+        // killing the check-an-item → total-updates feedback loop and the fast path alike.
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 8) {
+                HStack {
+                    if lookingUpCount(draft) > 0 {
+                        Text("Looking up \(lookingUpCount(draft))…")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer()
+                    if let total = totalText(draft) {
                         Text(total)
                             .font(.subheadline.weight(.semibold).monospacedDigit())
                             .foregroundStyle(Theme.textPrimary)
                             .accessibilityIdentifier("meal.confirm.total")
                     }
                 }
-
+                .frame(height: 18)   // reserved slot — no jump when the total lands
                 if let error = controller.error {
                     Text(error)
                         .font(.footnote)
                         .foregroundStyle(Theme.hot)
                         .accessibilityIdentifier("meal.confirm.error")
                 }
+                // Stable label (a CTA is not a message board — the rows say why it's off);
+                // disabled while any checked item is still looking up: never commit a
+                // number the screen hasn't shown (the resolver's bottom rung guarantees
+                // every lookup ends, so this can't wedge).
                 PrimaryButton(
-                    title: checkedCount(draft) == 0 ? "Nothing selected" : "Log \(checkedCount(draft)) item\(checkedCount(draft) == 1 ? "" : "s")",
+                    title: checkedCount(draft) == 1 ? "Log 1 item" : "Log \(checkedCount(draft)) items",
                     systemImage: "checkmark"
                 ) {
                     Task {
@@ -140,11 +156,18 @@ struct MealConfirmationSheet: View {
                         if controller.phase != .confirming { dismiss() }
                     }
                 }
-                .disabled(checkedCount(draft) == 0)
+                .disabled(checkedCount(draft) == 0 || lookingUpCount(draft) > 0)
                 .accessibilityIdentifier("meal.confirm.log")
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
+            .background(.ultraThinMaterial)
         }
+    }
+
+    private func lookingUpCount(_ draft: MealDraft) -> Int {
+        draft.items.filter { $0.isChecked && controller.displayedNutrition(for: $0.id) == nil }.count
     }
 
     private func checkedCount(_ draft: MealDraft) -> Int {
@@ -232,6 +255,9 @@ private struct ItemRow: View {
                             .foregroundStyle(item.isChecked ? Theme.accent : Theme.textTertiary)
                     }
                     .accessibilityIdentifier("meal.confirm.check.\(item.name)")
+                    .accessibilityLabel("Include \(item.name)")
+                    .accessibilityValue(item.isChecked ? "included" : "excluded")
+                    .accessibilityAddTraits(.isToggle)
 
                     if isEditing {
                         TextField("Item name", text: $draftName)
@@ -242,18 +268,28 @@ private struct ItemRow: View {
                             .onSubmit(commitRename)
                             .accessibilityIdentifier("meal.confirm.nameField")
                     } else {
-                        Text(item.name)
-                            .font(.body)
-                            .foregroundStyle(item.isChecked ? Theme.textPrimary : Theme.textTertiary)
-                            .strikethrough(!item.isChecked, color: Theme.textTertiary)
-                            .onTapGesture(perform: beginRename)   // fix a misread inline (§4.3)
+                        // Same quiet pencil the kcal line carries — a misread name is the
+                        // most common fix, and an affordance-free tap target is invisible
+                        // to exactly the user who needs it (§4.3).
+                        HStack(spacing: 5) {
+                            Text(item.name)
+                                .font(.body)
+                                .foregroundStyle(item.isChecked ? Theme.textPrimary : Theme.textTertiary)
+                                .strikethrough(!item.isChecked, color: Theme.textTertiary)
+                            Image(systemName: "pencil")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        .onTapGesture(perform: beginRename)
                     }
 
                     Spacer(minLength: 8)
 
-                    if item.quantity > 1 || item.isChecked {
-                        quantityControl
-                    }
+                    // Reserved slot (principle 7): hidden-not-removed when unchecked, so
+                    // toggling a row never shifts the layout.
+                    quantityControl
+                        .opacity(item.isChecked || item.quantity > 1 ? 1 : 0)
+                        .disabled(!item.isChecked && item.quantity <= 1)
                 }
                 if item.isChecked {
                     nutritionLine
@@ -310,9 +346,12 @@ private struct ItemRow: View {
                     Text(energyText(nutrition))
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(Theme.textPrimary)
+                    // Provenance is a load-bearing honesty string (C3) — secondary, not
+                    // tertiary: the app's lowest-contrast text is no place for "where this
+                    // number came from".
                     Text("· \(sourceText(nutrition.provenance))")
                         .font(.caption)
-                        .foregroundStyle(Theme.textTertiary)
+                        .foregroundStyle(Theme.textSecondary)
                     Image(systemName: "pencil")
                         .font(.caption2)
                         .foregroundStyle(Theme.textTertiary)
@@ -327,7 +366,7 @@ private struct ItemRow: View {
                     .controlSize(.mini)
                 Text("Looking up…")
                     .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
+                    .foregroundStyle(Theme.textSecondary)
             }
             .padding(.leading, 34)
             .accessibilityIdentifier("meal.confirm.lookingUp.\(item.name)")
@@ -347,17 +386,7 @@ private struct ItemRow: View {
     /// Where the number came from (C3), quiet but always present: the seller's own site,
     /// the database's name, an estimate, or the user's number.
     private func sourceText(_ provenance: Provenance) -> String {
-        switch provenance {
-        case .verified(let url):
-            if let host = url?.host() { return "verified · \(host)" }
-            return "verified"
-        case .database(let name, _):
-            return name
-        case .estimate:
-            return "estimate"
-        case .userStated:
-            return "your number"
-        }
+        provenance.detailLabel
     }
 
     private var quantityControl: some View {

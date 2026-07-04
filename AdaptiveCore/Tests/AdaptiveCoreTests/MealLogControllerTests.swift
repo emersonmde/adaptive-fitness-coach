@@ -483,6 +483,39 @@ struct MealLogControllerTests {
         #expect(controller.loggedDate <= Date())
     }
 
+    @Test func typedSellerClauseBecomesTheDraftSeller() async {
+        // "from salad works" must survive as the seller (it drives seller-first lookup and
+        // the verified-domain grading) — with a stated calorie clause composing correctly.
+        let (controller, _) = makeController()
+        await controller.beginCapture(MealCapture(typedText: "chicken ceaser salad from salad works, 550 calories"))
+        #expect(controller.draft?.seller?.name == "Salad Works")
+        #expect(controller.draft?.items.first?.name == "Chicken ceaser salad")
+        #expect(controller.draft?.items.first?.statedFacts?.energy == .exact(kcal: 550))
+    }
+
+    @Test func commitCarriesTheSellerOntoEntries() async throws {
+        // The seller survives all the way to the recorded entry (day rows + edit sheet
+        // display it; the HK recorder round-trips it via metadata).
+        let (controller, recorder) = makeController()
+        await controller.beginCapture(MealCapture(typedText: "chicken caesar salad from Saladworks"))
+        await controller.commit()
+        let entry = try #require(recorder.entries.first)
+        #expect(entry.seller?.name == "Saladworks")
+
+        // And it Codable-round-trips (pending-queue durability).
+        let decoded = try JSONDecoder().decode(MealEntry.self, from: JSONEncoder().encode(entry))
+        #expect(decoded.seller?.name == "Saladworks")
+    }
+
+    @Test func provenanceDetailLabelNamesTheActualSource() {
+        #expect(Provenance.database(name: "eatthismuch.com", sourceURL: nil).detailLabel == "eatthismuch.com")
+        #expect(Provenance.database(name: "database", sourceURL: URL(string: "https://www.nutritionix.com/x")).detailLabel == "www.nutritionix.com")
+        #expect(Provenance.verified(sourceURL: URL(string: "https://saladworks.com/menu")).detailLabel == "verified · saladworks.com")
+        #expect(Provenance.verified(sourceURL: nil).detailLabel == "verified")
+        #expect(Provenance.estimate(assumptions: []).detailLabel == "estimate")
+        #expect(Provenance.userStated.detailLabel == "your number")
+    }
+
     @Test func typedYesterdayPhraseBackdates() async throws {
         let (controller, recorder) = makeController()
         await controller.beginCapture(MealCapture(typedText: "pad thai last night"))

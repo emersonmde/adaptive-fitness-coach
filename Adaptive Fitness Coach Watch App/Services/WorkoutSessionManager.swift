@@ -38,6 +38,11 @@ final class WorkoutSessionManager {
     private(set) var intervalElapsed: TimeInterval = 0
     private(set) var intervalTarget: TimeInterval = 0
     private(set) var sessionElapsed: TimeInterval = 0
+    /// Seconds left in the current interval — `intervalTarget − intervalElapsed`, floored at 0.
+    /// The glance timer shows this counting **down**: mid-effort the runner's question is "how
+    /// much longer", not "how long so far" (the session clock stays count-up for the "so far"
+    /// job). Pure derivation from tick state, so it's as clock-free and testable as the rest.
+    var intervalRemaining: TimeInterval { max(0, intervalTarget - intervalElapsed) }
     private(set) var currentHeartRate: Double = 0
     private(set) var currentZoneIndex: Int?
     /// The aerobic target zone position (1-based), exposed so the zone bar can mark the band.

@@ -48,18 +48,20 @@ public struct ScriptedMealPipeline: MealPipeline {
         if let delay = script.identifyDelay { try? await Task.sleep(for: delay) }
         if let error = script.identifyError { throw error }
         // Typed entry is fully deterministic (the parsers are pure), so ANY script supports
-        // it — same routing order as production.
+        // it — same routing order as production, including the seller-clause parse.
         if let typed = capture.typedText?.trimmingCharacters(in: .whitespacesAndNewlines),
            !typed.isEmpty {
             let dated = TypedDatePhraseParser.parse(typed)
-            let (name, statedKcal) = StatedCalorieParser.parse(dated.cleanText)
+            let (stripped, statedKcal) = StatedCalorieParser.parse(dated.cleanText)
+            let sellerParse = TypedSellerParser.parse(stripped)
+            let name = sellerParse.cleanText
             let item = DraftItem(
                 name: name.prefix(1).uppercased() + name.dropFirst(),
                 statedFacts: statedKcal.map { NutritionFacts(energy: .exact(kcal: $0)) }
             )
             return MealDraft(
                 classification: .typed,
-                seller: nil,
+                seller: sellerParse.seller,
                 items: [item],
                 capturedAt: dated.date,
                 suggestedSlot: dated.slot

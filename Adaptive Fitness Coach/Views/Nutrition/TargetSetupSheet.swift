@@ -77,7 +77,8 @@ struct TargetSetupSheet: View {
                     chip(candidate.displayName, selected: goal == candidate,
                          id: "meal.target.goal.\(candidate.rawValue)") {
                         goal = candidate
-                        overrideText = ""
+                        // A typed override survives chip taps (it used to be silently
+                        // erased); its precedence is stated under the suggestion instead.
                     }
                 }
             }
@@ -89,12 +90,18 @@ struct TargetSetupSheet: View {
                 ForEach(ActivityLevel.allCases, id: \.self) { level in
                     Button {
                         activity = level
-                        overrideText = ""
                     } label: {
                         HStack {
-                            Text(level.displayName)
-                                .font(.subheadline)
-                                .foregroundStyle(Theme.textPrimary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(level.displayName)
+                                    .font(.subheadline)
+                                    .foregroundStyle(Theme.textPrimary)
+                                // Bare labels ("Light") have no anchor — one concrete line
+                                // is what lets a novice self-classify honestly.
+                                Text(Self.anchor(for: level))
+                                    .font(.caption)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
                             Spacer()
                             Image(systemName: activity == level ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(activity == level ? Theme.accent : Theme.textTertiary)
@@ -116,8 +123,13 @@ struct TargetSetupSheet: View {
                             .accessibilityIdentifier("meal.target.suggested")
                     }
                     Text("From your Health data (Mifflin-St Jeor)")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.textTertiary)
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                    if Int(overrideText.trimmingCharacters(in: .whitespaces)) != nil {
+                        Text("Your number below overrides this suggestion")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                    }
                 }
                 .padding(.top, 4)
 
@@ -157,9 +169,28 @@ struct TargetSetupSheet: View {
             Text("kcal")
                 .font(.subheadline)
                 .foregroundStyle(Theme.textTertiary)
+            if !overrideText.isEmpty {
+                Button {
+                    overrideText = ""   // explicit clear — never silent
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .accessibilityLabel("Clear your number")
+            }
         }
         .padding(12)
         .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// One concrete anchor per level — self-classification needs an example, not a synonym.
+    private static func anchor(for level: ActivityLevel) -> String {
+        switch level {
+        case .sedentary: "Mostly seated — desk work, little walking"
+        case .light: "On your feet some of the day, some walking"
+        case .moderate: "Regularly walking or physically busy"
+        case .active: "On your feet most of the day, physical work"
+        }
     }
 
     /// Manual number when typed (sanity-clamped), else the suggestion.
