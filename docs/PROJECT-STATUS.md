@@ -2,7 +2,7 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-04: **P0–P4 + the build-11 review sweep + the build-12 design sweep all on `main`**. **TestFlight build 12 is live** (`IN_BETA_TESTING`); it carries build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 12, the user's job):** meal flow end-to-end (seller extraction on a real lookup, edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
+_Last updated 2026-07-04: **P0–P4 + the build-11 review sweep + the build-12 design sweep + the build-13 typed-meal parsing fixes all on `main`**. **TestFlight build 13 uploaded** (see the build-13 section: mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
 
 > **Routines are now a generic card stack.** A `Routine` is `cards: [WorkoutCard]` (`.run` / `.exercise` / `.rest`) plus a `rounds` count that repeats the whole list (= sets; a trailing rest card becomes rest between rounds). The phone builds it from a typed card list; the watch walks it and starts/stops the right Apple workout per card type automatically (`workoutBlocks()`), reusing the existing run and strength screens. The old `type`/`durationMinutes`/`exercises` fields are gone (migrated on decode). WC payload is **v4** (progression channel v2). This supersedes the type-branched descriptions below — treat them as history.
 
@@ -355,6 +355,27 @@ Second feedback round (same session):
   community-established; unrecognized paths degrade to just opening Health — verify the
   room actually opens on device).
 → 379 package tests; MealFlowUITests 12 (rescan flow + title jump).
+
+### Build 13 — typed-meal parsing fixes (2026-07-04, from on-device use)
+User's real entry "Rising shine from bob Evans with scrambled eggs, salsa, 3 sausage links"
+exposed two failures; both fixed and pinned by tests:
+- **Mid-sentence sellers parse now.** Both extraction layers hard-coded "seller clause at the
+  END of the text": `typedEntryInstructions()` told the model so (it obediently dropped
+  "Bob Evans"), and `TypedSellerParser` took last-marker-to-EOL as the clause (8 words +
+  digit → rejected, so no hint either). The prompt now says "from X"/"at X" names the seller
+  *wherever it appears* and keeps menu-item names ("Rise and Shine") as the lookup key
+  instead of rewriting the dish into ingredients; the parser bounds its clause at the next
+  connective ("with"/"and"/comma) and stitches the sentence remainder back into cleanText.
+  Division of labor unchanged: the MODEL is the primary extractor, the parser is hint + floor.
+- **Clarification answers reach the model as text.** Tapping a question chip ("How many
+  eggs?" → 3) re-resolved correctly but serialized as `item0=item0-opt1` in the lookup and
+  estimate prompts — semantically invisible, so the number never moved. `QuestionAnswer` now
+  denormalizes `questionPrompt`/`optionLabel` (optional fields; old pending-queue rows still
+  decode, and the queue drops questions at commit so the answer must be self-describing) and
+  both prompts render `promptDescription` ("How many eggs? 3").
+- **Question chips hide once the user states their own number** — a stated override outranks
+  any re-lookup (`nextUnresolvedItem` skips the item), so the chips were inert theater.
+→ 386 package tests (6 new: 4 mid-sentence seller, 2 answer-rendering).
 
 ### Build 12 — design-review sweep (2026-07-03/04, both apps; user-selected all four batches)
 A senior-designer pass over every screen (novice + experienced personas), then fixes:

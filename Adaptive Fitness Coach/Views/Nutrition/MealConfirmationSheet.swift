@@ -294,7 +294,9 @@ private struct ItemRow: View {
                 if item.isChecked {
                     nutritionLine
                 }
-                if item.isChecked, let question = item.question {
+                // A stated override outranks everything a re-lookup could produce, so the
+                // chips would be inert theater once the user has typed their own number.
+                if item.isChecked, item.statedFacts == nil, let question = item.question {
                     QuestionnaireOptionRow(question: question, onAnswer: onAnswer)
                 }
             }

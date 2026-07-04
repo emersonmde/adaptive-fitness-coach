@@ -129,6 +129,57 @@ struct TypedSellerParserTests {
         #expect(r.cleanText == "chicken caesar salad")
         #expect(r.seller == nil)
     }
+
+    // Mid-sentence clauses: the seller ends at the next connective and the rest of the
+    // sentence survives — the shape of "MENU ITEM from SELLER with SIDES".
+    @Test func midSentenceSellerBoundedByWith() {
+        let r = TypedSellerParser.parse("Rising shine from bob Evans with scrambled eggs, salsa, 3 sausage links")
+        #expect(r.seller?.name == "Bob Evans")
+        #expect(r.cleanText == "Rising shine with scrambled eggs, salsa, 3 sausage links")
+    }
+
+    @Test func midSentenceSellerBoundedByComma() {
+        let r = TypedSellerParser.parse("burrito bowl from Chipotle, extra rice")
+        #expect(r.seller?.name == "Chipotle")
+        #expect(r.cleanText == "burrito bowl, extra rice")
+    }
+
+    @Test func midSentenceSellerBoundedByAnd() {
+        let r = TypedSellerParser.parse("chicken sandwich from Wendy's and a small frosty")
+        #expect(r.seller?.name == "Wendy's")
+        #expect(r.cleanText == "chicken sandwich and a small frosty")
+    }
+
+    @Test func midSentenceNonSellerStaysUntouched() {
+        let r = TypedSellerParser.parse("toast from the oven with butter")
+        #expect(r.seller == nil)
+        #expect(r.cleanText == "toast from the oven with butter")
+    }
+}
+
+struct QuestionAnswerPromptTests {
+
+    @Test func answersRenderAsTextInLookupPrompts() {
+        let question = ClarifyingQuestion(
+            id: "item0",
+            prompt: "How many eggs?",
+            options: [.init(id: "item0-opt0", label: "2"), .init(id: "item0-opt1", label: "3")],
+            defaultOptionID: "item0-opt0"
+        )
+        let answer = QuestionAnswer(question: question, option: question.options[1])
+        #expect(answer.promptDescription == "How many eggs? 3")
+
+        let estimate = MealPromptBuilder.estimatePrompt(
+            item: DraftItem(name: "Scrambled eggs"), ocrLines: [], answers: [answer]
+        )
+        #expect(estimate.contains("How many eggs? 3"))
+        #expect(!estimate.contains("item0-opt1"))
+    }
+
+    @Test func legacyIDOnlyAnswersStillRender() {
+        let answer = QuestionAnswer(questionID: "portion", optionID: "whole")
+        #expect(answer.promptDescription == "portion=whole")
+    }
 }
 
 struct StatedCalorieParserTests {

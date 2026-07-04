@@ -9,9 +9,10 @@ import Foundation
 /// dropping the seller. The model still runs and may refine what we parse (official branding,
 /// domain hint); this parser makes sure the seller exists at all.
 ///
-/// Trailing-clause-only, like the calorie parser: only a `from`/`at` clause at the END of the
-/// text is treated as a seller ("salad from the deli counter at Wegmans" → "Wegmans"), so
-/// mid-sentence prose is never rewritten.
+/// The clause starts at the LAST `from`/`at` and ends at the next connective ("with", "and",
+/// a comma) or the end of the text — so both "market salad from Chick-fil-A" and the
+/// mid-sentence "Rise and Shine from Bob Evans with scrambled eggs" yield their seller, and
+/// the rest of the sentence survives in `cleanText`.
 public enum TypedSellerParser {
 
     public struct Result: Sendable, Equatable {
@@ -47,9 +48,21 @@ public enum TypedSellerParser {
         }
         guard let (markerRange, rawClause) = best else { return Result(cleanText: trimmed) }
 
+        // A mid-sentence clause ends at the next connective — "from Bob Evans with scrambled
+        // eggs" names "Bob Evans"; the rest of the sentence is put back into cleanText below.
+        var remainder = ""
+        var boundedClause = rawClause
+        let terminators = [" with ", " and ", ",", ";"]
+        if let cut = terminators
+            .compactMap({ rawClause.lowercased().range(of: $0)?.lowerBound })
+            .min() {
+            remainder = String(rawClause[cut...])
+            boundedClause = String(rawClause[..<cut]).trimmingCharacters(in: .whitespaces)
+        }
+
         // A seller clause is a short name, not a sentence: 1–4 words, no digits (digits mean
         // a quantity/measurement, not a place), non-empty, and not a known non-seller.
-        let clause = rawClause.hasSuffix(".") ? String(rawClause.dropLast()) : rawClause
+        let clause = boundedClause.hasSuffix(".") ? String(boundedClause.dropLast()) : boundedClause
         let words = clause.split(separator: " ")
         guard !words.isEmpty, words.count <= 4,
               clause.rangeOfCharacter(from: .decimalDigits) == nil,
@@ -66,7 +79,9 @@ public enum TypedSellerParser {
         // "from Saladworks" alone (no food before it) isn't an entry we can log.
         guard !itemText.isEmpty else { return Result(cleanText: trimmed) }
 
-        return Result(cleanText: itemText, seller: Seller(name: titleCased(name)))
+        // Stitch the sentence back together without the seller clause: the remainder keeps
+        // its own leading separator (" with …", ", salsa…"), so plain concatenation is right.
+        return Result(cleanText: itemText + remainder, seller: Seller(name: titleCased(name)))
     }
 
     /// "salad works" → "Salad Works". Words the user already capitalized are kept verbatim

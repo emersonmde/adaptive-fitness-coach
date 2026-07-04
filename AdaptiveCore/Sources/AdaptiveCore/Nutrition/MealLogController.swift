@@ -409,7 +409,7 @@ public final class MealLogController {
     /// C1: untouched questions answer themselves with their default — skipping is free.
     private func defaultAnswers(for item: DraftItem) -> [QuestionAnswer] {
         guard let question = item.question, let fallback = question.defaultOption else { return [] }
-        return [QuestionAnswer(questionID: question.id, optionID: fallback.id)]
+        return [QuestionAnswer(question: question, option: fallback)]
     }
 
     private func setStatus(_ id: DraftItem.ID, _ state: ItemStatus.State) {

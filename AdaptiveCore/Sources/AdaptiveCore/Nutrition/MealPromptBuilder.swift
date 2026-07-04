@@ -56,9 +56,13 @@ public enum MealPromptBuilder {
         Rules:
         - One typed description is usually ONE item; split only when two foods are clearly \
         listed ("burger and fries" stays one meal item only if it's a named combo).
-        - "from X" or "at X" at the end of the text names the seller: extract X as the \
-        seller (official branding, domain if you know it) and REMOVE the clause from the \
+        - "from X" or "at X" names the seller WHEREVER it appears in the text — "Rise and \
+        Shine from Bob Evans with scrambled eggs and sausage" names the seller "Bob Evans". \
+        Extract it (official branding, domain if you know it) and REMOVE the clause from the \
         item name. Never leave a named seller out of your answer.
+        - When the text names a menu item or dish ("Rise and Shine") and then describes its \
+        components, keep the menu-item name in the item — it is what nutrition data is \
+        published under; the components alone are not the dish.
         - Never invent details that aren't in the text; keep unknown foods as written, \
         spelling-corrected.
         - Ask a clarifying question ONLY when the answer would materially change calories.
@@ -135,7 +139,7 @@ public enum MealPromptBuilder {
             lines.append("Seller: \(seller.name)\(seller.domainHint.map { " (official site: \($0))" } ?? "")")
         }
         if !answers.isEmpty {
-            lines.append("User clarified: " + answers.map { "\($0.questionID)=\($0.optionID)" }.joined(separator: ", "))
+            lines.append("User clarified: " + answers.map(\.promptDescription).joined(separator: "; "))
         }
         lines.append("""
 
@@ -207,7 +211,7 @@ public enum MealPromptBuilder {
             lines.append("Context text from the photo: \(ocrLines.prefix(12).joined(separator: " · "))")
         }
         if !answers.isEmpty {
-            lines.append("User clarified: " + answers.map { "\($0.questionID)=\($0.optionID)" }.joined(separator: ", "))
+            lines.append("User clarified: " + answers.map(\.promptDescription).joined(separator: "; "))
         }
         lines.append("Estimate the calorie range and macros for one serving.")
         return lines.joined(separator: "\n")

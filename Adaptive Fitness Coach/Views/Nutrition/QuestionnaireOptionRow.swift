@@ -27,7 +27,7 @@ struct QuestionnaireOptionRow: View {
         let isSelected = (selectedID ?? question.defaultOptionID) == option.id
         return Button {
             selectedID = option.id
-            onAnswer(QuestionAnswer(questionID: question.id, optionID: option.id))
+            onAnswer(QuestionAnswer(question: question, option: option))
         } label: {
             Text(option.label)
                 .font(.caption.weight(isSelected ? .semibold : .regular))
