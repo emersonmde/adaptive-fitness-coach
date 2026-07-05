@@ -26,6 +26,20 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
 
 **Phone UI tests are flaky in PARALLEL** (xcodebuild clone contention) — always add `-parallel-testing-enabled NO`. They pass reliably serially.
 
+**UI-test iteration loop — split build from test.** A plain `xcodebuild … test` pays a full build pass every run. Build once, then re-run from the `.xctestrun` (skips all compilation on a pure re-run; after a source change, re-run `build-for-testing` first — it's incremental — then test again):
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
+  -project "Adaptive Fitness Coach.xcodeproj" -scheme "Adaptive Fitness Coach" \
+  -destination 'id=<iOS-27-UDID>' -derivedDataPath build-uitest build-for-testing
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
+  -destination 'id=<iOS-27-UDID>' -parallel-testing-enabled NO \
+  -xctestrun "$(ls -t build-uitest/Build/Products/*.xctestrun | head -1)" \
+  -only-testing:"Adaptive Fitness CoachUITests/MealFlowUITests" test-without-building
+```
+
+Pre-boot the simulator (`xcrun simctl boot <UDID>`) to save the cold-boot 20–40s on the first test.
+
 **Simulator launch args** (the sim generates no HR/zone data and `simctl` can't grant HealthKit/notification auth, so use these to demo/test):
 - Watch `-simulateWorkout` — scripted HR/zones via `SimulatedWorkoutBackend`, compressed plan, auto-starts, skips the HealthKit prompt. **The only way to see the adaptive loop in the simulator.**
 - Phone `-uiTesting` — throwaway store so runs start clean (used by the XCUITests).

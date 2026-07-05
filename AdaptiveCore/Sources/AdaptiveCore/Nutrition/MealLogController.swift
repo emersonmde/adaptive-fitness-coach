@@ -63,6 +63,9 @@ public final class MealLogController {
     private let recorder: any NutritionRecorder
     private let queue: PendingMealQueue?
     private var capture: MealCapture?
+    /// The day the user was *looking at* when they started the capture (the Food screen's
+    /// viewed day) — survives a retry so the prefill doesn't silently snap back to today.
+    private var preferredDate: Date?
     private var answers: [DraftItem.ID: QuestionAnswer] = [:]
     /// Pre-resolve bookkeeping: the active drain (callers chain onto it, so lookups stay
     /// strictly sequential — PCC-rate-friendly — and every caller's await means "fully
@@ -89,10 +92,14 @@ public final class MealLogController {
 
     // MARK: - Capture → confirm
 
-    public func beginCapture(_ capture: MealCapture) async {
+    /// `preferredDate` is the day screen's viewed day: a capture started while browsing
+    /// Tuesday defaults the when-row to Tuesday (backfilling is what that flow *means*).
+    /// A date read from the capture itself (receipt print, typed "yesterday") still wins.
+    public func beginCapture(_ capture: MealCapture, preferredDate: Date? = nil) async {
         generation += 1
         let token = generation
         self.capture = capture
+        self.preferredDate = preferredDate
         answers = [:]
         error = nil
         resolutions = [:]
@@ -111,7 +118,7 @@ public final class MealLogController {
             self.draft = draft
             // Same clamp as setLoggedDate: a hallucinated/misread capture date must not
             // record a meal into the future (ReceiptDateParser clamps, the model may not).
-            loggedDate = min(draft.capturedAt ?? Date(), Date())
+            loggedDate = min(draft.capturedAt ?? preferredDate ?? Date(), Date())
             prefilledFromCapture = draft.capturedAt != nil
             slotWasManuallyChosen = false
             mealSlot = draft.suggestedSlot ?? MealSlot.suggested(for: loggedDate)
@@ -132,7 +139,7 @@ public final class MealLogController {
             cancel()
             return
         }
-        await beginCapture(capture)
+        await beginCapture(capture, preferredDate: preferredDate)
     }
 
     /// Sheet dismissed / user cancelled — abandon everything in flight.
@@ -140,6 +147,7 @@ public final class MealLogController {
         generation += 1
         draft = nil
         capture = nil
+        preferredDate = nil
         answers = [:]
         error = nil
         resolutions = [:]

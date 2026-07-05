@@ -10,6 +10,9 @@ struct EntryEditSheet: View {
     let entry: MealEntry
     let recorder: any NutritionRecorder
     let onSaved: () -> Void
+    /// "Log again today" recorded a fresh copy — reports the new entry's id so the day
+    /// screen can badge exactly that row (and say so when it landed off-screen).
+    var onRelogged: ((UUID) -> Void)? = nil
 
     @State private var name: String
     @State private var kcalText: String
@@ -34,10 +37,16 @@ struct EntryEditSheet: View {
     private let resolver = MealPipelineProvider.makeResolver()
     @Environment(\.dismiss) private var dismiss
 
-    init(entry: MealEntry, recorder: any NutritionRecorder, onSaved: @escaping () -> Void) {
+    init(
+        entry: MealEntry,
+        recorder: any NutritionRecorder,
+        onSaved: @escaping () -> Void,
+        onRelogged: ((UUID) -> Void)? = nil
+    ) {
         self.entry = entry
         self.recorder = recorder
         self.onSaved = onSaved
+        self.onRelogged = onRelogged
         _name = State(initialValue: entry.name)
         _sellerName = State(initialValue: entry.seller?.name ?? "")
         _kcalText = State(initialValue: String(Int(entry.facts.energy.midpointKcal.rounded())))
@@ -126,6 +135,20 @@ struct EntryEditSheet: View {
                         }
                         .disabled(saving)
                         .accessibilityIdentifier("meal.edit.save")
+
+                        // The full action set lives here too — the sheet is the surface every
+                        // user finds by plain tapping, so nothing is long-press-only.
+                        Button {
+                            Task { await logAgainToday() }
+                        } label: {
+                            Label("Log again today", systemImage: "arrow.counterclockwise")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(Theme.accent)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
+                        .accessibilityIdentifier("meal.edit.logAgain")
 
                         Button(role: .destructive) {
                             confirmingDelete = true   // one tap from permanent — confirm first
@@ -227,6 +250,19 @@ struct EntryEditSheet: View {
             dismiss()
         } catch {
             self.error = "Couldn't save the change — try again."
+        }
+    }
+
+    /// A fresh copy of the ORIGINAL entry lands on today (unsaved edits in the fields stay
+    /// unsaved — this is "same thing again", not "save + duplicate").
+    private func logAgainToday() async {
+        let fresh = entry.relogged()
+        do {
+            try await recorder.record(fresh)
+            onRelogged?(fresh.id)
+            dismiss()
+        } catch {
+            self.error = "Couldn't log it again — try again."
         }
     }
 

@@ -2,7 +2,7 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-04: **P0–P4 + the build-11 review sweep + the build-12 design sweep + the build-13 typed-meal parsing fixes all on `main`**. **TestFlight build 13 uploaded** (see the build-13 section: mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
+_Last updated 2026-07-05: **P0–P4 + the build-11/12 sweeps + the build-13 typed-meal parsing fixes + the build-14 Food-screen UX repage all on `main`**. **TestFlight build 14 uploaded** (see the build-14 section: days page by swipe, pinned add bar, past-day backfill via when-row prefill, relog toast instead of teleport, full action set on tap/long-press). Build 13 carried the typed-meal parsing fixes (mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
 
 > **Routines are now a generic card stack.** A `Routine` is `cards: [WorkoutCard]` (`.run` / `.exercise` / `.rest`) plus a `rounds` count that repeats the whole list (= sets; a trailing rest card becomes rest between rounds). The phone builds it from a typed card list; the watch walks it and starts/stops the right Apple workout per card type automatically (`workoutBlocks()`), reusing the existing run and strength screens. The old `type`/`durationMinutes`/`exercises` fields are gone (migrated on decode). WC payload is **v4** (progression channel v2). This supersedes the type-branched descriptions below — treat them as history.
 
@@ -355,6 +355,36 @@ Second feedback round (same session):
   community-established; unrecognized paths degrade to just opening Health — verify the
   room actually opens on device).
 → 379 package tests; MealFlowUITests 12 (rescan flow + title jump).
+
+### Build 14 — Food-screen UX repage (2026-07-05, from the user's sr-designer review)
+The user flagged the day screen as clunky (chevron-only paging, long-press-only actions);
+a full design review found more; everything identified shipped:
+- **Days page by horizontal swipe** (`TabView(.page)` inside the pushed screen; the system
+  back gesture keeps its ~20pt leading edge, so both gestures coexist). Only the visible
+  page ±1 is realized (365-day span, placeholder elsewhere — no eager Health fetches).
+  Chevrons stay as the discoverable/accessible path; tap-title-to-today stays.
+- **Gesture-grammar decision (verified, not assumed):** List `swipeActions` are DEAD inside
+  a `TabView` pager — the pager consumes horizontal drags on rows (a failing UI test proved
+  it). Removed by design rather than shipping a sometimes-firing affordance. The grammar is
+  now: horizontal = time, tap = edit sheet (full action set — Edit/**Log again today**
+  (new)/Delete), long-press = context menu (**Edit added** — it was missing while tap did
+  it), plus `PressableCardStyle` press feedback so rows read as tappable at all.
+- **Relog never teleports.** Log-again used to yank `anchorDay` to today mid-browse; now it
+  stays put, badges the new entry, and (from a past day) shows a tappable "Added to Today"
+  toast (2.5s, tap = jump home).
+- **Past-day backfill works as intended:** Scan/Type from a browsed day prefills the
+  when-row with THAT day (`beginCapture(_:preferredDate:)` in core; a capture-carried date —
+  receipt print, typed "yesterday" — still outranks it; widget/Siri/daily-line paths pass
+  nil). Kills the silent log-to-today surprise and gives empty past days a real backfill path.
+- **The add bar is pinned** (`safeAreaInset`): Scan primary + a keyboard icon for typed
+  entry — the screen's primary action no longer scrolls away under a full day.
+- Naming reviewed ("Food" vs Diary/Log/Nutrition): **"Food" kept deliberately** (Fitbit/
+  Samsung convention; "Meals" was the runner-up; "Diary" rejected for MFP-guilt register).
+- **UI-test loop split** documented in CLAUDE.md: `build-for-testing` once →
+  `test-without-building` per re-run (validated); `build-uitest/` git-ignored.
+→ 387 package tests (+1: preferred-date prefill); MealFlowUITests 15 (+3: swipe-between-days,
+past-day backfill, context-menu-carries-all-actions). Gauge/over-target state reviewed, no
+change needed (amber, no alarm — C6 holds).
 
 ### Build 13 — typed-meal parsing fixes (2026-07-04, from on-device use)
 User's real entry "Rising shine from bob Evans with scrambled eggs, salsa, 3 sausage links"

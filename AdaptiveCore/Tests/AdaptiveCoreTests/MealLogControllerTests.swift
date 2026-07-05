@@ -36,6 +36,44 @@ struct MealLogControllerTests {
         #expect(controller.draft?.items.first { $0.id == ScriptedMealPipeline.DemoID.pasta }?.isChecked == false)
     }
 
+    /// A capture started while browsing a past day prefills the when-row with THAT day
+    /// (backfilling is the point of adding from a past day) — but a date the capture itself
+    /// carries (receipt print / typed "yesterday") still outranks it.
+    @Test func preferredDatePrefillsLoggedDate() async {
+        let calendar = Calendar.current
+        let viewedDay = calendar.date(byAdding: .day, value: -3, to: Date())!
+        // A draft with no self-carried date (the demo receipt scripts a printed one).
+        let undated = ScriptedMealPipeline(script: .init(draft: MealDraft(
+            classification: .receipt, seller: nil, items: [DraftItem(name: "Salad")]
+        )))
+        let controller = MealLogController(
+            pipeline: undated, resolver: undated.scriptedResolver(),
+            recorder: InMemoryNutritionRecorder()
+        )
+        await controller.beginCapture(
+            MealCapture(ocrLines: ["TRADER JOE'S", "CHKN CSR SLD"]),
+            preferredDate: viewedDay
+        )
+        #expect(controller.phase == .confirming)
+        #expect(calendar.isDate(controller.loggedDate, inSameDayAs: viewedDay))
+        // Not a capture-supplied date — no "From the capture" honesty caption.
+        #expect(controller.prefilledFromCapture == false)
+
+        // The capture's own date wins over the viewed day.
+        let printed = calendar.date(byAdding: .day, value: -1, to: Date())!
+        let pipeline = ScriptedMealPipeline(script: .init(draft: MealDraft(
+            classification: .receipt, seller: nil,
+            items: [DraftItem(name: "Salad")], capturedAt: printed
+        )))
+        let dated = MealLogController(
+            pipeline: pipeline, resolver: pipeline.scriptedResolver(),
+            recorder: InMemoryNutritionRecorder()
+        )
+        await dated.beginCapture(MealCapture(ocrLines: ["receipt"]), preferredDate: viewedDay)
+        #expect(calendar.isDate(dated.loggedDate, inSameDayAs: printed))
+        #expect(dated.prefilledFromCapture == true)
+    }
+
     @Test func identifyFailureIsHonestAndRetryable() async {
         let draft = MealDraft(classification: .receipt, seller: nil, items: [DraftItem(name: "x")])
         let pipeline = ScriptedMealPipeline(script: .init(draft: draft, identifyError: URLError(.timedOut)))

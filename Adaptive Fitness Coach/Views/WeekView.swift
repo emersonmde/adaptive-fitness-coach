@@ -25,6 +25,10 @@ struct WeekView: View {
     @State private var showingMealCapture = false
     @State private var showingFoodDay = false
     @State private var showingTypedEntry = false
+    /// The day the Food screen was showing when Scan/Type was tapped — prefills the
+    /// when-row so browsing Tuesday + Add means backfilling Tuesday, not silently today.
+    /// nil for every other entry point (daily line, widgets, Siri).
+    @State private var mealCaptureContext: Date?
     private let mealRecorder = MealPipelineProvider.sharedRecorder
     private let mealTargetStore = MealPipelineProvider.sharedTargetStore
     @ObservedObject private var mealCaptureRequest = MealCaptureRequest.shared
@@ -95,7 +99,7 @@ struct WeekView: View {
             }
             .fullScreenCover(isPresented: $showingMealCapture) {
                 MealCaptureView { capture in
-                    Task { await mealController.beginCapture(capture) }
+                    Task { await mealController.beginCapture(capture, preferredDate: mealCaptureContext) }
                 }
             }
             // One continuous surface for the whole capture→confirm flow: the sheet appears
@@ -113,7 +117,7 @@ struct WeekView: View {
             }
             .sheet(isPresented: $showingTypedEntry) {
                 TypedEntryView { capture in
-                    Task { await mealController.beginCapture(capture) }
+                    Task { await mealController.beginCapture(capture, preferredDate: mealCaptureContext) }
                 }
             }
             .navigationDestination(isPresented: $showingFoodDay) {
@@ -122,8 +126,14 @@ struct WeekView: View {
                     recorder: mealRecorder,
                     targetStore: mealTargetStore,
                     bodyProfileSource: MealPipelineProvider.makeBodyProfileSource(),
-                    onScan: { showingMealCapture = true },
-                    onType: { showingTypedEntry = true }
+                    onScan: { day in
+                        mealCaptureContext = day
+                        showingMealCapture = true
+                    },
+                    onType: { day in
+                        mealCaptureContext = day
+                        showingTypedEntry = true
+                    }
                 )
             }
             .task {
@@ -170,8 +180,10 @@ struct WeekView: View {
     private func routeCaptureRequest() {
         switch mealCaptureRequest.consume() {
         case .scan:
+            mealCaptureContext = nil   // widget/Siri entry points always mean "now"
             showingMealCapture = true
         case .type:
+            mealCaptureContext = nil
             showingTypedEntry = true
         case .typed(let text):
             // Siri already collected the description — straight to identify → confirm.
@@ -186,7 +198,10 @@ struct WeekView: View {
             controller: mealController,
             recorder: mealRecorder,
             targetStore: mealTargetStore,
-            onCapture: { showingMealCapture = true },
+            onCapture: {
+                mealCaptureContext = nil   // the daily line is a today surface
+                showingMealCapture = true
+            },
             onShowEntries: { showingFoodDay = true }
         )
     }

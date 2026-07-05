@@ -371,6 +371,85 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["280 kcal"].waitForExistence(timeout: 6))
     }
 
+    // MARK: - Build 14 (paged Food screen)
+
+    /// Mid-screen horizontal swipes page between days; the chevrons stay as the
+    /// discoverable/accessible path (the edge swipe still pops back to the hub).
+    func testSwipeBetweenDays() throws {
+        let app = launchApp()
+        openCapture(app)
+        tapSimulatedCapture(app, "barcode")
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 5))
+        tapLogWhenReady(app)
+        XCTAssertTrue(app.staticTexts["140 kcal"].waitForExistence(timeout: 10))
+
+        openFoodDay(app)
+        dismissTargetSheetIfPresent(app)
+        app.swipeRight()   // mid-screen, not the edge: previous day
+        XCTAssertTrue(app.staticTexts["Yesterday"].waitForExistence(timeout: 3))
+        app.swipeLeft()
+        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["140 kcal"].exists)
+    }
+
+    /// The long-press menu carries the FULL action set (Edit joined Log again/Delete in
+    /// build 14 — a user who finds the menu must see everything a tap can do), and the
+    /// edit sheet's "Log again today" is the same action one plain tap deep.
+    /// (No swipe actions by design: the day pager owns horizontal drags.)
+    func testContextMenuCarriesAllActions() throws {
+        let app = launchApp()
+        openCapture(app)
+        tapSimulatedCapture(app, "barcode")
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 5))
+        tapLogWhenReady(app)
+        XCTAssertTrue(app.staticTexts["140 kcal"].waitForExistence(timeout: 10))
+
+        openFoodDay(app)
+        dismissTargetSheetIfPresent(app)
+        let row = app.staticTexts["Coca-Cola Classic 12 fl oz"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["Edit"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Log again"].exists)
+        XCTAssertTrue(app.buttons["Delete"].exists)
+
+        // Edit opens the same sheet a tap does; its "Log again today" doubles the total.
+        app.buttons["Edit"].tap()
+        let again = app.buttons["meal.edit.logAgain"]
+        XCTAssertTrue(again.waitForExistence(timeout: 5))
+        again.tap()
+        XCTAssertTrue(app.staticTexts["280 kcal"].waitForExistence(timeout: 6))
+    }
+
+    /// Adding while browsing a past day backfills THAT day (the when-row prefills the
+    /// viewed day), and today stays empty.
+    func testAddFromPastDayBackfills() throws {
+        let app = launchApp()
+        // First use routes through the Food screen; page to Yesterday, then scan from there.
+        let firstUse = app.buttons["meal.dailyLine.firstUse"]
+        XCTAssertTrue(firstUse.waitForExistence(timeout: 5))
+        firstUse.tap()
+        XCTAssertTrue(app.staticTexts["meal.day.title"].waitForExistence(timeout: 5))
+        dismissTargetSheetIfPresent(app)
+        app.buttons["meal.day.prev"].tap()
+        XCTAssertTrue(app.staticTexts["Yesterday"].waitForExistence(timeout: 3))
+
+        app.buttons["meal.day.scan"].tap()
+        if !app.buttons["meal.capture.cancel"].waitForExistence(timeout: 3) {
+            app.buttons["meal.day.scan"].tap()
+        }
+        tapSimulatedCapture(app, "barcode")
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 5))
+        tapLogWhenReady(app)
+
+        // Still on Yesterday, and the entry landed here…
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Yesterday"].exists)
+        // …while today stays empty (the title button jumps home).
+        app.buttons["meal.day.title"].tap()
+        XCTAssertTrue(app.staticTexts["Nothing logged yet today."].waitForExistence(timeout: 5))
+    }
+
     // MARK: - Helpers
 
     private func openFoodDay(_ app: XCUIApplication) {
