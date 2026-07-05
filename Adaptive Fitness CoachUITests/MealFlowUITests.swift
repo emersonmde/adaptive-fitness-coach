@@ -411,7 +411,6 @@ final class MealFlowUITests: XCTestCase {
     /// The long-press menu carries the FULL action set (Edit joined Log again/Delete in
     /// build 14 — a user who finds the menu must see everything a tap can do), and the
     /// edit sheet's "Log again today" is the same action one plain tap deep.
-    /// (No swipe actions by design: the day pager owns horizontal drags.)
     func testContextMenuCarriesAllActions() throws {
         let app = launchApp()
         openCapture(app)

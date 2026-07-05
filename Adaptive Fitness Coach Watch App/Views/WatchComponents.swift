@@ -86,7 +86,7 @@ struct ZoneBarView: View {
         switch slot {
         case 0: WatchTheme.strength      // recovery / low
         case 1: WatchTheme.run           // aerobic
-        case 2: Color(hex: 0xFFD23E)     // tempo
+        case 2: WatchTheme.zoneTempo     // tempo
         case 3: WatchTheme.heat          // threshold
         default: WatchTheme.hot          // max
         }
@@ -120,12 +120,12 @@ struct ZoneBarView: View {
             }
         }
         .frame(height: 14)
-        .animation(.easeInOut(duration: 0.3), value: activeSlot)
+        .animation(WatchTheme.Motion.settle, value: activeSlot)
         .onChange(of: shouldPulse, initial: true) { _, pulse in
             if pulse && !reduceMotion {
-                withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) { hotPulse = true }
+                withAnimation(WatchTheme.Motion.pulse) { hotPulse = true }
             } else {
-                withAnimation(.default) { hotPulse = false }
+                withAnimation(WatchTheme.Motion.settle) { hotPulse = false }
             }
         }
         .accessibilityElement()

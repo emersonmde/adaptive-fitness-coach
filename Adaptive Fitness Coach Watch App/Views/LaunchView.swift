@@ -21,13 +21,15 @@ struct LaunchView: View {
                 VStack(spacing: 3) {
                     Text("UP NEXT")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WatchTheme.textSecondary)
                     Text(routine.name)
                         .font(.title3.bold())
                         .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
                     Text(durationText)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WatchTheme.textSecondary)
                 }
                 Spacer(minLength: 0)
                 Button(action: onStart) {
@@ -40,13 +42,13 @@ struct LaunchView: View {
                 Spacer(minLength: 0)
                 Image(systemName: "iphone.and.arrow.forward")
                     .font(.title)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WatchTheme.textSecondary)
                 Text("No session scheduled")
                     .font(.headline)
                     .multilineTextAlignment(.center)
                 Text("Create a routine on your iPhone.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WatchTheme.textSecondary)
                     .multilineTextAlignment(.center)
                 Spacer(minLength: 0)
             }

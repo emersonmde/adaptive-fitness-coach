@@ -37,6 +37,7 @@ struct WeekView: View {
     /// Days this week with a completed workout of ours (Health read-back → strip checks).
     @State private var doneDays: Set<DayOfWeek> = []
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -49,6 +50,9 @@ struct WeekView: View {
                 }
             }
             .navigationTitle("Your Week")
+            // Large deliberately: the hub is the one root screen; every pushed/presented
+            // screen is .inline.
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     claudeMenu
@@ -297,9 +301,11 @@ struct WeekView: View {
                             RoutineCard(routine: routine)
                         }
                         .buttonStyle(.plain)
-                        .scrollTransition { view, phase in
+                        .scrollTransition { [reduceMotion] view, phase in
+                            // Scale-on-scroll is a Reduce Motion target; the opacity
+                            // de-emphasis alone survives it.
                             view.opacity(phase.isIdentity ? 1 : 0.5)
-                                .scaleEffect(phase.isIdentity ? 1 : 0.97)
+                                .scaleEffect(phase.isIdentity || reduceMotion ? 1 : 0.97)
                         }
                     }
                 }

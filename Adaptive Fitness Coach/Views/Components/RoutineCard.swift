@@ -31,6 +31,8 @@ struct RoutineCard: View {
                     Text(routine.name)
                         .font(.headline)
                         .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)   // matches the hero card's clamp discipline
                     if routine.repeatDays.isEmpty {
                         Text(subtitle)
                             .font(.caption)

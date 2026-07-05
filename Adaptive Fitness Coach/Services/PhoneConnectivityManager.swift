@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import WatchConnectivity
 import AdaptiveCore
 
@@ -35,9 +36,8 @@ final class PhoneConnectivityManager: NSObject {
             // Non-fatal: transient unreachability does not throw (the OS delivers the latest
             // context once the watch is reachable); this catch only fires on an encode/state
             // error, where the watch simply keeps its last-known routines.
-            #if DEBUG
-            print("PhoneConnectivity sync failed: \(error)")
-            #endif
+            Logger(subsystem: "com.memerson.Adaptive-Fitness-Coach", category: "connectivity")
+                .error("PhoneConnectivity sync failed: \(error)")
         }
     }
 }

@@ -86,7 +86,6 @@ struct LookupLabView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     private var summaryCard: some View {

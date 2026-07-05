@@ -56,7 +56,7 @@ private struct RoutineLaunchCard: View {
             VStack(spacing: 3) {
                 Text(isUpNext ? "UP NEXT" : "\(position.current) OF \(position.total)")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WatchTheme.textSecondary)
                 Text(routine.name)
                     .font(.title3.bold())
                     .multilineTextAlignment(.center)
@@ -64,7 +64,7 @@ private struct RoutineLaunchCard: View {
                     .minimumScaleFactor(0.7)
                 Text(kind.summary)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WatchTheme.textSecondary)
             }
             Spacer(minLength: 0)
             Button(action: onStart) {

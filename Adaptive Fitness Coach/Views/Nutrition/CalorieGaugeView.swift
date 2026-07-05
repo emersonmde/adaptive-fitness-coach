@@ -13,8 +13,6 @@ struct CalorieGaugeView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let amber = Color(hex: 0xFFB23E)   // the zone-ladder/rest-ring gradient amber
-
     var body: some View {
         ZStack {
             Circle()
@@ -22,11 +20,11 @@ struct CalorieGaugeView: View {
             Circle()
                 .trim(from: 0, to: budget.fillFraction)
                 .stroke(
-                    budget.isOver ? Self.amber : Theme.accent,
+                    budget.isOver ? Theme.heat : Theme.accent,
                     style: StrokeStyle(lineWidth: 12, lineCap: .round)
                 )
                 .rotationEffect(.degrees(-90))
-                .animation(reduceMotion ? nil : .easeOut(duration: 0.6), value: budget.fillFraction)
+                .animation(reduceMotion ? nil : Theme.Motion.gentle, value: budget.fillFraction)
                 .animation(nil, value: budget.isOver)   // the tint shift is a state, not a show
 
             VStack(spacing: 2) {
@@ -35,14 +33,14 @@ struct CalorieGaugeView: View {
                         .font(.footnote)
                         .foregroundStyle(Theme.textTertiary)
                     Text("\(Int(budget.consumedKcal.rounded()).formatted())")
-                        .font(.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit())
+                        .font(Theme.metricNumber)
                         .foregroundStyle(Theme.textPrimary)
                         .accessibilityIdentifier("meal.day.gauge.consumed")
                 }
                 if let over = budget.overKcal {
                     Text("\(over.formatted()) over")
                         .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(Self.amber)
+                        .foregroundStyle(Theme.heat)
                         .accessibilityIdentifier("meal.day.gauge.over")
                 } else {
                     Text("of \(budget.targetKcal.formatted())")

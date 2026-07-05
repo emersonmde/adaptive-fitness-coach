@@ -25,6 +25,11 @@ struct MealConfirmationSheet: View {
                 default:
                     if let draft = controller.draft {
                         confirmationList(draft)
+                    } else {
+                        // A presented sheet must never be a dark void — if the draft is
+                        // momentarily nil in a non-identifying phase, keep the progress
+                        // treatment up rather than showing bare background.
+                        identifyingView
                     }
                 }
             }
@@ -40,7 +45,6 @@ struct MealConfirmationSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
         .interactiveDismissDisabled()   // Cancel is explicit; a swipe shouldn't silently drop edits
     }
 
@@ -153,7 +157,10 @@ struct MealConfirmationSheet: View {
                 ) {
                     Task {
                         await controller.commit()
-                        if controller.phase != .confirming { dismiss() }
+                        if controller.phase != .confirming {
+                            Theme.Haptics.success()   // the log landed
+                            dismiss()
+                        }
                     }
                 }
                 .disabled(checkedCount(draft) == 0 || lookingUpCount(draft) > 0)
@@ -195,6 +202,7 @@ struct MealConfirmationSheet: View {
             Image(systemName: icon(for: draft.classification))
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
+                .accessibilityHidden(true)   // decorative — the header text names the kind
             Text(headerText(draft))
                 .font(.subheadline)
                 .foregroundStyle(Theme.textSecondary)
@@ -281,6 +289,11 @@ private struct ItemRow: View {
                                 .foregroundStyle(Theme.textTertiary)
                         }
                         .onTapGesture(perform: beginRename)
+                        // A tap gesture on a plain view is invisible to VoiceOver —
+                        // expose the rename as the button it behaves like.
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Rename \(item.name)")
+                        .accessibilityAddTraits(.isButton)
                     }
 
                     Spacer(minLength: 8)

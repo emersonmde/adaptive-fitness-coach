@@ -24,7 +24,7 @@ struct EffortRatingControl: View {
             Text("EFFORT")
                 .font(.caption2.weight(.semibold))
                 .tracking(1.5)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WatchTheme.textSecondary)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(effort.map { "\($0)" } ?? "–")
                     .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
@@ -45,7 +45,7 @@ struct EffortRatingControl: View {
             }
             Text(hint)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WatchTheme.textSecondary)
         }
         // The whole stack is the tap target — a 30pt digit alone is a stingy thing to have
         // to hit post-workout with a sweaty finger.

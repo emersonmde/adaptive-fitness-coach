@@ -98,7 +98,7 @@ struct EntryEditSheet: View {
                         if kcalChanged {
                             Text("Will be logged as your number")
                                 .font(.caption2)
-                                .foregroundStyle(Theme.textTertiary)
+                                .foregroundStyle(Theme.textSecondary)   // honesty string — legible tier
                                 .accessibilityIdentifier("meal.edit.userStatedNote")
                         }
 
@@ -187,13 +187,12 @@ struct EntryEditSheet: View {
                         } catch {
                             // Same honesty as save(): a failed delete keeps the sheet
                             // open and says so, never a silent success.
-                            self.error = "Couldn't delete the entry — try again."
+                            self.error = "Couldn't delete the entry. Try again."
                         }
                     }
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     private var kcalChanged: Bool {
@@ -249,7 +248,7 @@ struct EntryEditSheet: View {
             onSaved()
             dismiss()
         } catch {
-            self.error = "Couldn't save the change — try again."
+            self.error = "Couldn't save the change. Try again."
         }
     }
 
@@ -262,7 +261,7 @@ struct EntryEditSheet: View {
             onRelogged?(fresh.id)
             dismiss()
         } catch {
-            self.error = "Couldn't log it again — try again."
+            self.error = "Couldn't log it again. Try again."
         }
     }
 
@@ -278,7 +277,7 @@ struct EntryEditSheet: View {
                 .foregroundStyle(Theme.textTertiary)
             content()
                 .padding(12)
-                .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 12))
+                .background(Theme.surface2, in: RoundedRectangle(cornerRadius: Theme.radiusInset))
         }
     }
 }

@@ -11,6 +11,8 @@ import AdaptiveCore
 struct AdaptationCue: View {
     let event: AdaptationEvent
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private var pushing: Bool { event.action.increasesEffort }
 
     private var glyph: String { pushing ? "chevron.up.2" : "chevron.down.2" }
@@ -38,7 +40,8 @@ struct AdaptationCue: View {
         .padding(.horizontal, 11)
         .padding(.vertical, 4)
         .glassEffect(.regular, in: .capsule)
-        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+        // Under Reduce Motion the scale component drops away — the cue fades, it never grows.
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.85)))
         .accessibilityLabel(event.message) // full sentence for VoiceOver only
     }
 }

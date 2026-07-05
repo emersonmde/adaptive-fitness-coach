@@ -34,7 +34,7 @@ struct StrengthSessionContainerView: View {
             case .idle:
                 // A forced session auto-starts; show a brief spinner instead of the launch screen.
                 if forcedRoutine != nil {
-                    ProgressView().tint(WatchTheme.strength)
+                    StartingView(tint: WatchTheme.strength)
                 } else {
                     StrengthLaunchView(routine: effectiveRoutine, exerciseCount: exerciseCount, onStart: start)
                 }
@@ -61,7 +61,7 @@ struct StrengthSessionContainerView: View {
                         }
                     )
                 } else {
-                    ProgressView()
+                    WrappingUpView(tint: WatchTheme.strength) { manager.reset(); onFinish?() }
                 }
             case .failed:
                 ContentUnavailableView {
@@ -171,13 +171,15 @@ struct StrengthLaunchView: View {
                 VStack(spacing: 3) {
                     Text("UP NEXT")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WatchTheme.textSecondary)
                     Text(routine?.name ?? "Strength")
                         .font(.title3.bold())
                         .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
                     Text("Strength · \(exerciseCount) exercise\(exerciseCount == 1 ? "" : "s")")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WatchTheme.textSecondary)
                 }
                 Spacer(minLength: 0)
                 Button(action: onStart) {
@@ -190,13 +192,13 @@ struct StrengthLaunchView: View {
                 Spacer(minLength: 0)
                 Image(systemName: "iphone.and.arrow.forward")
                     .font(.title)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WatchTheme.textSecondary)
                 Text("No session scheduled")
                     .font(.headline)
                     .multilineTextAlignment(.center)
                 Text("Create a strength routine on your iPhone.")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WatchTheme.textSecondary)
                     .multilineTextAlignment(.center)
                 Spacer(minLength: 0)
             }

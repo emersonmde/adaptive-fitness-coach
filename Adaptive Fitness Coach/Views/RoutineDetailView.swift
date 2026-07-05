@@ -148,7 +148,7 @@ struct RoutineDetailView: View {
                         Spacer()
                     }
                     .padding(14)
-                    .background(Theme.surface1, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(Theme.surface1, in: RoundedRectangle(cornerRadius: Theme.radiusInset, style: .continuous))
                 }
 
                 // The name is editable here because it's more than a label: it's the merge key
@@ -208,7 +208,7 @@ struct RoutineDetailView: View {
                         .foregroundStyle(Theme.hot)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
-                        .background(Theme.hot.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .background(Theme.hot.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.radiusInset, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 4)

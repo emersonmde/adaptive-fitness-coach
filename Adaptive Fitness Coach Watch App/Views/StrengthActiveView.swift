@@ -27,7 +27,7 @@ struct StrengthSessionPager: View {
                 if manager.activity == .rest {
                     RestView(manager: manager)
                 } else {
-                    StrengthGlanceView(manager: manager) { withAnimation { selection = .exercise } }
+                    StrengthGlanceView(manager: manager) { withAnimation(WatchTheme.Motion.settle) { selection = .exercise } }
                 }
             }
             .tag(Page.glance)
@@ -42,7 +42,7 @@ struct StrengthSessionPager: View {
         .onChange(of: manager.activity) { _, activity in
             // Snap home when a rest begins: the recovery ring should greet the user wherever
             // they were, and the selection must leave the Exercise page before it vanishes.
-            if activity == .rest { withAnimation { selection = .glance } }
+            if activity == .rest { withAnimation(WatchTheme.Motion.settle) { selection = .glance } }
         }
     }
 }
@@ -125,7 +125,7 @@ struct StrengthGlanceView: View {
         .padding(.horizontal, 6)
         .padding(.top, 2)
         .pagedWorkoutBackground(WatchTheme.strengthField)
-        .animation(.easeInOut(duration: 0.25), value: manager.currentIndex)
+        .animation(WatchTheme.Motion.settle, value: manager.currentIndex)
         .onChange(of: manager.currentIndex) { _, _ in crownValue = Double(manager.repsPending) }
         .onAppear { crownValue = Double(manager.repsPending) }
     }
@@ -306,11 +306,11 @@ struct ExerciseDetailView: View {
     }
 
     private func adjust(_ delta: Double) {
-        withAnimation(.snappy) { manager.adjustWeight(byPounds: delta) }
+        withAnimation(WatchTheme.Motion.snap) { manager.adjustWeight(byPounds: delta) }
     }
 
     private func adjustReps(_ delta: Int) {
-        withAnimation(.snappy) { manager.adjustReps(by: delta) }
+        withAnimation(WatchTheme.Motion.snap) { manager.adjustReps(by: delta) }
     }
 
     /// A labelled ± row — the shared layout for the WEIGHT and REPS adjusters.
@@ -375,7 +375,7 @@ struct RestView: View {
                 .font(.caption.weight(.semibold))
                 .tracking(2)
                 .foregroundStyle(ready ? WatchTheme.strength : ringColor)
-                .animation(.easeInOut(duration: 0.3), value: ready)
+                .animation(WatchTheme.Motion.settle, value: ready)
 
             ZStack {
                 Circle().stroke(ringColor.opacity(0.18), lineWidth: 7)
@@ -384,7 +384,7 @@ struct RestView: View {
                     .stroke(ringColor, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .shadow(color: ready ? WatchTheme.strength.opacity(0.5) : .clear, radius: 5)
-                    .animation(.easeInOut(duration: reduceMotion ? 0 : 0.6), value: hrMode ? manager.restReadiness : timeFraction)
+                    .animation(reduceMotion ? nil : WatchTheme.Motion.gentle, value: hrMode ? manager.restReadiness : timeFraction)
 
                 if hrMode {
                     // The falling heart rate is the hero — watching it refill the ring is
@@ -431,7 +431,7 @@ struct RestView: View {
             }
         }
         .pagedWorkoutBackground(WatchTheme.strengthField)
-        .animation(.easeInOut(duration: 0.25), value: ready)
+        .animation(WatchTheme.Motion.settle, value: ready)
     }
 
     /// Time fraction remaining for the fallback ring (drains toward 0, like the old view).
@@ -462,7 +462,7 @@ struct HoldRingView: View {
                     .stroke(WatchTheme.strength, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .shadow(color: WatchTheme.strength.opacity(manager.holdRunning ? 0.5 : 0), radius: 5)
-                    .animation(.linear(duration: reduceMotion ? 0 : 1), value: manager.holdRemaining)
+                    .animation(reduceMotion ? nil : WatchTheme.Motion.gentleLinear(1), value: manager.holdRemaining)
                 Text(manager.holdRemaining.clockString)
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                     .monospacedDigit()

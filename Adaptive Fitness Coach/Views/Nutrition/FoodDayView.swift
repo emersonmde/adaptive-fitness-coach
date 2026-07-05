@@ -15,9 +15,9 @@ import AdaptiveCore
 /// populated (an empty active-energy line used to sit visually still mid-transition).
 /// Trends stay in Apple Health (linked); this screen is a day, not a dashboard (C6).
 struct FoodDayView: View {
-    @Bindable var controller: MealLogController
+    let controller: MealLogController
     let recorder: any NutritionRecorder
-    @Bindable var targetStore: CalorieTargetStore
+    let targetStore: CalorieTargetStore
     let bodyProfileSource: any BodyProfileSource
     /// Capture entry points carry the VIEWED day — adding while browsing Tuesday means
     /// backfilling Tuesday, not silently logging to today.
@@ -27,7 +27,7 @@ struct FoodDayView: View {
     /// Day position relative to today: 0 = today, negative = past (floor: one year —
     /// beyond that, Health's own trends are the archive, not day-by-day paging).
     @State private var selection = 0
-    /// Frozen at push time (the same lifetime anchorDay had) — days are offsets from here.
+    /// Frozen at push time — days are offsets from here.
     @State private var todayStart = Calendar.current.startOfDay(for: Date())
     /// Which edge the INCOMING day slides from (set before every day change).
     @State private var slideInEdge: Edge = .leading
@@ -45,6 +45,7 @@ struct FoodDayView: View {
     /// the user isn't looking at — say so instead of teleporting them there).
     @State private var showingRelogToast = false
     @State private var relogToastTask: Task<Void, Never>?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var calendar: Calendar { .current }
     private static let maxDaysBack = 365
@@ -53,13 +54,13 @@ struct FoodDayView: View {
         ZStack {
             Theme.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                dayPager
+                dayHeader
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
                 ZStack {
                     FoodDayContent(
                         day: day(for: selection),
-                        isToday: selection == 0,
+                        isToday: isToday,
                         refreshTick: refreshTick,
                         recorder: recorder,
                         targetStore: targetStore,
@@ -72,9 +73,12 @@ struct FoodDayView: View {
                         onEditTarget: { showingTargetSheet = true }
                     )
                     .id(selection)   // day change replaces the content → the slide transition
-                    .transition(.asymmetric(
-                        insertion: .move(edge: slideInEdge),
-                        removal: .move(edge: slideInEdge == .leading ? .trailing : .leading)
+                    .transition(Theme.Motion.slideTransition(
+                        .asymmetric(
+                            insertion: .move(edge: slideInEdge),
+                            removal: .move(edge: slideInEdge == .leading ? .trailing : .leading)
+                        ),
+                        reduceMotion: reduceMotion
                     ))
                 }
                 .clipped()
@@ -116,6 +120,7 @@ struct FoodDayView: View {
         ) {
             Button("Delete", role: .destructive) {
                 guard let entry = pendingDelete else { return }
+                Theme.Haptics.warning()   // a permanent Health deletion is the moment to be felt
                 Task {
                     do {
                         try await recorder.delete(entryID: entry.id)
@@ -123,6 +128,7 @@ struct FoodDayView: View {
                         // An entry that silently stays after "Delete" reads as a bug —
                         // failure must be as visible as success (principle 13).
                         deleteError = "Health couldn't delete that entry. Try again."
+                        Theme.Haptics.warning()
                     }
                     refreshTick += 1
                 }
@@ -135,7 +141,7 @@ struct FoodDayView: View {
             EntryEditSheet(
                 entry: entry,
                 recorder: recorder,
-                onSaved: { refreshTick += 1 },
+                onSaved: { Theme.Haptics.success(); refreshTick += 1 },
                 onRelogged: { noteRelog(newID: $0) }
             )
         }
@@ -145,19 +151,18 @@ struct FoodDayView: View {
         calendar.date(byAdding: .day, value: offset, to: todayStart) ?? todayStart
     }
 
-    /// Warm the cache for the days a swipe can reach next, so they slide in populated.
+    /// Warm the cache for the neighbor days the chevrons reach, so they slide in populated.
     private func prefetchNeighbors() async {
         for offset in [selection - 1, selection + 1]
         where offset <= 0 && offset >= -Self.maxDaysBack {
             let target = day(for: offset)
             guard dayCache[target] == nil else { continue }
-            let intake = (try? await recorder.intake(on: target)) ?? DailyIntake()
-            let active = try? await recorder.activeEnergyBurned(on: target)
-            dayCache[target] = DaySnapshot(intake: intake, activeKcal: active)
+            let (intake, active) = await DaySnapshot.fetch(recorder: recorder, day: target)
+            dayCache[target] = DaySnapshot(intake: intake ?? DailyIntake(), activeKcal: active)
         }
     }
 
-    // MARK: - Day changes (chevrons, title, swipe — all funnel through here)
+    // MARK: - Day changes (chevrons, title, relog toast — all funnel through here)
 
     /// One entry point so every path gets the same slide: moving into the past enters
     /// from the LEADING edge (yesterday lives to the left), toward today from TRAILING.
@@ -165,14 +170,15 @@ struct FoodDayView: View {
         let target = min(max(selection + delta, -Self.maxDaysBack), 0)
         guard target != selection else { return }
         slideInEdge = target < selection ? .leading : .trailing
-        withAnimation(.easeInOut(duration: 0.28)) { selection = target }
+        Theme.Haptics.selection()
+        withAnimation(Theme.Motion.slide(reduceMotion: reduceMotion)) { selection = target }
     }
 
-    // MARK: - Pager header
+    // MARK: - Day header
 
     private var isToday: Bool { selection == 0 }
 
-    private var dayPager: some View {
+    private var dayHeader: some View {
         HStack {
             Button {
                 changeDay(by: -1)
@@ -184,6 +190,7 @@ struct FoodDayView: View {
                     .frame(width: 40, height: 40)
             }
             .disabled(selection == -Self.maxDaysBack)
+            .accessibilityLabel("Previous day")
             .accessibilityIdentifier("meal.day.prev")
 
             Spacer()
@@ -222,6 +229,7 @@ struct FoodDayView: View {
                     .frame(width: 40, height: 40)
             }
             .disabled(isToday)
+            .accessibilityLabel("Next day")
             .accessibilityIdentifier("meal.day.next")
         }
     }
@@ -243,15 +251,16 @@ struct FoodDayView: View {
     }
 
     private func noteRelog(newID: UUID) {
+        Theme.Haptics.success()   // the log landed — the core action deserves to be felt
         reloggedID = newID   // badge exactly the new entry, not every same-named row
         refreshTick += 1
         guard !isToday else { return }   // on today the badge itself is the confirmation
-        withAnimation { showingRelogToast = true }
+        withAnimation(Theme.Motion.slide(reduceMotion: reduceMotion)) { showingRelogToast = true }
         relogToastTask?.cancel()
         relogToastTask = Task {
             try? await Task.sleep(for: .seconds(2.5))
             guard !Task.isCancelled else { return }
-            withAnimation { showingRelogToast = false }
+            withAnimation(Theme.Motion.slide(reduceMotion: reduceMotion)) { showingRelogToast = false }
         }
     }
 
@@ -273,7 +282,8 @@ struct FoodDayView: View {
             }
             .buttonStyle(.plain)
             .padding(.bottom, 8)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .transition(Theme.Motion.slideTransition(
+                .move(edge: .bottom).combined(with: .opacity), reduceMotion: reduceMotion))
             .accessibilityIdentifier("meal.day.relogToast")
             .accessibilityHint("Jump to today")
         }
@@ -325,6 +335,16 @@ struct FoodDayView: View {
 private struct DaySnapshot {
     var intake: DailyIntake
     var activeKcal: Double?
+
+    /// The one fetch both the prefetcher and a day's own refresh use. `nil` intake means
+    /// the query failed — callers choose their own fallback (empty vs keep-what-we-had).
+    static func fetch(
+        recorder: any NutritionRecorder, day: Date
+    ) async -> (intake: DailyIntake?, activeKcal: Double?) {
+        let intake = try? await recorder.intake(on: day)
+        let active = try? await recorder.activeEnergyBurned(on: day)
+        return (intake, active)
+    }
 }
 
 // MARK: - One day's content
@@ -416,7 +436,7 @@ private struct FoodDayContent: View {
                     Text(budget.remainingKcal.map { "\($0.formatted()) kcal left" }
                         ?? "Target \(budget.targetKcal.formatted()) kcal")
                         .font(.caption)
-                        .foregroundStyle(Theme.textTertiary)
+                        .foregroundStyle(Theme.textSecondary)   // decision-driving number — legible tier
                 }
                 .accessibilityIdentifier("meal.day.editTarget")
             } else {
@@ -426,7 +446,7 @@ private struct FoodDayContent: View {
                             .font(.subheadline)
                             .foregroundStyle(Theme.textTertiary)
                         Text("\(Int(intake.totalKcal.rounded()).formatted()) kcal")
-                            .font(.system(size: 34, weight: .semibold, design: .rounded).monospacedDigit())
+                            .font(Theme.metricNumber)
                             .foregroundStyle(Theme.textPrimary)
                     }
                     Button("Set a daily target", action: onEditTarget)
@@ -445,10 +465,11 @@ private struct FoodDayContent: View {
             if let activeKcal, activeKcal > 0 {
                 Image(systemName: "flame")
                     .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityHidden(true)   // decorative — the text says "active"
                 Text("\(Int(activeKcal.rounded()).formatted()) kcal active")
                     .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
+                    .foregroundStyle(Theme.textSecondary)
                     .accessibilityIdentifier("meal.day.active")
             }
             Spacer()
@@ -462,7 +483,7 @@ private struct FoodDayContent: View {
                         Image(systemName: "arrow.up.right")
                     }
                     .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
+                    .foregroundStyle(Theme.textSecondary)   // interactive — keep it legible
                 }
             }
         }
@@ -478,7 +499,7 @@ private struct FoodDayContent: View {
                 if otherAppsKcal > 0 {
                     Text("\(Int(otherAppsKcal.rounded()).formatted()) kcal from other apps")
                         .font(.caption2)
-                        .foregroundStyle(Theme.textTertiary)
+                        .foregroundStyle(Theme.textSecondary)   // honesty string — legible tier
                         .padding(.horizontal, 4)
                 }
                 if intake.entries.isEmpty && otherAppsKcal == 0 {
@@ -527,7 +548,7 @@ private struct FoodDayContent: View {
             // Quiet subtotal — "dinner is where the calories went" at a glance.
             Text("\(Int(entries.reduce(0) { $0 + $1.facts.energy.midpointKcal * Double($1.quantity) }.rounded()).formatted())")
                 .font(.caption.monospacedDigit())
-                .foregroundStyle(Theme.textTertiary)
+                .foregroundStyle(Theme.textSecondary)   // a number the user reads, not a label
         }
         .padding(.horizontal, 4)
     }
@@ -544,7 +565,7 @@ private struct FoodDayContent: View {
             // A tap while a row is open closes it (Notification Center behavior) —
             // never opens the editor underneath the user's cleanup gesture.
             if openRowID != nil {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { openRowID = nil }
+                withAnimation(Theme.Motion.gesture) { openRowID = nil }
             } else {
                 onEdit(entry)
             }
@@ -612,173 +633,12 @@ private struct FoodDayContent: View {
     }
 
     private func refresh() async {
-        let fresh = (try? await recorder.intake(on: day)) ?? intake
-        let active = try? await recorder.activeEnergyBurned(on: day)
+        let (fetched, active) = await DaySnapshot.fetch(recorder: recorder, day: day)
+        let fresh = fetched ?? intake   // failed query keeps the numbers we had (N6)
         intake = fresh
         activeKcal = active
         onFetched(day, DaySnapshot(intake: fresh, activeKcal: active))
     }
 }
 
-// MARK: - Notification-style swipe row
-
-/// Custom swipe actions styled like the row itself (native `swipeActions` renders
-/// full-bleed slabs that fight the floating-card look, and only works in a List).
-/// The mechanics mirror Notification Center: a short drag reveals a card-styled button
-/// that stretches with the finger; past the commit threshold a haptic fires and release
-/// performs the action. Leading = log again, trailing = delete (which only *requests* —
-/// the confirm dialog stays between a flick and a permanent Health deletion).
-private struct SwipeableRow<Content: View>: View {
-    let id: UUID
-    @Binding var openRowID: UUID?
-    let onRelog: () -> Void
-    let onDelete: () -> Void
-    @ViewBuilder let content: Content
-
-    @State private var offset: CGFloat = 0
-    /// Offset when the current drag began (an open row drags from its parked position).
-    @State private var dragStart: CGFloat?
-    /// Crossing the commit threshold mid-drag → one haptic tick (and back off = another).
-    @State private var pastCommit = false
-    /// Decided on the first movement: horizontal-dominant → ours; vertical → the scroll
-    /// view's (we run simultaneous with it, so we must self-reject or scrolls would
-    /// drag rows sideways).
-    @State private var horizontalLatch: Bool?
-
-    private let buttonWidth: CGFloat = 68
-    private let gap: CGFloat = 8
-    private var revealWidth: CGFloat { buttonWidth + gap }
-    private let commitDistance: CGFloat = 180
-
-    var body: some View {
-        ZStack {
-            // Leading action (revealed by dragging right).
-            actionButton(
-                title: "Log again", systemImage: "arrow.counterclockwise",
-                tint: Theme.accent, alignment: .leading, revealed: offset
-            ) {
-                close()
-                onRelog()
-            }
-            // Trailing action (revealed by dragging left).
-            actionButton(
-                title: "Delete", systemImage: "trash",
-                tint: Theme.hot, alignment: .trailing, revealed: -offset
-            ) {
-                close()
-                onDelete()
-            }
-            content
-                .offset(x: offset)
-        }
-        // highPriority: plain and simultaneous variants both silently lose the recognizer
-        // race to the ScrollView+Button stack (verified via hierarchy dump — the drag never
-        // fired). The 18pt minimum keeps taps routing to the Button; the latch hands
-        // vertical movement back to the scroll view.
-        .highPriorityGesture(drag)
-        .sensoryFeedback(.impact(weight: .medium), trigger: pastCommit) { _, crossed in crossed }
-        .onChange(of: openRowID) {
-            // Someone else opened (or everything was told to close) — park back at zero.
-            if openRowID != id, offset != 0 { close() }
-        }
-    }
-
-    /// One action, styled like the Card it hides behind: same corner radius and border,
-    /// tinted icon+label, and it STRETCHES with the drag past its resting width.
-    private func actionButton(
-        title: String, systemImage: String, tint: Color,
-        alignment: Alignment, revealed: CGFloat, action: @escaping () -> Void
-    ) -> some View {
-        HStack {
-            if alignment == .trailing { Spacer(minLength: 0) }
-            Button(action: action) {
-                VStack(spacing: 4) {
-                    Image(systemName: systemImage)
-                        .font(.body.weight(.semibold))
-                    Text(title)
-                        .font(.caption2.weight(.medium))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(tint)
-                .frame(width: max(buttonWidth, revealed - gap))
-                .frame(maxHeight: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Theme.surface2)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(tint.opacity(0.35), lineWidth: 1)
-                )
-            }
-            .buttonStyle(.plain)
-            if alignment == .leading { Spacer(minLength: 0) }
-        }
-        .opacity(revealed > 8 ? min(1, Double((revealed - 8) / 40)) : 0)
-        .accessibilityHidden(revealed < revealWidth * 0.6)   // VoiceOver uses the row's actions
-    }
-
-    private var drag: some Gesture {
-        DragGesture(minimumDistance: 18)
-            .onChanged { value in
-                if horizontalLatch == nil {
-                    horizontalLatch = abs(value.translation.width) > abs(value.translation.height)
-                }
-                guard horizontalLatch == true else { return }
-                if dragStart == nil {
-                    dragStart = offset
-                    openRowID = id   // opening this row closes any other
-                }
-                let proposed = (dragStart ?? 0) + value.translation.width
-                // Rubber-band past the commit point — the action is armed, not "more armed".
-                if abs(proposed) > commitDistance {
-                    let sign: CGFloat = proposed > 0 ? 1 : -1
-                    offset = sign * (commitDistance + (abs(proposed) - commitDistance) * 0.22)
-                } else {
-                    offset = proposed
-                }
-                pastCommit = abs(proposed) > commitDistance
-            }
-            .onEnded { value in
-                let wasOurs = horizontalLatch == true && dragStart != nil
-                let landed = (dragStart ?? 0) + value.translation.width
-                horizontalLatch = nil
-                dragStart = nil
-                pastCommit = false
-                guard wasOurs else { return }
-                if landed < -commitDistance {
-                    close()
-                    onDelete()          // long swipe left commits (delete still confirms)
-                } else if landed > commitDistance {
-                    close()
-                    onRelog()           // long swipe right commits
-                } else if landed < -revealWidth * 0.6 {
-                    park(at: -revealWidth)   // short swipe + release → buttons stay exposed
-                } else if landed > revealWidth * 0.6 {
-                    park(at: revealWidth)
-                } else {
-                    close()
-                }
-            }
-    }
-
-    private func park(at position: CGFloat) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { offset = position }
-    }
-
-    private func close() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { offset = 0 }
-        if openRowID == id { openRowID = nil }
-    }
-}
-
-/// The rows never *looked* tappable — this makes them *feel* tappable: a brief dim+settle
-/// on touch teaches "these respond" after one tap, without adding chrome to every card.
-private struct PressableCardStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .opacity(configuration.isPressed ? 0.82 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
-}
+// SwipeableRow + PressableCardStyle moved to Components/SwipeableRow.swift (P5).

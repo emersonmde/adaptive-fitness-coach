@@ -59,7 +59,7 @@ struct WorkoutActiveView: View {
                     if let progressText {
                         Text(progressText)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(WatchTheme.textSecondary)
                     }
                     Spacer()
                     HeartRateView(bpm: manager.currentHeartRate)
@@ -91,7 +91,7 @@ struct WorkoutActiveView: View {
                     .monospacedDigit()
                     .foregroundStyle(nearingSwitch ? tint : Color.white)
                     .scaleEffect(nearingSwitch && switchPulse && !reduceMotion ? 1.1 : 1.0)
-                    .animation(.easeInOut(duration: 0.2), value: nearingSwitch)
+                    .animation(WatchTheme.Motion.settle, value: nearingSwitch)
 
                 Spacer(minLength: 0)
 
@@ -125,20 +125,20 @@ struct WorkoutActiveView: View {
             }
         .padding(.horizontal, 6)
         .padding(.vertical, 4)
-        .animation(.easeInOut(duration: 0.25), value: isRun)
-        .animation(.easeInOut(duration: 0.3), value: manager.adaptationEvent)
+        .animation(WatchTheme.Motion.settle, value: isRun)
+        .animation(WatchTheme.Motion.settle, value: manager.adaptationEvent)
         .onChange(of: nearingSwitch) { _, near in
             if near && !reduceMotion {
-                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { switchPulse = true }
+                withAnimation(WatchTheme.Motion.pulse) { switchPulse = true }
             } else {
-                withAnimation(.default) { switchPulse = false }
+                withAnimation(WatchTheme.Motion.settle) { switchPulse = false }
             }
         }
         .onChange(of: manager.gaitMismatch, initial: true) { _, mismatched in
             if mismatched && !reduceMotion {
-                withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) { mismatchPulse = true }
+                withAnimation(WatchTheme.Motion.pulse) { mismatchPulse = true }
             } else {
-                withAnimation(.default) { mismatchPulse = false }
+                withAnimation(WatchTheme.Motion.settle) { mismatchPulse = false }
             }
         }
     }
