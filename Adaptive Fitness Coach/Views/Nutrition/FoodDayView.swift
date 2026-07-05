@@ -1,11 +1,16 @@
 import SwiftUI
 import AdaptiveCore
 
-/// The Food day screen (build 8, repaged build 14) — pushed from the hub's daily line.
-/// One day at a time: header pager → a horizontally swipeable page per day (gauge → quiet
-/// active-energy line → meal sections) → a pinned add bar. Swiping mid-screen changes days;
-/// the system back gesture keeps its leading edge (it only claims ~20pt), so both gestures
-/// coexist. Trends stay in Apple Health (linked); this screen is a day, not a dashboard (C6).
+/// The Food day screen (build 8; regestured build 15) — pushed from the hub's daily line.
+/// The gesture grammar, settled on-device (build 14's full-page pager stole horizontal
+/// drags from the rows AND animated in SwiftUI's fixed direction):
+///   · the SUMMARY ZONE (date header + gauge + active line) is fixed and swipes between
+///     days — a horizontal drag we own, so the transition direction is ours: swiping
+///     right brings the previous day in from the LEFT, like every calendar;
+///   · the entry LIST below scrolls vertically and keeps native row swipe actions
+///     (leading = log again, trailing = delete-with-confirm);
+///   · chevrons + tap-title-to-today remain the discoverable/accessible day paths.
+/// Trends stay in Apple Health (linked); this screen is a day, not a dashboard (C6).
 struct FoodDayView: View {
     @Bindable var controller: MealLogController
     let recorder: any NutritionRecorder
@@ -16,11 +21,13 @@ struct FoodDayView: View {
     let onScan: (Date) -> Void
     let onType: (Date) -> Void
 
-    /// Pager position in days relative to today: 0 = today, negative = past. The span is
-    /// a year — beyond that, Health's own trends are the archive, not day-by-day paging.
+    /// Day position relative to today: 0 = today, negative = past (floor: one year —
+    /// beyond that, Health's own trends are the archive, not day-by-day paging).
     @State private var selection = 0
-    /// Frozen at push time (the same lifetime anchorDay had) — pages are offsets from here.
+    /// Frozen at push time (the same lifetime anchorDay had) — days are offsets from here.
     @State private var todayStart = Calendar.current.startOfDay(for: Date())
+    /// Which edge the INCOMING day slides from (set before every day change).
+    @State private var slideInEdge: Edge = .leading
     @State private var editingEntry: MealEntry?
     @State private var showingTargetSheet = false
     @State private var reloggedID: UUID?
@@ -28,7 +35,7 @@ struct FoodDayView: View {
     /// Delete confirms first — Health deletion has no undo.
     @State private var pendingDelete: MealEntry?
     @State private var refreshTick = 0
-    /// "Added to Today" notice after relogging from a past day (the entry lands on a page
+    /// "Added to Today" notice after relogging from a past day (the entry lands on a day
     /// the user isn't looking at — say so instead of teleporting them there).
     @State private var showingRelogToast = false
     @State private var relogToastTask: Task<Void, Never>?
@@ -43,13 +50,29 @@ struct FoodDayView: View {
                 dayPager
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
-                TabView(selection: $selection) {
-                    ForEach(-Self.maxDaysBack...0, id: \.self) { offset in
-                        page(for: offset)
-                            .tag(offset)
-                    }
+                    .contentShape(Rectangle())
+                    .gesture(daySwipe)   // the header is part of the swipeable day chrome
+                ZStack {
+                    FoodDayContent(
+                        day: day(for: selection),
+                        isToday: selection == 0,
+                        refreshTick: refreshTick,
+                        recorder: recorder,
+                        targetStore: targetStore,
+                        reloggedID: reloggedID,
+                        daySwipe: daySwipe,
+                        onEdit: { editingEntry = $0 },
+                        onRelog: { entry in Task { await logAgain(entry) } },
+                        onDeleteRequest: { pendingDelete = $0 },
+                        onEditTarget: { showingTargetSheet = true }
+                    )
+                    .id(selection)   // day change replaces the content → the slide transition
+                    .transition(.asymmetric(
+                        insertion: .move(edge: slideInEdge),
+                        removal: .move(edge: slideInEdge == .leading ? .trailing : .leading)
+                    ))
                 }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                .clipped()
             }
         }
         .safeAreaInset(edge: .bottom) { addBar }
@@ -111,32 +134,30 @@ struct FoodDayView: View {
         }
     }
 
-    // MARK: - Pages
-
     private func day(for offset: Int) -> Date {
         calendar.date(byAdding: .day, value: offset, to: todayStart) ?? todayStart
     }
 
-    /// Only the visible page and its immediate neighbors are real — the rest of the year
-    /// is placeholder so TabView never runs 365 Health fetches.
-    @ViewBuilder
-    private func page(for offset: Int) -> some View {
-        if abs(offset - selection) <= 1 {
-            FoodDayPage(
-                day: day(for: offset),
-                isToday: offset == 0,
-                refreshTick: refreshTick,
-                recorder: recorder,
-                targetStore: targetStore,
-                reloggedID: reloggedID,
-                onEdit: { editingEntry = $0 },
-                onRelog: { entry in Task { await logAgain(entry) } },
-                onDeleteRequest: { pendingDelete = $0 },
-                onEditTarget: { showingTargetSheet = true }
-            )
-        } else {
-            Color.clear
-        }
+    // MARK: - Day changes (chevrons, title, swipe — all funnel through here)
+
+    /// One entry point so every path gets the same slide: moving into the past enters
+    /// from the LEADING edge (yesterday lives to the left), toward today from TRAILING.
+    private func changeDay(by delta: Int) {
+        let target = min(max(selection + delta, -Self.maxDaysBack), 0)
+        guard target != selection else { return }
+        slideInEdge = target < selection ? .leading : .trailing
+        withAnimation(.easeInOut(duration: 0.28)) { selection = target }
+    }
+
+    private var daySwipe: some Gesture {
+        DragGesture(minimumDistance: 20)
+            .onEnded { value in
+                let dx = value.translation.width
+                let dy = value.translation.height
+                // Horizontal-dominant and deliberate, or ignore (buttons/scroll keep working).
+                guard abs(dx) > 50, abs(dx) > abs(dy) * 1.5 else { return }
+                changeDay(by: dx > 0 ? -1 : 1)   // finger right → reveal the past
+            }
     }
 
     // MARK: - Pager header
@@ -146,7 +167,7 @@ struct FoodDayView: View {
     private var dayPager: some View {
         HStack {
             Button {
-                withAnimation { selection = max(selection - 1, -Self.maxDaysBack) }
+                changeDay(by: -1)
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.headline)
@@ -166,7 +187,7 @@ struct FoodDayView: View {
                     .accessibilityIdentifier("meal.day.title")
             } else {
                 Button {
-                    withAnimation { selection = 0 }
+                    changeDay(by: -selection)
                 } label: {
                     HStack(spacing: 5) {
                         Text(dayTitle)
@@ -185,7 +206,7 @@ struct FoodDayView: View {
 
             // Reserved slot: disabled-at-today, never removed (principle 7).
             Button {
-                withAnimation { selection = min(selection + 1, 0) }
+                changeDay(by: 1)
             } label: {
                 Image(systemName: "chevron.right")
                     .font(.headline)
@@ -231,10 +252,8 @@ struct FoodDayView: View {
         if showingRelogToast {
             Button {
                 relogToastTask?.cancel()
-                withAnimation {
-                    selection = 0
-                    showingRelogToast = false
-                }
+                showingRelogToast = false
+                changeDay(by: -selection)
             } label: {
                 Label("Added to Today", systemImage: "checkmark.circle.fill")
                     .font(.footnote.weight(.medium))
@@ -296,15 +315,17 @@ struct FoodDayView: View {
 
 // MARK: - One day's content
 
-/// A single day page: a plain List styled to read as the same quiet card stack as before.
-/// Owns its own fetch so pages populate lazily as they're paged to.
-private struct FoodDayPage: View {
+/// A single day: the fixed summary zone (gauge + active line — the day-swipe surface) over
+/// the scrolling entry List. Owns its own fetch so the OUTGOING day keeps its data while it
+/// slides away (parent-held intake would flash the new day's numbers into the old view).
+private struct FoodDayContent<SwipeGesture: Gesture>: View {
     let day: Date
     let isToday: Bool
     let refreshTick: Int
     let recorder: any NutritionRecorder
     var targetStore: CalorieTargetStore
     let reloggedID: UUID?
+    let daySwipe: SwipeGesture
     let onEdit: (MealEntry) -> Void
     let onRelog: (MealEntry) -> Void
     let onDeleteRequest: (MealEntry) -> Void
@@ -314,42 +335,31 @@ private struct FoodDayPage: View {
     @State private var activeKcal: Double?
 
     var body: some View {
-        List {
-            plainRow(gaugeSlot, top: 4)
-            plainRow(activeEnergyLine)
-            mealSections
-            if otherAppsKcal > 0 {
-                plainRow(
-                    Text("\(Int(otherAppsKcal.rounded()).formatted()) kcal from other apps")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.textTertiary)
-                        .padding(.horizontal, 4)
-                )
-            }
-            if intake.entries.isEmpty && otherAppsKcal == 0 {
-                plainRow(
-                    Text(isToday ? "Nothing logged yet today." : "Nothing logged this day.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                )
-            }
+        VStack(spacing: 0) {
+            summaryZone
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 10)
+                .contentShape(Rectangle())
+                .gesture(daySwipe)
+                // .contain (not a bare identifier): the zone must be a real element for
+                // XCUI/VoiceOver *containing* its children — a bare identifier on a stack
+                // half-registers and can swallow the gauge's buttons.
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("meal.day.summary")
+            entryList
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .task(id: refreshTick) { await refresh() }
     }
 
-    /// List-as-canvas: every row is chromeless; the Cards supply their own surfaces.
-    private func plainRow(_ content: some View, top: CGFloat = 6, bottom: CGFloat = 6) -> some View {
-        content
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
-    }
+    // MARK: Summary zone (fixed; the day-swipe surface)
 
-    // MARK: Gauge (fixed-height slot with or without a target)
+    private var summaryZone: some View {
+        VStack(spacing: 8) {
+            gaugeSlot
+            activeEnergyLine
+        }
+    }
 
     private var gaugeSlot: some View {
         VStack(spacing: 8) {
@@ -386,8 +396,6 @@ private struct FoodDayPage: View {
         .frame(height: 208)   // same slot either way — no jump when a target appears
     }
 
-    // MARK: Active energy (informational, never budget)
-
     private var activeEnergyLine: some View {
         HStack(spacing: 6) {
             if let activeKcal, activeKcal > 0 {
@@ -417,7 +425,40 @@ private struct FoodDayPage: View {
         .frame(height: 18)
     }
 
-    // MARK: Meal sections
+    // MARK: Entry list (vertical scroll; rows own their horizontal swipes)
+
+    private var entryList: some View {
+        List {
+            mealSections
+            if otherAppsKcal > 0 {
+                plainRow(
+                    Text("\(Int(otherAppsKcal.rounded()).formatted()) kcal from other apps")
+                        .font(.caption2)
+                        .foregroundStyle(Theme.textTertiary)
+                        .padding(.horizontal, 4)
+                )
+            }
+            if intake.entries.isEmpty && otherAppsKcal == 0 {
+                plainRow(
+                    Text(isToday ? "Nothing logged yet today." : "Nothing logged this day.")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                )
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+    }
+
+    /// List-as-canvas: every row is chromeless; the Cards supply their own surfaces.
+    private func plainRow(_ content: some View, top: CGFloat = 6, bottom: CGFloat = 6) -> some View {
+        content
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
+    }
 
     @ViewBuilder
     private var mealSections: some View {
@@ -452,10 +493,9 @@ private struct FoodDayPage: View {
         return max(0, intake.totalKcal - ours)
     }
 
-    /// Two discoverable surfaces for the same actions: tap → edit sheet (the full action
-    /// set, found by plain tapping) and the long-press menu (the power path). Deliberately
-    /// NO List swipe actions: the day pager owns horizontal drags (verified — the TabView
-    /// consumes them before the row can), and a sometimes-firing swipe is worse than none.
+    /// Every action, three surfaces: swipe (iOS muscle memory — works now that no pager
+    /// steals horizontal drags from rows), tap → edit sheet (the floor every user finds),
+    /// long-press → menu (the power path). All three carry the same set.
     private func entryRow(_ entry: MealEntry) -> some View {
         Button {
             onEdit(entry)
@@ -491,6 +531,23 @@ private struct FoodDayPage: View {
         }
         .buttonStyle(PressableCardStyle())
         .accessibilityIdentifier("meal.day.entry.\(entry.name)")
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button {
+                onRelog(entry)
+            } label: {
+                Label("Log again", systemImage: "arrow.counterclockwise")
+            }
+            .tint(Theme.accent)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            // Destructive-styled but NOT destructive-behaved: it only raises the
+            // confirmation dialog (Health deletion has no undo), so full-swipe is safe.
+            Button(role: .destructive) {
+                onDeleteRequest(entry)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
         .contextMenu {
             Button {
                 onEdit(entry)

@@ -2,7 +2,7 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-05: **P0–P4 + the build-11/12 sweeps + the build-13 typed-meal parsing fixes + the build-14 Food-screen UX repage all on `main`**. **TestFlight build 14 uploaded** (see the build-14 section: days page by swipe, pinned add bar, past-day backfill via when-row prefill, relog toast instead of teleport, full action set on tap/long-press). Build 13 carried the typed-meal parsing fixes (mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
+_Last updated 2026-07-05: **P0–P4 + the build-11/12 sweeps + the build-13 typed-meal parsing fixes + the build-14/15 Food-screen UX regesture all on `main`**. **TestFlight build 15 uploaded** (see the build-15 section: the hybrid gesture split — summary zone swipes days with our own correctly-directed transition, rows regain native swipe actions; supersedes build 14's full-page pager, which stole row swipes and animated backwards on device). Build 14 carried the rest of the repage (pinned add bar, past-day backfill via when-row prefill, relog toast instead of teleport, full action set on tap/long-press). Build 13 carried the typed-meal parsing fixes (mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
 
 > **Routines are now a generic card stack.** A `Routine` is `cards: [WorkoutCard]` (`.run` / `.exercise` / `.rest`) plus a `rounds` count that repeats the whole list (= sets; a trailing rest card becomes rest between rounds). The phone builds it from a typed card list; the watch walks it and starts/stops the right Apple workout per card type automatically (`workoutBlocks()`), reusing the existing run and strength screens. The old `type`/`durationMinutes`/`exercises` fields are gone (migrated on decode). WC payload is **v4** (progression channel v2). This supersedes the type-branched descriptions below — treat them as history.
 
@@ -355,6 +355,28 @@ Second feedback round (same session):
   community-established; unrecognized paths degrade to just opening Health — verify the
   room actually opens on device).
 → 379 package tests; MealFlowUITests 12 (rescan flow + title jump).
+
+### Build 15 — hybrid gesture split (2026-07-05, from on-device build-14 feedback)
+The user hit build 14's pager conflict in the flesh (rows can't swipe; SwiftUI's pager
+animation direction felt backwards and isn't controllable). Chose the hybrid deliberately
+(rows-win was recommended; trade-offs discussed):
+- **The TabView pager is GONE.** The summary zone (date header + gauge + active-energy
+  line) is now a fixed, non-scrolling band that swipes between days via our own
+  `DragGesture` (≥50pt, horizontal-dominant) — so the transition is ours: swiping right
+  brings the previous day in **from the left** (calendar convention). ALL day changes
+  (chevrons, title-tap, toast-tap, swipe) funnel through one `changeDay(by:)` →
+  consistent `.asymmetric` slide everywhere. Swipe commits on release (no finger-tracking
+  offset yet — noted follow-up if it feels abrupt on device).
+- **Row swipe actions restored and WORKING** (no pager to steal them): leading = Log
+  again, trailing = Delete → the no-undo confirmation. Tap → edit sheet and long-press
+  menu unchanged. Day content fetches inside `FoodDayContent` so the outgoing day keeps
+  its numbers while sliding away.
+- **A11y gotcha worth remembering:** a bare `.accessibilityIdentifier` on a SwiftUI
+  stack half-registers and can swallow child buttons from the accessibility tree (it hid
+  "Set a daily target" from XCUI — and would have from VoiceOver). The fix is
+  `.accessibilityElement(children: .contain)` + identifier.
+→ MealFlowUITests 16 (swipe-days retargeted at `meal.day.summary`; swipe-to-delete now
+confirms the delete end-to-end). Split test loop used throughout (fix→verify ≈ 3 min).
 
 ### Build 14 — Food-screen UX repage (2026-07-05, from the user's sr-designer review)
 The user flagged the day screen as clunky (chevron-only paging, long-press-only actions);

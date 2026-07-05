@@ -371,10 +371,11 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["280 kcal"].waitForExistence(timeout: 6))
     }
 
-    // MARK: - Build 14 (paged Food screen)
+    // MARK: - Builds 14/15 (regestured Food screen)
 
-    /// Mid-screen horizontal swipes page between days; the chevrons stay as the
-    /// discoverable/accessible path (the edge swipe still pops back to the hub).
+    /// The SUMMARY ZONE (gauge + date chrome) swipes between days — build 15's hybrid:
+    /// horizontal-on-summary = day, horizontal-on-row = row actions, chevrons stay as
+    /// the discoverable/accessible path (the edge swipe still pops back to the hub).
     func testSwipeBetweenDays() throws {
         let app = launchApp()
         openCapture(app)
@@ -385,11 +386,43 @@ final class MealFlowUITests: XCTestCase {
 
         openFoodDay(app)
         dismissTargetSheetIfPresent(app)
-        app.swipeRight()   // mid-screen, not the edge: previous day
+        let summary = app.otherElements["meal.day.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 5), "summary zone missing")
+        summary.swipeRight()   // finger right → reveal the past
         XCTAssertTrue(app.staticTexts["Yesterday"].waitForExistence(timeout: 3))
-        app.swipeLeft()
+        summary.swipeLeft()    // finger left → back toward today
         XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["140 kcal"].exists)
+        XCTAssertTrue(app.staticTexts["140 kcal"].waitForExistence(timeout: 3))
+    }
+
+    /// Trailing swipe on an entry raises the delete CONFIRMATION (Health deletion has no
+    /// undo, so even a full swipe never deletes directly) — and Cancel keeps the entry.
+    /// This is the test that exposed build 14's pager stealing row swipes; with the
+    /// hybrid split it must pass.
+    func testSwipeToDeleteConfirms() throws {
+        let app = launchApp()
+        openCapture(app)
+        tapSimulatedCapture(app, "barcode")
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 5))
+        tapLogWhenReady(app)
+        XCTAssertTrue(app.staticTexts["140 kcal"].waitForExistence(timeout: 10))
+
+        openFoodDay(app)
+        dismissTargetSheetIfPresent(app)
+        let row = app.staticTexts["Coca-Cola Classic 12 fl oz"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.swipeLeft()
+        // A short swipe reveals the action button; a full swipe triggers it directly.
+        let dialogTitle = app.staticTexts["Delete \"Coca-Cola Classic 12 fl oz\"?"]
+        if !dialogTitle.waitForExistence(timeout: 2) {
+            app.buttons["Delete"].firstMatch.tap()
+            XCTAssertTrue(dialogTitle.waitForExistence(timeout: 3))
+        }
+        // Confirm. Two "Delete" buttons can coexist (revealed swipe action + dialog);
+        // the dialog overlays the list, so its button is the hierarchy's last match.
+        app.buttons.matching(identifier: "Delete").allElementsBoundByIndex.last?.tap()
+        XCTAssertTrue(app.staticTexts["Nothing logged yet today."].waitForExistence(timeout: 6),
+                      "confirmed delete must remove the entry")
     }
 
     /// The long-press menu carries the FULL action set (Edit joined Log again/Delete in
