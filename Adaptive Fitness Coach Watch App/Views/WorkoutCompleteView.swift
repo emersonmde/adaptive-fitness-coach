@@ -46,7 +46,7 @@ struct WorkoutCompleteView: View {
                 Text(saveLine.text)
                     .font(.caption2)
                     .foregroundStyle(saveLine.color)
-                    .animation(.easeInOut(duration: 0.3), value: saveState)
+                    .animation(WatchTheme.Motion.settle, value: saveState)
 
                 VStack(spacing: 6) {
                     stat("Time", summary.totalDuration.clockString)
@@ -70,7 +70,7 @@ struct WorkoutCompleteView: View {
                         .foregroundStyle(WatchTheme.run)
                         .multilineTextAlignment(.center)
                         .padding(.top, 2)
-                        .animation(.easeInOut(duration: 0.25), value: note)
+                        .animation(WatchTheme.Motion.settle, value: note)
                 }
 
                 Button("Done") { onDone(effort) }
@@ -83,11 +83,11 @@ struct WorkoutCompleteView: View {
 
     private func stat(_ label: String, _ value: String) -> some View {
         HStack {
-            Text(label).foregroundStyle(.secondary)
+            Text(label).foregroundStyle(WatchTheme.textSecondary)
             Spacer()
             Text(value).fontWeight(.semibold)
         }
         .font(.footnote)
-        .animation(.easeInOut(duration: 0.3), value: value)
+        .animation(WatchTheme.Motion.settle, value: value)
     }
 }

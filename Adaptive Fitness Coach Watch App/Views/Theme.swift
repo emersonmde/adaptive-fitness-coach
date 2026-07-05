@@ -29,6 +29,9 @@ enum WatchTheme {
     /// threshold step and the strength rest ring. (Named `heat`, not `walk`, so nobody
     /// reaches for it as the walk-phase color again.)
     static let heat = Color(hex: 0xFFB23E)
+    /// The tempo step of the zone ladder gradient — between aerobic green and threshold amber.
+    /// Gradient-only, like `heat`; never an instruction color.
+    static let zoneTempo = Color(hex: 0xFFD23E)
     static let hot = Color(hex: 0xFF5A4D)   // sustained-high HR
     static let strength = Color(hex: 0x4C8DFF)
 
@@ -41,6 +44,28 @@ enum WatchTheme {
     static let strengthField = Color(hex: 0x070E1C)
 
     static let textSecondary = Color(hex: 0x9DA3AE)
+
+    /// Motion tokens. Every animation on the watch speaks one of four verbs, so state changes
+    /// settle at the same speed everywhere and motion stays a single meaningful channel
+    /// (DESIGN-PRINCIPLES #3 — motion = attention/compliance, so an ad-hoc duration is noise).
+    enum Motion {
+        /// The app's dominant state-change curve: phase flips, cards advancing, status lines,
+        /// pulse resets. If a value just *became* something else, it settles with this.
+        static let settle = Animation.easeInOut(duration: 0.28)
+        /// Direct-manipulation value ticks (crown detents, ± adjusters) — quick enough to feel
+        /// attached to the finger.
+        static let snap = Animation.easeOut(duration: 0.15)
+        /// A slow, calm ring fill for once-a-second recovery updates (the rest ring).
+        static let gentle = Animation.easeOut(duration: 0.6)
+        /// A constant-rate tick for a ring that tracks a running clock (the hold ring) —
+        /// linear so consecutive one-second steps chain without visible easing seams.
+        static func gentleLinear(_ seconds: TimeInterval) -> Animation {
+            .linear(duration: seconds)
+        }
+        /// The compliance channel: an attention throb that repeats until the condition clears
+        /// (hot zone, cadence mismatch, imminent switch). Callers gate it on Reduce Motion.
+        static let pulse = Animation.easeInOut(duration: 0.55).repeatForever(autoreverses: true)
+    }
 }
 
 extension View {

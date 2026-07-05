@@ -209,10 +209,11 @@ private struct SequenceLaunchView: View {
                 .font(.title3)
                 .foregroundStyle(WatchTheme.run)
             VStack(spacing: 3) {
-                Text("UP NEXT").font(.caption2).foregroundStyle(.secondary)
+                Text("UP NEXT").font(.caption2).foregroundStyle(WatchTheme.textSecondary)
                 Text(name).font(.title3.bold()).multilineTextAlignment(.center)
+                    .lineLimit(2).minimumScaleFactor(0.7)
                 Text("\(blockCount) workouts, back to back")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(.caption).foregroundStyle(WatchTheme.textSecondary)
             }
             Spacer(minLength: 0)
             Button(action: onStart) {
@@ -237,7 +238,7 @@ private struct SequenceDoneView: View {
                 // No per-block save tracking here, so no blanket "Saved" claim (N6) — each
                 // block's own summary already reported its save state honestly.
                 Text("Each part was recorded as its own workout in Health.")
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .font(.caption2).foregroundStyle(WatchTheme.textSecondary)
                     .multilineTextAlignment(.center)
                 Button("Done", action: onDone).tint(WatchTheme.run).padding(.top, 4)
             }

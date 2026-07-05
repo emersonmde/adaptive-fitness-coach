@@ -58,7 +58,6 @@ struct TargetSetupSheet: View {
                 profileLoaded = true
             }
         }
-        .preferredColorScheme(.dark)
     }
 
     // MARK: - With Health data
@@ -107,7 +106,7 @@ struct TargetSetupSheet: View {
                                 .foregroundStyle(activity == level ? Theme.accent : Theme.textTertiary)
                         }
                         .padding(12)
-                        .background(Theme.surface1, in: RoundedRectangle(cornerRadius: 12))
+                        .background(Theme.surface1, in: RoundedRectangle(cornerRadius: Theme.radiusInset))
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("meal.target.activity.\(level.rawValue)")
@@ -180,7 +179,15 @@ struct TargetSetupSheet: View {
             }
         }
         .padding(12)
-        .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 12))
+        .background(Theme.surface2, in: RoundedRectangle(cornerRadius: Theme.radiusInset))
+        // numberPad has no return key — without this the keyboard is a trap (same fix
+        // the entry edit sheet carries).
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { overrideFocused = false }
+            }
+        }
     }
 
     /// One concrete anchor per level — self-classification needs an example, not a synonym.

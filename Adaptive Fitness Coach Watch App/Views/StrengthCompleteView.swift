@@ -38,7 +38,7 @@ struct StrengthCompleteView: View {
                 Text(saveLine.text)
                     .font(.caption2)
                     .foregroundStyle(saveLine.color)
-                    .animation(.easeInOut(duration: 0.3), value: saveState)
+                    .animation(WatchTheme.Motion.settle, value: saveState)
 
                 VStack(spacing: 6) {
                     stat("Time", summary.totalDuration.clockString)
@@ -93,7 +93,7 @@ struct StrengthCompleteView: View {
 
     private func stat(_ label: String, _ value: String) -> some View {
         HStack {
-            Text(label).foregroundStyle(.secondary)
+            Text(label).foregroundStyle(WatchTheme.textSecondary)
             Spacer()
             Text(value).fontWeight(.semibold)
         }

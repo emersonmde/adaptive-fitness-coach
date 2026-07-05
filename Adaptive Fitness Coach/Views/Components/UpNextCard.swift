@@ -37,7 +37,7 @@ struct UpNextCard: View {
                 Text(routine.name)
                     .font(.system(.largeTitle, design: .rounded, weight: .bold))
                     .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
+                    .lineLimit(2)   // at accessibility sizes wrapping beats shrink-then-truncate
                     .minimumScaleFactor(0.7)
                     .padding(.top, 2)
 
@@ -59,9 +59,9 @@ struct UpNextCard: View {
             }
             .padding(20)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusHero, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: Theme.radiusHero, style: .continuous)
                 .strokeBorder(Theme.accent.opacity(0.25), lineWidth: 1)
         )
         // Kept subtle: at higher opacity/radius the halo reads as a gradient wash, not a glow.

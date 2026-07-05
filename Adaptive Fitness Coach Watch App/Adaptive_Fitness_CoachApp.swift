@@ -39,6 +39,7 @@ struct Adaptive_Fitness_Coach_Watch_AppApp: App {
     var body: some Scene {
         WindowGroup {
             SessionContainerView(store: store,
+                                 connectivity: connectivity,
                                  recordProgressions: connectivity.recordProgressions,
                                  recordRunProgression: connectivity.recordRunProgression)
                 .onOpenURL { url in

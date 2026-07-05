@@ -160,7 +160,7 @@ struct CoachChatView: View {
                 }
                 .onChange(of: conversation?.transcript.count ?? 0) {
                     if let last = conversation?.transcript.last?.id {
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last, anchor: .bottom) }
+                        withAnimation(Theme.Motion.settle) { proxy.scrollTo(last, anchor: .bottom) }
                     }
                 }
                 .onChange(of: conversation?.streamingText ?? "") {
@@ -180,7 +180,7 @@ struct CoachChatView: View {
                 .font(.subheadline)
                 .foregroundStyle(Theme.textPrimary)
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(Theme.surface2, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
                 .frame(maxWidth: .infinity, alignment: .trailing)
         case let .coach(text):
             coachBubble(text, isCurrent: entry.id == currentCoachEntryID)
@@ -197,7 +197,7 @@ struct CoachChatView: View {
                     .accessibilityIdentifier("coachRetry")
             }
             .padding(14)
-            .background(Theme.hot.opacity(0.1), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Theme.hot.opacity(0.1), in: RoundedRectangle(cornerRadius: Theme.radiusInset, style: .continuous))
         }
     }
 
@@ -241,7 +241,7 @@ struct CoachChatView: View {
                     Spacer(minLength: 0)
                     Text(existingNames.contains(routine.name) ? "UPDATES" : "NEW")
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(existingNames.contains(routine.name) ? Theme.recover : Theme.accent)
+                        .foregroundStyle(existingNames.contains(routine.name) ? Theme.info : Theme.accent)
                 }
             }
 
@@ -276,8 +276,8 @@ struct CoachChatView: View {
             }
         }
         .padding(14)
-        .background(Theme.surface1, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline))
+        .background(Theme.surface1, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous).strokeBorder(Theme.hairline))
     }
 
     private func routineSummary(_ routine: Routine) -> String {
@@ -348,6 +348,7 @@ struct CoachChatView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)
+                .accessibilityLabel("Send")
                 .accessibilityIdentifier("coachSend")
             }
         }

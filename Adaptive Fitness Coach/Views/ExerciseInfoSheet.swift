@@ -68,6 +68,10 @@ struct ExerciseInfoSheet: View {
                 }
             }
         }
+        // A reference card, not a task: half-height keeps the builder/library context
+        // visible; long content or large text can still pull to full.
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     /// The form demo — an SF Symbol placeholder on a strength-tinted card. Reserved for a real
@@ -79,9 +83,9 @@ struct ExerciseInfoSheet: View {
             .foregroundStyle(Theme.strength)
             .frame(maxWidth: .infinity)
             .frame(height: 150)
-            .background(Theme.strength.opacity(0.12), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(Theme.strength.opacity(0.12), in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
                     .strokeBorder(Theme.strength.opacity(0.25), lineWidth: 1)
             )
     }

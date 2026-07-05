@@ -109,8 +109,11 @@ struct DailyIntakeLine: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Theme.surface1, in: RoundedRectangle(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.hairline))
+        .background(Theme.surface1, in: RoundedRectangle(cornerRadius: Theme.radiusCard))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radiusCard).strokeBorder(Theme.hairline))
+        // .contain, not a bare identifier: a bare id on a stack half-registers and can
+        // swallow the total/camera buttons from VoiceOver + XCUI (the build-15 bug class).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("meal.dailyLine")
     }
 

@@ -83,7 +83,7 @@ struct ImportRoutinesSheet: View {
                 Spacer(minLength: 0)
                 Text(isUpdate ? "UPDATES" : "NEW")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(isUpdate ? Theme.recover : Theme.accent)
+                    .foregroundStyle(isUpdate ? Theme.info : Theme.accent)
             }
 
             Text(scheduleLine(routine))
@@ -111,12 +111,12 @@ struct ImportRoutinesSheet: View {
                 // (`graftingRunProgression`) — the user's run/weight progress survives.
                 Text("\(replacesLine(routine)) — your progressed run/weights carry over.")
                     .font(.footnote)
-                    .foregroundStyle(Theme.recover)
+                    .foregroundStyle(Theme.info)
             }
         }
         .padding(14)
-        .background(Theme.surface1, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline))
+        .background(Theme.surface1, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous).strokeBorder(Theme.hairline))
     }
 
     /// "Mon Wed Fri · ~40 min", or an honest "No repeat days set" when unscheduled.

@@ -28,6 +28,7 @@ struct NewRoutineView: View {
                         FieldSection(title: "NAME") {
                             TextField("e.g. Push Day", text: $name)
                                 .textInputAutocapitalization(.words)
+                                .submitLabel(.done)
                                 .foregroundStyle(Theme.textPrimary)
                         }
 

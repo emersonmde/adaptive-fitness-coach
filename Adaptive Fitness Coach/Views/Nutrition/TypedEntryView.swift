@@ -22,12 +22,12 @@ struct TypedEntryView: View {
                         .submitLabel(.done)
                         .onSubmit(submit)
                         .padding(14)
-                        .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 14))
+                        .background(Theme.surface2, in: RoundedRectangle(cornerRadius: Theme.radiusInset))
                         .accessibilityIdentifier("meal.typed.field")
 
                     Text("Say what it was — a stated calorie count or \"yesterday\" is understood.")
                         .font(.caption)
-                        .foregroundStyle(Theme.textTertiary)
+                        .foregroundStyle(Theme.textSecondary)   // instructional — legible tier
 
                     PrimaryButton(title: "Add", systemImage: "plus") { submit() }
                         .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -46,7 +46,10 @@ struct TypedEntryView: View {
             }
             .onAppear { focused = true }
         }
-        .preferredColorScheme(.dark)
+        // One field + a button doesn't need the whole screen; the detent keeps the
+        // context (the day underneath) visible. Large text sizes can still expand.
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     private func submit() {

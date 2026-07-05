@@ -21,6 +21,7 @@ struct WhenRow: View {
                 HStack(spacing: 4) {
                     Image(systemName: "doc.text.magnifyingglass")
                         .font(.caption)
+                        .accessibilityHidden(true)   // decorative — the caption carries the meaning
                     Text(prefillCaption)
                         .font(.caption)
                         .accessibilityIdentifier("meal.when.prefill")

@@ -47,6 +47,7 @@ struct MealCaptureView: View {
                             .padding(12)
                             .background(.ultraThinMaterial, in: Circle())
                     }
+                    .accessibilityLabel("Cancel")
                     .accessibilityIdentifier("meal.capture.cancel")
                     Spacer()
                 }
@@ -107,7 +108,7 @@ struct MealCaptureView: View {
             },
             onStill: { image in
                 frozenStill = image   // immediate feedback — the OCR takes a beat
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                Theme.Haptics.capture()
                 Task {
                     let lines = await Self.recognizeText(image)
                     forward(MealCapture(ocrLines: lines, imageData: image.jpegData(compressionQuality: 0.6)))
@@ -240,7 +241,7 @@ private struct DataScannerRepresentable: UIViewControllerRepresentable {
             for item in addedItems {
                 if case .barcode(let barcode) = item, let payload = barcode.payloadStringValue {
                     fired = true
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    Theme.Haptics.capture()
                     dataScanner.stopScanning()
                     onBarcode?(payload)
                     return

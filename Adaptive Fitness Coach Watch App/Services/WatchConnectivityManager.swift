@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import WatchConnectivity
 import WidgetKit
 import AdaptiveCore
@@ -11,8 +12,15 @@ import AdaptiveCore
 /// survives the phone being unreachable (every finished session is one queued transfer) — unlike
 /// `applicationContext`, which is latest-wins and would drop earlier sessions' changes.
 @MainActor
+@Observable
 final class WatchConnectivityManager: NSObject {
-    private let store: RoutineStore
+    @ObservationIgnored private let store: RoutineStore
+
+    /// True once ANY application context has come down from the phone (live delivery, or one
+    /// the OS already held when activation completed). Lets the UI tell "not synced yet"
+    /// apart from "the phone genuinely has no routines" — an empty store plus a false here
+    /// means *waiting*, not *nothing exists* (N6: never assert a signal we don't have).
+    private(set) var hasReceivedInitialContext = false
 
     /// The complication timeline kind (`AdaptiveFitnessWatchWidgets`). Anything that changes
     /// the routine set — a sync from the phone or a locally-applied progression — must reload
@@ -79,8 +87,12 @@ final class WatchConnectivityManager: NSObject {
     }
 
     /// Apply a received context if it carries routines. Tolerates malformed payloads by
-    /// keeping the last-known set (N6).
-    private func apply(context: [String: Any]) {
+    /// keeping the last-known set (N6). Internal (not private) so the sync-honesty flag is
+    /// unit-testable without a live `WCSession`.
+    func apply(context: [String: Any]) {
+        // Any context at all — even one that fails to decode — proves the phone has spoken,
+        // so the UI can stop saying "syncing" either way.
+        hasReceivedInitialContext = true
         guard let routines = try? WCMessageCodec.decodeRoutines(from: context) else { return }
         store.replaceFromSync(routines)
         // The routine set just changed under the complication — refresh its timeline so the

@@ -11,6 +11,9 @@ import AdaptiveCore
 /// `-simulateWorkout` → a short adaptive run; `-simulateStrength` → a short strength session.
 struct SessionContainerView: View {
     let store: RoutineStore
+    /// The sync receiver, observed for the "has the phone spoken yet?" signal that separates
+    /// "syncing" from a genuine empty library. `nil` in previews/tests (treated as synced).
+    var connectivity: WatchConnectivityManager?
     /// Records a finished session's weight/rep bumps against a routine (local apply + sync to phone).
     /// `nil` in previews/tests. Threaded to the strength flows.
     var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
@@ -23,13 +26,18 @@ struct SessionContainerView: View {
 
     /// The routine the user picked to run (via the crown launch picker). `nil` = still picking.
     @State private var chosen: Routine?
+    /// Set after ~10s with no context: stop waiting and show the genuine empty state, so a
+    /// truly phone-less fresh install is never stuck on a spinner (N6 cuts both ways).
+    @State private var syncWaitExpired = false
     /// A start-routine intent (complication / Siri / widget) may target a routine directly.
     @ObservedObject private var launchRequest = WorkoutLaunchRequest.shared
 
     init(store: RoutineStore,
+         connectivity: WatchConnectivityManager? = nil,
          recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil,
          recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)? = nil) {
         self.store = store
+        self.connectivity = connectivity
         self.recordProgressions = recordProgressions
         self.recordRunProgression = recordRunProgression
         let args = ProcessInfo.processInfo.arguments
@@ -49,8 +57,20 @@ struct SessionContainerView: View {
             // The user picked a routine — run its flow, returning to the picker when done.
             routedFlow(for: chosen)
         } else if orderedRoutines.isEmpty {
-            // No routines yet — the run container shows the "create one on iPhone" empty state.
-            RunSessionContainerView(store: store, simulate: false)
+            if awaitingFirstSync {
+                // A fresh install's store is empty until the phone's context lands. Saying
+                // "create a routine on your iPhone" here would assert *nothing exists* when
+                // the truth is *not synced yet* (N6) — so say what's actually happening,
+                // with the timeout above as the exit to the genuine empty state.
+                SyncingView()
+                    .task {
+                        try? await Task.sleep(for: .seconds(10))
+                        syncWaitExpired = true
+                    }
+            } else {
+                // No routines — the run container shows the "create one on iPhone" empty state.
+                RunSessionContainerView(store: store, simulate: false)
+            }
         } else {
             RoutineLaunchPicker(routines: orderedRoutines, initialIndex: initialIndex) { chosen = $0 }
                 .task { routeLaunchRequest() }
@@ -59,6 +79,13 @@ struct SessionContainerView: View {
                 // re-run the match when routines arrive so the request lands instead of dying.
                 .onChange(of: store.routines) { _, _ in routeLaunchRequest() }
         }
+    }
+
+    /// Still waiting on the phone's first context: nothing synced yet and the timeout hasn't
+    /// fired. Reading `hasReceivedInitialContext` in body makes the flip re-render this view.
+    private var awaitingFirstSync: Bool {
+        guard let connectivity else { return false }   // previews/tests: no receiver to wait on
+        return !connectivity.hasReceivedInitialContext && !syncWaitExpired
     }
 
     /// A `StartRoutineIntent` (complication/Siri/widget) targets a routine by id — jump the
@@ -127,6 +154,64 @@ struct SessionContainerView: View {
 
 }
 
+/// The honest first-launch state: the store is empty because the phone hasn't synced yet, not
+/// because no routines exist. Quiet by design — a spinner and one line, and the container's
+/// timeout guarantees it can't outlive a phone that never answers.
+private struct SyncingView: View {
+    var body: some View {
+        VStack(spacing: 8) {
+            ProgressView()
+            Text("Syncing from iPhone…")
+                .font(.caption)
+                .foregroundStyle(WatchTheme.textSecondary)
+        }
+    }
+}
+
+/// The forced-session auto-start moment (the picker or an intent already chose the routine) —
+/// one quiet word under the spinner so the wait isn't anonymous.
+struct StartingView: View {
+    var tint: Color
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ProgressView().tint(tint)
+            Text("Starting…")
+                .font(.caption)
+                .foregroundStyle(WatchTheme.textSecondary)
+        }
+    }
+}
+
+/// The `.complete`-but-no-summary gap (the manager is still assembling totals). Normally
+/// sub-second; label it honestly and, if it drags past ~5s, surface an exit that runs the same
+/// reset path as the failed branch — a wedged "done" screen is worse than the missing stats
+/// (DESIGN-PRINCIPLES #13: failure states always have an exit).
+struct WrappingUpView: View {
+    var tint: Color
+    let onExit: () -> Void
+
+    @State private var offerExit = false
+
+    var body: some View {
+        VStack(spacing: 8) {
+            ProgressView().tint(tint)
+            Text("Wrapping up…")
+                .font(.caption)
+                .foregroundStyle(WatchTheme.textSecondary)
+            if offerExit {
+                Button("Done", action: onExit)
+                    .tint(tint)
+            }
+        }
+        .animation(WatchTheme.Motion.settle, value: offerExit)
+        .task {
+            try? await Task.sleep(for: .seconds(5))
+            offerExit = true
+        }
+    }
+}
+
 /// Await a post-workout finalization step, but never let it wedge the Done button: if
 /// `operation` hasn't returned within `timeoutSeconds`, give up and proceed. Used for the
 /// effort-score write, which awaits the OS's background workout finalize — a hang there is the
@@ -181,7 +266,7 @@ struct RunSessionContainerView: View {
             case .idle:
                 // A forced session auto-starts; show a brief spinner instead of the launch screen.
                 if forcedRoutine != nil {
-                    ProgressView().tint(WatchTheme.run)
+                    StartingView(tint: WatchTheme.run)
                 } else {
                     LaunchView(routine: effectiveRoutine, estimatedDuration: plannedDuration, onStart: start)
                 }
@@ -211,7 +296,7 @@ struct RunSessionContainerView: View {
                         }
                     )
                 } else {
-                    ProgressView()
+                    WrappingUpView(tint: WatchTheme.run) { manager.reset(); onFinish?() }
                 }
             case .failed:
                 ContentUnavailableView {
