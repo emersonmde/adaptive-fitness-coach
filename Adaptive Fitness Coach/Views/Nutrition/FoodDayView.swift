@@ -1,15 +1,18 @@
 import SwiftUI
 import AdaptiveCore
 
-/// The Food day screen (build 8; regestured build 15) — pushed from the hub's daily line.
-/// The gesture grammar, settled on-device (build 14's full-page pager stole horizontal
-/// drags from the rows AND animated in SwiftUI's fixed direction):
-///   · the SUMMARY ZONE (date header + gauge + active line) is fixed and swipes between
-///     days — a horizontal drag we own, so the transition direction is ours: swiping
-///     right brings the previous day in from the LEFT, like every calendar;
-///   · the entry LIST below scrolls vertically and keeps native row swipe actions
-///     (leading = log again, trailing = delete-with-confirm);
-///   · chevrons + tap-title-to-today remain the discoverable/accessible day paths.
+/// The Food day screen (build 8; regestured builds 15–16) — pushed from the hub's daily
+/// line. The gesture grammar, settled on-device across three iterations (full-page pager
+/// → zone-scoped swipe → this): day-swiping is GONE — the pager stole row swipes, the
+/// zoned hybrid felt janky, and a gesture that has to be defended isn't premium. What
+/// remains is deliberate:
+///   · CHEVRONS (+ tap-title-to-today) change days, with one owned directional slide:
+///     going to the past enters from the LEFT, toward today from the right;
+///   · entry rows swipe like Notification Center rows: a short drag reveals card-styled
+///     buttons that stretch with the finger, a long drag commits with a haptic at the
+///     threshold — leading = log again, trailing = delete-with-confirm.
+/// Day data is cached and neighbors prefetched so an incoming day slides in already
+/// populated (an empty active-energy line used to sit visually still mid-transition).
 /// Trends stay in Apple Health (linked); this screen is a day, not a dashboard (C6).
 struct FoodDayView: View {
     @Bindable var controller: MealLogController
@@ -28,6 +31,9 @@ struct FoodDayView: View {
     @State private var todayStart = Calendar.current.startOfDay(for: Date())
     /// Which edge the INCOMING day slides from (set before every day change).
     @State private var slideInEdge: Edge = .leading
+    /// Last-known intake/active per day: the incoming page renders from this while its
+    /// own fetch runs, so the slide carries real numbers, not blanks.
+    @State private var dayCache: [Date: DaySnapshot] = [:]
     @State private var editingEntry: MealEntry?
     @State private var showingTargetSheet = false
     @State private var reloggedID: UUID?
@@ -50,8 +56,6 @@ struct FoodDayView: View {
                 dayPager
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
-                    .contentShape(Rectangle())
-                    .gesture(daySwipe)   // the header is part of the swipeable day chrome
                 ZStack {
                     FoodDayContent(
                         day: day(for: selection),
@@ -60,7 +64,8 @@ struct FoodDayView: View {
                         recorder: recorder,
                         targetStore: targetStore,
                         reloggedID: reloggedID,
-                        daySwipe: daySwipe,
+                        initial: dayCache[day(for: selection)],
+                        onFetched: { day, snapshot in dayCache[day] = snapshot },
                         onEdit: { editingEntry = $0 },
                         onRelog: { entry in Task { await logAgain(entry) } },
                         onDeleteRequest: { pendingDelete = $0 },
@@ -90,6 +95,8 @@ struct FoodDayView: View {
                 showingTargetSheet = true
             }
         }
+        .task(id: "\(selection)/\(refreshTick)") { await prefetchNeighbors() }
+        .onChange(of: refreshTick) { dayCache = [:] }   // Health changed → nothing cached is safe
         .onChange(of: controller.phase) { refreshTick += 1 }
         .alert("Couldn't delete", isPresented: Binding(
             get: { deleteError != nil },
@@ -138,6 +145,18 @@ struct FoodDayView: View {
         calendar.date(byAdding: .day, value: offset, to: todayStart) ?? todayStart
     }
 
+    /// Warm the cache for the days a swipe can reach next, so they slide in populated.
+    private func prefetchNeighbors() async {
+        for offset in [selection - 1, selection + 1]
+        where offset <= 0 && offset >= -Self.maxDaysBack {
+            let target = day(for: offset)
+            guard dayCache[target] == nil else { continue }
+            let intake = (try? await recorder.intake(on: target)) ?? DailyIntake()
+            let active = try? await recorder.activeEnergyBurned(on: target)
+            dayCache[target] = DaySnapshot(intake: intake, activeKcal: active)
+        }
+    }
+
     // MARK: - Day changes (chevrons, title, swipe — all funnel through here)
 
     /// One entry point so every path gets the same slide: moving into the past enters
@@ -147,17 +166,6 @@ struct FoodDayView: View {
         guard target != selection else { return }
         slideInEdge = target < selection ? .leading : .trailing
         withAnimation(.easeInOut(duration: 0.28)) { selection = target }
-    }
-
-    private var daySwipe: some Gesture {
-        DragGesture(minimumDistance: 20)
-            .onEnded { value in
-                let dx = value.translation.width
-                let dy = value.translation.height
-                // Horizontal-dominant and deliberate, or ignore (buttons/scroll keep working).
-                guard abs(dx) > 50, abs(dx) > abs(dy) * 1.5 else { return }
-                changeDay(by: dx > 0 ? -1 : 1)   // finger right → reveal the past
-            }
     }
 
     // MARK: - Pager header
@@ -313,26 +321,64 @@ struct FoodDayView: View {
     }
 }
 
+/// Last-known numbers for one day — what an incoming page renders while its fetch runs.
+private struct DaySnapshot {
+    var intake: DailyIntake
+    var activeKcal: Double?
+}
+
 // MARK: - One day's content
 
-/// A single day: the fixed summary zone (gauge + active line — the day-swipe surface) over
-/// the scrolling entry List. Owns its own fetch so the OUTGOING day keeps its data while it
-/// slides away (parent-held intake would flash the new day's numbers into the old view).
-private struct FoodDayContent<SwipeGesture: Gesture>: View {
+/// A single day: the fixed summary zone (gauge + active line) over the scrolling entry
+/// stack. Owns its own fetch (seeded from the parent's cache) so the OUTGOING day keeps
+/// its data while it slides away.
+private struct FoodDayContent: View {
     let day: Date
     let isToday: Bool
     let refreshTick: Int
     let recorder: any NutritionRecorder
     var targetStore: CalorieTargetStore
     let reloggedID: UUID?
-    let daySwipe: SwipeGesture
+    let onFetched: (Date, DaySnapshot) -> Void
     let onEdit: (MealEntry) -> Void
     let onRelog: (MealEntry) -> Void
     let onDeleteRequest: (MealEntry) -> Void
     let onEditTarget: () -> Void
 
-    @State private var intake = DailyIntake()
+    @State private var intake: DailyIntake
     @State private var activeKcal: Double?
+    /// The one open swipe row (Notification Center behavior: opening one closes the rest).
+    @State private var openRowID: UUID?
+
+    init(
+        day: Date,
+        isToday: Bool,
+        refreshTick: Int,
+        recorder: any NutritionRecorder,
+        targetStore: CalorieTargetStore,
+        reloggedID: UUID?,
+        initial: DaySnapshot?,
+        onFetched: @escaping (Date, DaySnapshot) -> Void,
+        onEdit: @escaping (MealEntry) -> Void,
+        onRelog: @escaping (MealEntry) -> Void,
+        onDeleteRequest: @escaping (MealEntry) -> Void,
+        onEditTarget: @escaping () -> Void
+    ) {
+        self.day = day
+        self.isToday = isToday
+        self.refreshTick = refreshTick
+        self.recorder = recorder
+        self.targetStore = targetStore
+        self.reloggedID = reloggedID
+        self.onFetched = onFetched
+        self.onEdit = onEdit
+        self.onRelog = onRelog
+        self.onDeleteRequest = onDeleteRequest
+        self.onEditTarget = onEditTarget
+        // Seed from the cache so the slide-in carries real numbers, not blanks.
+        _intake = State(initialValue: initial?.intake ?? DailyIntake())
+        _activeKcal = State(initialValue: initial?.activeKcal)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -340,19 +386,17 @@ private struct FoodDayContent<SwipeGesture: Gesture>: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 4)
                 .padding(.bottom, 10)
-                .contentShape(Rectangle())
-                .gesture(daySwipe)
                 // .contain (not a bare identifier): the zone must be a real element for
                 // XCUI/VoiceOver *containing* its children — a bare identifier on a stack
                 // half-registers and can swallow the gauge's buttons.
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("meal.day.summary")
-            entryList
+            entryScroll
         }
         .task(id: refreshTick) { await refresh() }
     }
 
-    // MARK: Summary zone (fixed; the day-swipe surface)
+    // MARK: Summary zone (fixed above the scrolling entries)
 
     private var summaryZone: some View {
         VStack(spacing: 8) {
@@ -425,39 +469,30 @@ private struct FoodDayContent<SwipeGesture: Gesture>: View {
         .frame(height: 18)
     }
 
-    // MARK: Entry list (vertical scroll; rows own their horizontal swipes)
+    // MARK: Entry stack (vertical scroll; rows own their horizontal swipes)
 
-    private var entryList: some View {
-        List {
-            mealSections
-            if otherAppsKcal > 0 {
-                plainRow(
+    private var entryScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                mealSections
+                if otherAppsKcal > 0 {
                     Text("\(Int(otherAppsKcal.rounded()).formatted()) kcal from other apps")
                         .font(.caption2)
                         .foregroundStyle(Theme.textTertiary)
                         .padding(.horizontal, 4)
-                )
-            }
-            if intake.entries.isEmpty && otherAppsKcal == 0 {
-                plainRow(
+                }
+                if intake.entries.isEmpty && otherAppsKcal == 0 {
                     Text(isToday ? "Nothing logged yet today." : "Nothing logged this day.")
                         .font(.subheadline)
                         .foregroundStyle(Theme.textSecondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                )
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 12)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-    }
-
-    /// List-as-canvas: every row is chromeless; the Cards supply their own surfaces.
-    private func plainRow(_ content: some View, top: CGFloat = 6, bottom: CGFloat = 6) -> some View {
-        content
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: top, leading: 16, bottom: bottom, trailing: 16))
     }
 
     @ViewBuilder
@@ -465,9 +500,18 @@ private struct FoodDayContent<SwipeGesture: Gesture>: View {
         ForEach(MealSlot.dayOrder, id: \.self) { slot in
             let entries = intake.entries.filter { $0.meal == slot }
             if !entries.isEmpty {
-                plainRow(sectionHeader(slot, entries: entries), top: 12, bottom: 2)
-                ForEach(entries) { entry in
-                    plainRow(entryRow(entry), top: 4, bottom: 4)
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionHeader(slot, entries: entries)
+                    ForEach(entries) { entry in
+                        SwipeableRow(
+                            id: entry.id,
+                            openRowID: $openRowID,
+                            onRelog: { onRelog(entry) },
+                            onDelete: { onDeleteRequest(entry) }
+                        ) {
+                            entryRow(entry)
+                        }
+                    }
                 }
             }
         }
@@ -493,12 +537,17 @@ private struct FoodDayContent<SwipeGesture: Gesture>: View {
         return max(0, intake.totalKcal - ours)
     }
 
-    /// Every action, three surfaces: swipe (iOS muscle memory — works now that no pager
-    /// steals horizontal drags from rows), tap → edit sheet (the floor every user finds),
-    /// long-press → menu (the power path). All three carry the same set.
+    /// Every action, three surfaces: swipe (Notification-Center style), tap → edit sheet
+    /// (the floor every user finds), long-press → menu (the power path).
     private func entryRow(_ entry: MealEntry) -> some View {
         Button {
-            onEdit(entry)
+            // A tap while a row is open closes it (Notification Center behavior) —
+            // never opens the editor underneath the user's cleanup gesture.
+            if openRowID != nil {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { openRowID = nil }
+            } else {
+                onEdit(entry)
+            }
         } label: {
             Card {
                 HStack(alignment: .firstTextBaseline) {
@@ -531,23 +580,8 @@ private struct FoodDayContent<SwipeGesture: Gesture>: View {
         }
         .buttonStyle(PressableCardStyle())
         .accessibilityIdentifier("meal.day.entry.\(entry.name)")
-        .swipeActions(edge: .leading, allowsFullSwipe: true) {
-            Button {
-                onRelog(entry)
-            } label: {
-                Label("Log again", systemImage: "arrow.counterclockwise")
-            }
-            .tint(Theme.accent)
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            // Destructive-styled but NOT destructive-behaved: it only raises the
-            // confirmation dialog (Health deletion has no undo), so full-swipe is safe.
-            Button(role: .destructive) {
-                onDeleteRequest(entry)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-        }
+        .accessibilityAction(named: "Log again") { onRelog(entry) }
+        .accessibilityAction(named: "Delete") { onDeleteRequest(entry) }
         .contextMenu {
             Button {
                 onEdit(entry)
@@ -578,10 +612,163 @@ private struct FoodDayContent<SwipeGesture: Gesture>: View {
     }
 
     private func refresh() async {
-        if let fresh = try? await recorder.intake(on: day) {
-            intake = fresh
+        let fresh = (try? await recorder.intake(on: day)) ?? intake
+        let active = try? await recorder.activeEnergyBurned(on: day)
+        intake = fresh
+        activeKcal = active
+        onFetched(day, DaySnapshot(intake: fresh, activeKcal: active))
+    }
+}
+
+// MARK: - Notification-style swipe row
+
+/// Custom swipe actions styled like the row itself (native `swipeActions` renders
+/// full-bleed slabs that fight the floating-card look, and only works in a List).
+/// The mechanics mirror Notification Center: a short drag reveals a card-styled button
+/// that stretches with the finger; past the commit threshold a haptic fires and release
+/// performs the action. Leading = log again, trailing = delete (which only *requests* —
+/// the confirm dialog stays between a flick and a permanent Health deletion).
+private struct SwipeableRow<Content: View>: View {
+    let id: UUID
+    @Binding var openRowID: UUID?
+    let onRelog: () -> Void
+    let onDelete: () -> Void
+    @ViewBuilder let content: Content
+
+    @State private var offset: CGFloat = 0
+    /// Offset when the current drag began (an open row drags from its parked position).
+    @State private var dragStart: CGFloat?
+    /// Crossing the commit threshold mid-drag → one haptic tick (and back off = another).
+    @State private var pastCommit = false
+    /// Decided on the first movement: horizontal-dominant → ours; vertical → the scroll
+    /// view's (we run simultaneous with it, so we must self-reject or scrolls would
+    /// drag rows sideways).
+    @State private var horizontalLatch: Bool?
+
+    private let buttonWidth: CGFloat = 68
+    private let gap: CGFloat = 8
+    private var revealWidth: CGFloat { buttonWidth + gap }
+    private let commitDistance: CGFloat = 180
+
+    var body: some View {
+        ZStack {
+            // Leading action (revealed by dragging right).
+            actionButton(
+                title: "Log again", systemImage: "arrow.counterclockwise",
+                tint: Theme.accent, alignment: .leading, revealed: offset
+            ) {
+                close()
+                onRelog()
+            }
+            // Trailing action (revealed by dragging left).
+            actionButton(
+                title: "Delete", systemImage: "trash",
+                tint: Theme.hot, alignment: .trailing, revealed: -offset
+            ) {
+                close()
+                onDelete()
+            }
+            content
+                .offset(x: offset)
         }
-        activeKcal = try? await recorder.activeEnergyBurned(on: day)
+        // highPriority: plain and simultaneous variants both silently lose the recognizer
+        // race to the ScrollView+Button stack (verified via hierarchy dump — the drag never
+        // fired). The 18pt minimum keeps taps routing to the Button; the latch hands
+        // vertical movement back to the scroll view.
+        .highPriorityGesture(drag)
+        .sensoryFeedback(.impact(weight: .medium), trigger: pastCommit) { _, crossed in crossed }
+        .onChange(of: openRowID) {
+            // Someone else opened (or everything was told to close) — park back at zero.
+            if openRowID != id, offset != 0 { close() }
+        }
+    }
+
+    /// One action, styled like the Card it hides behind: same corner radius and border,
+    /// tinted icon+label, and it STRETCHES with the drag past its resting width.
+    private func actionButton(
+        title: String, systemImage: String, tint: Color,
+        alignment: Alignment, revealed: CGFloat, action: @escaping () -> Void
+    ) -> some View {
+        HStack {
+            if alignment == .trailing { Spacer(minLength: 0) }
+            Button(action: action) {
+                VStack(spacing: 4) {
+                    Image(systemName: systemImage)
+                        .font(.body.weight(.semibold))
+                    Text(title)
+                        .font(.caption2.weight(.medium))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(tint)
+                .frame(width: max(buttonWidth, revealed - gap))
+                .frame(maxHeight: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Theme.surface2)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(tint.opacity(0.35), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            if alignment == .leading { Spacer(minLength: 0) }
+        }
+        .opacity(revealed > 8 ? min(1, Double((revealed - 8) / 40)) : 0)
+        .accessibilityHidden(revealed < revealWidth * 0.6)   // VoiceOver uses the row's actions
+    }
+
+    private var drag: some Gesture {
+        DragGesture(minimumDistance: 18)
+            .onChanged { value in
+                if horizontalLatch == nil {
+                    horizontalLatch = abs(value.translation.width) > abs(value.translation.height)
+                }
+                guard horizontalLatch == true else { return }
+                if dragStart == nil {
+                    dragStart = offset
+                    openRowID = id   // opening this row closes any other
+                }
+                let proposed = (dragStart ?? 0) + value.translation.width
+                // Rubber-band past the commit point — the action is armed, not "more armed".
+                if abs(proposed) > commitDistance {
+                    let sign: CGFloat = proposed > 0 ? 1 : -1
+                    offset = sign * (commitDistance + (abs(proposed) - commitDistance) * 0.22)
+                } else {
+                    offset = proposed
+                }
+                pastCommit = abs(proposed) > commitDistance
+            }
+            .onEnded { value in
+                let wasOurs = horizontalLatch == true && dragStart != nil
+                let landed = (dragStart ?? 0) + value.translation.width
+                horizontalLatch = nil
+                dragStart = nil
+                pastCommit = false
+                guard wasOurs else { return }
+                if landed < -commitDistance {
+                    close()
+                    onDelete()          // long swipe left commits (delete still confirms)
+                } else if landed > commitDistance {
+                    close()
+                    onRelog()           // long swipe right commits
+                } else if landed < -revealWidth * 0.6 {
+                    park(at: -revealWidth)   // short swipe + release → buttons stay exposed
+                } else if landed > revealWidth * 0.6 {
+                    park(at: revealWidth)
+                } else {
+                    close()
+                }
+            }
+    }
+
+    private func park(at position: CGFloat) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { offset = position }
+    }
+
+    private func close() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) { offset = 0 }
+        if openRowID == id { openRowID = nil }
     }
 }
 

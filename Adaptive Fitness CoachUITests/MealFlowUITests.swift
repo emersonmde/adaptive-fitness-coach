@@ -371,34 +371,13 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["280 kcal"].waitForExistence(timeout: 6))
     }
 
-    // MARK: - Builds 14/15 (regestured Food screen)
-
-    /// The SUMMARY ZONE (gauge + date chrome) swipes between days — build 15's hybrid:
-    /// horizontal-on-summary = day, horizontal-on-row = row actions, chevrons stay as
-    /// the discoverable/accessible path (the edge swipe still pops back to the hub).
-    func testSwipeBetweenDays() throws {
-        let app = launchApp()
-        openCapture(app)
-        tapSimulatedCapture(app, "barcode")
-        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 12 fl oz"].waitForExistence(timeout: 5))
-        tapLogWhenReady(app)
-        XCTAssertTrue(app.staticTexts["140 kcal"].waitForExistence(timeout: 10))
-
-        openFoodDay(app)
-        dismissTargetSheetIfPresent(app)
-        let summary = app.otherElements["meal.day.summary"]
-        XCTAssertTrue(summary.waitForExistence(timeout: 5), "summary zone missing")
-        summary.swipeRight()   // finger right → reveal the past
-        XCTAssertTrue(app.staticTexts["Yesterday"].waitForExistence(timeout: 3))
-        summary.swipeLeft()    // finger left → back toward today
-        XCTAssertTrue(app.staticTexts["Today"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["140 kcal"].waitForExistence(timeout: 3))
-    }
+    // MARK: - Builds 14–16 (regestured Food screen)
+    // Day-swiping was tried twice (full-page pager, then a zoned hybrid) and cut on
+    // on-device feel: chevrons + tap-title-home are THE day navigation. Rows swipe
+    // Notification-Center style via the custom SwipeableRow.
 
     /// Trailing swipe on an entry raises the delete CONFIRMATION (Health deletion has no
-    /// undo, so even a full swipe never deletes directly) — and Cancel keeps the entry.
-    /// This is the test that exposed build 14's pager stealing row swipes; with the
-    /// hybrid split it must pass.
+    /// undo, so even a full swipe never deletes directly), and confirming removes it.
     func testSwipeToDeleteConfirms() throws {
         let app = launchApp()
         openCapture(app)
@@ -409,10 +388,14 @@ final class MealFlowUITests: XCTestCase {
 
         openFoodDay(app)
         dismissTargetSheetIfPresent(app)
-        let row = app.staticTexts["Coca-Cola Classic 12 fl oz"]
+        let row = app.buttons["meal.day.entry.Coca-Cola Classic 12 fl oz"]
         XCTAssertTrue(row.waitForExistence(timeout: 5))
-        row.swipeLeft()
-        // A short swipe reveals the action button; a full swipe triggers it directly.
+        // Deliberate press-drag (a synthesized flick can outrun the drag recognizer):
+        // ~30% of the row width leftward lands between reveal and commit → parks open.
+        let start = row.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+        let end = row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: end)
+        // A short swipe reveals the action button; a longer one commits directly.
         let dialogTitle = app.staticTexts["Delete \"Coca-Cola Classic 12 fl oz\"?"]
         if !dialogTitle.waitForExistence(timeout: 2) {
             app.buttons["Delete"].firstMatch.tap()
