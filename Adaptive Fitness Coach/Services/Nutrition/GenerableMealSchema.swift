@@ -61,6 +61,32 @@ struct GenerableLookupResult {
     var sourceURL: String?
 }
 
+// MARK: - Stage 4b: multi-candidate adjudication (P6 refresh/alternates)
+
+@Generable
+struct GenerableLookupCandidates {
+    @Guide(description: "Distinct matches the excerpts actually state calories for: the BEST match for the exact item first, then up to 3 other distinct sizes/variants/closely-related items. Empty if no excerpt states a number. Never repeat the same item and number twice; never approximate.")
+    var candidates: [GenerableLookupCandidate]
+}
+
+@Generable
+struct GenerableLookupCandidate {
+    @Guide(description: "What this match is, distinguishably — item plus size/variant, e.g. 'Coca-Cola Classic 20 fl oz'.")
+    var name: String
+    @Guide(description: "Calories (kcal) for one serving, exactly as the source states.")
+    var kcal: Double
+    @Guide(description: "Protein grams, if published.")
+    var proteinGrams: Double?
+    @Guide(description: "Carbohydrate grams, if published.")
+    var carbGrams: Double?
+    @Guide(description: "Total fat grams, if published.")
+    var fatGrams: Double?
+    @Guide(description: "The serving the numbers describe, as published.")
+    var servingDescription: String?
+    @Guide(description: "The URL of the source the number came from.")
+    var sourceURL: String?
+}
+
 // MARK: - Stage 5: estimate
 
 @Generable
@@ -116,6 +142,30 @@ extension GenerableQuestion {
             options: opts,
             defaultOptionID: opts[safeDefault].id
         )
+    }
+}
+
+extension GenerableLookupCandidates {
+    /// Unusable rows (zero/negative kcal) drop; order is preserved (first = best). The
+    /// resolver dedupes and caps — this funnel only converts.
+    func toPackage(seller: Seller?) -> [ResolvedAlternative] {
+        candidates.compactMap { candidate in
+            guard candidate.kcal > 0 else { return nil }
+            let url = candidate.sourceURL.flatMap(URL.init(string:))
+            return ResolvedAlternative(
+                name: candidate.name,
+                nutrition: ResolvedNutrition(
+                    facts: NutritionFacts(
+                        energy: .exact(kcal: candidate.kcal),
+                        proteinGrams: candidate.proteinGrams,
+                        carbGrams: candidate.carbGrams,
+                        fatGrams: candidate.fatGrams,
+                        servingDescription: candidate.servingDescription
+                    ),
+                    provenance: ProvenanceGrader.grade(sourceURL: url, seller: seller)
+                )
+            )
+        }
     }
 }
 

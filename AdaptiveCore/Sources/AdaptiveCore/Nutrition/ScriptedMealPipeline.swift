@@ -14,6 +14,10 @@ public struct ScriptedMealPipeline: MealPipeline {
         public var barcodeDraft: MealDraft?
         /// Keyed by item id; items without an entry fall through to `estimate`.
         public var resolutions: [DraftItem.ID: ResolvedNutrition]
+        /// P6 refresh/alternates: candidate lists keyed by LOWERCASED item name — name-keyed
+        /// because a rescan builds a fresh `DraftItem` (new id) from the edited name, so id
+        /// keys can never hit. First candidate = best.
+        public var alternatesByName: [String: [ResolvedAlternative]]
         public var identifyDelay: Duration?
         public var resolveDelay: Duration?
         /// Thrown by `identify` — for testing the failure/retry path.
@@ -23,6 +27,7 @@ public struct ScriptedMealPipeline: MealPipeline {
             draft: MealDraft,
             barcodeDraft: MealDraft? = nil,
             resolutions: [DraftItem.ID: ResolvedNutrition] = [:],
+            alternatesByName: [String: [ResolvedAlternative]] = [:],
             identifyDelay: Duration? = nil,
             resolveDelay: Duration? = nil,
             identifyError: Error? = nil
@@ -30,6 +35,7 @@ public struct ScriptedMealPipeline: MealPipeline {
             self.draft = draft
             self.barcodeDraft = barcodeDraft
             self.resolutions = resolutions
+            self.alternatesByName = alternatesByName
             self.identifyDelay = identifyDelay
             self.resolveDelay = resolveDelay
             self.identifyError = identifyError
@@ -114,11 +120,24 @@ public struct ScriptedMealPipeline: MealPipeline {
 
 /// Wraps a `ScriptedMealPipeline` as the adjudicator rung so `-simulateMealScan` exercises
 /// the same `MealResolver` orchestration the production build uses.
-public struct ScriptedAdjudicator: ExcerptAdjudicator {
+public struct ScriptedAdjudicator: CandidateAdjudicator {
     private let pipeline: ScriptedMealPipeline
     public init(pipeline: ScriptedMealPipeline) { self.pipeline = pipeline }
     public func adjudicate(item: DraftItem, seller: Seller?, excerpts: [SearchExcerpt]) async throws -> ResolvedNutrition? {
         pipeline.scriptedResolution(for: item.id)
+    }
+
+    /// Multi-candidate (P6): the id-keyed primary (when scripted) plus the name-keyed
+    /// candidate list; a name-keyed list alone also serves as primary+alternates — that's
+    /// how a rescan's fresh-id item gets scripted candidates.
+    public func adjudicateCandidates(
+        item: DraftItem, seller: Seller?, excerpts: [SearchExcerpt]
+    ) async throws -> [ResolvedAlternative] {
+        let named = pipeline.script.alternatesByName[item.name.lowercased()] ?? []
+        if let primary = pipeline.scriptedResolution(for: item.id) {
+            return [ResolvedAlternative(name: item.name, nutrition: primary)] + named
+        }
+        return named
     }
 }
 
@@ -236,6 +255,31 @@ public extension ScriptedMealPipeline {
         var script = receipt.script
         script.barcodeDraft = barcode.script.draft
         script.resolutions.merge(barcode.script.resolutions) { current, _ in current }
+        // P6 refresh/alternates demo: re-running the lookup on the logged cola surfaces
+        // pickable size/variant candidates (name-keyed — a rescan item has a fresh id).
+        script.alternatesByName["coca-cola classic 12 fl oz"] = [
+            ResolvedAlternative(
+                name: "Coca-Cola Classic 12 fl oz",
+                nutrition: ResolvedNutrition(
+                    facts: NutritionFacts(energy: .exact(kcal: 140), servingDescription: "1 can (355 ml)"),
+                    provenance: .database(name: "Open Food Facts", sourceURL: nil)
+                )
+            ),
+            ResolvedAlternative(
+                name: "Coca-Cola Classic 20 fl oz",
+                nutrition: ResolvedNutrition(
+                    facts: NutritionFacts(energy: .exact(kcal: 240), servingDescription: "1 bottle (591 ml)"),
+                    provenance: .database(name: "Open Food Facts", sourceURL: nil)
+                )
+            ),
+            ResolvedAlternative(
+                name: "Coca-Cola Zero Sugar 12 fl oz",
+                nutrition: ResolvedNutrition(
+                    facts: NutritionFacts(energy: .exact(kcal: 0), servingDescription: "1 can (355 ml)"),
+                    provenance: .database(name: "Open Food Facts", sourceURL: nil)
+                )
+            ),
+        ]
         return ScriptedMealPipeline(script: script)
     }
 

@@ -2,7 +2,7 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-05 (P6 underway on the `p6` branch): **P6 Phases 1–3 IMPLEMENTED — see their milestone sections** (Phase 1: progression channel v4, reasons on the wire, watch proposal lane, phone journal + confirm cards. Phase 2: ContextPackComposer + ExportPackSheet + one-time health disclosure + return-from-break card. Phase 3: watch quick-log — first live WC channel, QuickLogService, pending-REVIEW flow + one notification, `-simulateQuickLog`). One TestFlight build ships at the END of P6 as build 17, per the user. The 5 lb weight-grid fix is COMMITTED to main. String Catalogs adopted on both app targets (P6 step 0). Next: Phase 4 entry refresh/alternates._
+_Last updated 2026-07-05 (P6 code-complete on the `p6` branch): **ALL FOUR P6 PHASES IMPLEMENTED — see their milestone sections** (Phase 1: progression channel v4, reasons on the wire, watch proposal lane, phone journal + confirm cards. Phase 2: ContextPackComposer + ExportPackSheet + one-time health disclosure + return-from-break card. Phase 3: watch quick-log — first live WC channel, QuickLogService, pending-REVIEW flow + one notification, `-simulateQuickLog`. Phase 4: multi-candidate adjudication + edit-sheet alternates). 449 package tests; all phone suites + watch unit green. **Next: merge `p6` → `main` and ship ONE TestFlight build (17) — confirm with the user first**; then the on-device validation list (each phase's section). The 5 lb weight-grid fix is COMMITTED to main. String Catalogs adopted on both app targets (P6 step 0)._
 
 _Previous update 2026-07-05 (night): **P0–P5 shipped; TestFlight build 16 = the P5 polish deep dive + the post-15 gesture settlement (chevrons-only day nav + Notification-style SwipeableRow + day snapshot cache).** P5 (see its section): one motion vocabulary + Reduce-Motion gap closed, deliberate phone haptics (`Theme.Haptics`), token compliance both targets (watch gray drift, `info`/`heat`/`metricNumber`/radius scale), honest states (watch "Syncing from iPhone…" first launch, exit-ful wrap-up), accessibility pass (DailyIntakeLine container bug, labels, contrast floor), dark-mode declared to the OS, iPhone-only portrait, AccentColor populated, FoodDayView structural cleanup + SwipeableRow extraction. **NEXT = P6, RESHAPED 2026-07-05 after the user's build-16 verdict (on-device model: meal-NLP only, fails at routine building; the Claude export loop is the invested path — read the P6 Roadmap section):** progression journal + structural-confirm gate, **"Export to Claude" context packs** (fitness snapshot / check-in / meal planning / plateau / constraint rework; scope picker + honest health-export disclosure), watch quick-log, entry refresh/alternates; agentic rung 3 + FoundationModels-coach investment PUSHED pending the PCC grant. **On the tree UNRELEASED: the 5 lb weight-grid fix** (`Weight.stepped`/`snappedToGrid`, curl/lateral-raise seeds+steps on-grid, progression exits through a grid snap — fixes the stuck-22.5; 393 package + watch unit + phone build green, awaiting ship-or-hold). Also the confirm-on-device list (Health deep-link probes, LookupLab, PCC flow). Build 15 was the hybrid gesture split (summary zone swipes days), retired same-day by on-device feel; build 14's full-page pager stole row swipes and animated backwards. Build 14 carried the rest of the repage (pinned add bar, past-day backfill via when-row prefill, relog toast instead of teleport, full action set on tap/long-press). Build 13 carried the typed-meal parsing fixes (mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
 
@@ -222,6 +222,32 @@ the existing split); the watch gets dictation in, one glanceable confirm out.
 - **On-device pending (the heavy phase — plan the hardware session around it):** real
   `sendMessage` reachability/latency/timeout feel, dictation input, store-and-forward with
   the phone locked/away, notification delivery, end-to-end Health write from the wrist.
+
+### P6 Phase 4 — Entry refresh / alternates ✅ IMPLEMENTED (2026-07-05, on `p6`)
+The "wrong item / wrong size" fix: the edit sheet's "Look up again" now also surfaces the
+OTHER defensible matches as pickable rows.
+- **One model call, multiple candidates.** `CandidateAdjudicator` (refines
+  `ExcerptAdjudicator`): the same single pass over the same excerpts reports up to 3
+  distinct adjudicated matches (first = best) — never raw excerpts in the UI (unadjudicated
+  numbers would violate N6). `MealResolver.resolveWithAlternates` engages it **opt-in
+  only** (`resolve` keeps the lean single-answer call — the heavier schema never taxes
+  everyday lookups on the 4K on-device model); dedupe by (name, kcal), cap 3; alternates
+  are transient, never persisted on `MealEntry`. Every non-search rung stays single-answer
+  by construction (stated number, printed label, barcode product, estimate).
+- **Production:** `GenerableLookupCandidates`/`GenerableLookupCandidate` mirrors (order
+  preserved, hollow rows dropped at the funnel, provenance graded per candidate);
+  `FoundationModelsAdjudicator` conforms. **Scripted:** `Script.alternatesByName`
+  (name-keyed — a rescan builds a fresh-id item) + `ScriptedAdjudicator` conformance; the
+  `-simulateMealScan` demo scripts cola size/variant candidates.
+- **UI:** `EntryEditSheet` renders "NOT THIS? PICK ANOTHER MATCH" rows (name · provenance ·
+  kcal) after a re-lookup; picking adopts the candidate wholesale (name + number +
+  provenance preview, recorded on Save through the existing `recorder.replace` path).
+- **Testing:** 449 package tests (5 new `MealResolverAlternatesTests`: dedupe/cap,
+  plain-resolve-never-runs-candidates spy, empty-fallthrough, stated-no-alternates,
+  scripted name-keyed rescan); `MealSchemaDriftTests` +1 (candidates funnel);
+  `testEditRescanReLooksUp` upgraded — the scripted ladder now FINDS the item and the test
+  picks the 20 oz variant end-to-end (its old "estimate" expectation was an artifact of the
+  id-keyed scripted gap). On-device pending: candidate quality/dedupe from the real model.
 
 ### P0 — Adaptive run/walk ✅ DONE
 Shipped, reviewed, redesigned. See snapshot above.
