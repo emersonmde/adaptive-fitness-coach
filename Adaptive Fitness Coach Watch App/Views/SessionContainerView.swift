@@ -270,6 +270,12 @@ struct RunSessionContainerView: View {
     /// is wall-clock-derived and can point at a *different* routine by the time a long run
     /// completes, which would attribute the outcome to the wrong card.
     @State private var activeRoutineId: UUID?
+    /// When this session started — the comparison query's exclusion boundary (the
+    /// just-finished workout must not compare against itself).
+    @State private var sessionStart: Date?
+    /// Summary comparison lines (P6.1), filled asynchronously from Health history; nil while
+    /// loading, empty when there's honestly nothing to compare against.
+    @State private var comparisons: [RunComparison.Line]?
     private let simulate: Bool
 
     init(store: RoutineStore, simulate: Bool, forcedRoutine: Routine? = nil,
@@ -302,6 +308,7 @@ struct RunSessionContainerView: View {
                     WorkoutCompleteView(
                         summary: summary,
                         saveState: manager.healthSaveState,
+                        comparisons: comparisons,
                         notePreview: { effort in progressionNote(for: summary, effort: effort) },
                         onDone: { effort in
                             // Emit progression ONCE, on Done, with the rating (so a high rating
@@ -316,10 +323,20 @@ struct RunSessionContainerView: View {
                                         await manager.writeEffort(effort)
                                     }
                                 }
+                                comparisons = nil
                                 manager.reset(); onFinish?()
                             }
                         }
                     )
+                    .task {
+                        // Fill the reserved comparison slot from Health history — bounded so
+                        // a slow first HealthKit query can never stall past a glance; the
+                        // slot simply stays silent (N6: no line beats a late/hollow one).
+                        guard comparisons == nil else { return }
+                        await awaitBestEffort(timeoutSeconds: 3) {
+                            await loadComparisons(for: summary)
+                        }
+                    }
                 } else {
                     WrappingUpView(tint: WatchTheme.run) { manager.reset(); onFinish?() }
                 }
@@ -412,6 +429,7 @@ struct RunSessionContainerView: View {
 
     private func start() {
         let name = effectiveRoutine?.name ?? "Adaptive Run"
+        sessionStart = Date()
         if simulate {
             // Compressed plan + small adaptation windows so a full adaptive run plays out
             // quickly for testing/demo (~45s of plan). The 25s warmup exists to demo cadence
@@ -443,5 +461,34 @@ struct RunSessionContainerView: View {
                               routineName: name, routineId: activeRoutineId)
             }
         }
+    }
+
+    /// Build the summary's comparison lines from Health history (P6.1). Under `-simulateWorkout`
+    /// canned lines stand in after a short beat (the sim's compressed ~12s runs would collapse
+    /// every honest delta into the "even" band); `-simulateNoHistory` demos the empty slot.
+    private func loadComparisons(for summary: SessionSummary) async {
+        if simulate {
+            guard !ProcessInfo.processInfo.arguments.contains("-simulateNoHistory") else {
+                comparisons = []
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(600))   // show the slot filling in
+            comparisons = [
+                RunComparison.Line(label: "vs last run", delta: "+2:10 running", improved: true),
+                RunComparison.Line(label: "vs 28-day baseline", delta: "+1:50 running", improved: true),
+            ]
+            return
+        }
+        let current = RunDigest(summary: summary, routineId: activeRoutineId)
+        let history = await HealthRunDigestReader.history(
+            routineId: activeRoutineId, before: sessionStart ?? Date())
+        var lines: [RunComparison.Line] = []
+        if let line = RunComparison.vsLastRun(current: current, previous: history.previous?.digest) {
+            lines.append(line)
+        }
+        if let line = RunComparison.vsBaseline(current: current, history: history.window) {
+            lines.append(line)
+        }
+        comparisons = lines
     }
 }
