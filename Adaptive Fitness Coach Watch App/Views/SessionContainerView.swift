@@ -439,7 +439,8 @@ struct RunSessionContainerView: View {
                     card.walkSeconds = seeds.walkSeconds
                 }
                 activeCard = card
-                manager.start(config: SessionConfig(plan: IntervalPlan.plan(for: card)), routineName: name)
+                manager.start(config: SessionConfig(plan: IntervalPlan.plan(for: card)),
+                              routineName: name, routineId: activeRoutineId)
             }
         }
     }
