@@ -49,6 +49,27 @@ struct SessionContainerView: View {
     }
 
     var body: some View {
+        content
+            // The quick-log sheet lives at the TOP level, not inside the picker branch: the
+            // complication/intent must reach it from any non-session state — empty library,
+            // still syncing, picker — a meal log needs no routines (N4).
+            .sheet(isPresented: $showingQuickLog) {
+                if let connectivity {
+                    QuickLogView(queueOffline: { connectivity.queueQuickLogOffline($0) }) {
+                        showingQuickLog = false
+                    }
+                }
+            }
+            .task { routeQuickLogRequest() }
+            // @Published publishes during willSet — the property still holds the OLD value
+            // here, so defer one main-actor turn before consuming (the WeekView Siri
+            // warm-start lesson).
+            .onReceive(launchRequest.$pendingQuickLog) { pending in
+                if pending { Task { @MainActor in routeQuickLogRequest() } }
+            }
+    }
+
+    @ViewBuilder private var content: some View {
         if simulateQuickLog {
             // The only way to see the quick-log flow without hardware (paired-sim WC is
             // unreliable) — the park is a no-op here.
@@ -92,13 +113,6 @@ struct SessionContainerView: View {
                             .accessibilityLabel("Log a meal")
                         }
                     }
-                    .sheet(isPresented: $showingQuickLog) {
-                        if let connectivity {
-                            QuickLogView(queueOffline: { connectivity.queueQuickLogOffline($0) }) {
-                                showingQuickLog = false
-                            }
-                        }
-                    }
             }
             .task { routeLaunchRequest() }
             .onReceive(launchRequest.$pendingRoutineId) { _ in routeLaunchRequest() }
@@ -113,6 +127,16 @@ struct SessionContainerView: View {
     private var awaitingFirstSync: Bool {
         guard let connectivity else { return false }   // previews/tests: no receiver to wait on
         return !connectivity.hasReceivedInitialContext && !syncWaitExpired
+    }
+
+    /// The quick-log complication / `LogMealIntent` wants the meal sheet. Consume even when
+    /// dropped — an in-progress session keeps the screen (N5); the tap still opened the app,
+    /// and a stale request must not pop a sheet over a workout minutes later.
+    private func routeQuickLogRequest() {
+        guard launchRequest.consumeQuickLog() else { return }
+        guard chosen == nil, !simulateRun, !simulateStrength, !simulateMixed, !simulateQuickLog
+        else { return }
+        showingQuickLog = true
     }
 
     /// A `StartRoutineIntent` (complication/Siri/widget) targets a routine by id — jump the

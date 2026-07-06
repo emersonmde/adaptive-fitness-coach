@@ -42,11 +42,19 @@ struct Adaptive_Fitness_Coach_Watch_AppApp: App {
                                  connectivity: connectivity,
                                  recordProgression: connectivity.record)
                 .onOpenURL { url in
-                    // Complication / Smart Stack deep link: afcoach://start/<routineId> →
-                    // route the session container straight into that routine (build 9).
-                    guard url.scheme == "afcoach", url.host == "start" else { return }
-                    let id = url.lastPathComponent
-                    if !id.isEmpty { WorkoutLaunchRequest.shared.request(routineId: id) }
+                    // Complication / Smart Stack deep links (build 9):
+                    //   afcoach://start/<routineId> → straight into that routine
+                    //   afcoach://quicklog          → the meal quick-log sheet
+                    guard url.scheme == "afcoach" else { return }
+                    switch url.host {
+                    case "start":
+                        let id = url.lastPathComponent
+                        if !id.isEmpty { WorkoutLaunchRequest.shared.request(routineId: id) }
+                    case "quicklog":
+                        WorkoutLaunchRequest.shared.requestQuickLog()
+                    default:
+                        break
+                    }
                 }
                 .task {
                     // Activate WatchConnectivity FIRST, independent of the HealthKit-auth await

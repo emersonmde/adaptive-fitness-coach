@@ -43,18 +43,45 @@ struct StartRoutineIntent: AppIntent {
     }
 }
 
+/// Dictate a meal from the wrist (the quick-log complication / Shortcuts): opens the app
+/// straight into the quick-log sheet — text is parked for the iPhone's review queue, no
+/// lookup on the watch (always-pending).
+struct LogMealIntent: AppIntent {
+    static let title: LocalizedStringResource = "Log a Meal"
+    static let description = IntentDescription("Dictate a meal — it's saved to review on your iPhone.")
+    static let openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        WorkoutLaunchRequest.shared.requestQuickLog()
+        return .result()
+    }
+}
+
 /// Hand-off from `StartRoutineIntent` (which may fire before or after the scene exists) to
 /// `SessionContainerView`: a pending routine id the container consumes to auto-select.
+/// Also carries the quick-log complication's "open the meal sheet" request (same
+/// fire-before-or-after-scene problem, same consume discipline).
 @MainActor
 final class WorkoutLaunchRequest: ObservableObject {
     static let shared = WorkoutLaunchRequest()
     @Published private(set) var pendingRoutineId: String?
+    @Published private(set) var pendingQuickLog = false
 
     func request(routineId: String) { pendingRoutineId = routineId }
 
     func consume() -> String? {
         defer { pendingRoutineId = nil }
         return pendingRoutineId
+    }
+
+    func requestQuickLog() { pendingQuickLog = true }
+
+    /// True exactly once per request — consumed even when the container drops it (a session
+    /// in progress), so it can't pop a stale sheet after the workout ends.
+    func consumeQuickLog() -> Bool {
+        defer { pendingQuickLog = false }
+        return pendingQuickLog
     }
 }
 

@@ -12,6 +12,68 @@ import AdaptiveCore
 struct AdaptiveFitnessWatchWidgetBundle: WidgetBundle {
     var body: some Widget {
         NextWorkoutComplication()
+        QuickLogComplication()
+    }
+}
+
+// MARK: - Quick-log complication
+
+/// One tap from the watch face into the meal quick-log sheet (`afcoach://quicklog`).
+/// Stateless — there's nothing to fetch or refresh; the complication IS the button
+/// (always-pending: dictate → parked for the iPhone → done).
+struct QuickLogEntry: TimelineEntry {
+    var date: Date
+}
+
+struct QuickLogProvider: TimelineProvider {
+    func placeholder(in context: Context) -> QuickLogEntry { QuickLogEntry(date: .now) }
+    func getSnapshot(in context: Context, completion: @escaping (QuickLogEntry) -> Void) {
+        completion(QuickLogEntry(date: .now))
+    }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<QuickLogEntry>) -> Void) {
+        completion(Timeline(entries: [QuickLogEntry(date: .now)], policy: .never))
+    }
+}
+
+struct QuickLogComplication: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "QuickLogComplication", provider: QuickLogProvider()) { _ in
+            QuickLogComplicationView()
+                .widgetURL(URL(string: "afcoach://quicklog"))
+                .containerBackground(.black, for: .widget)
+        }
+        .configurationDisplayName("Log a Meal")
+        .description("Dictate a meal — saved to review on your iPhone.")
+        .supportedFamilies([
+            .accessoryCircular, .accessoryRectangular, .accessoryInline, .accessoryCorner,
+        ])
+    }
+}
+
+private struct QuickLogComplicationView: View {
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        switch family {
+        case .accessoryInline:
+            Label("Log a meal", systemImage: "fork.knife")
+        case .accessoryCorner:
+            Image(systemName: "fork.knife")
+                .font(.title2)
+                .widgetLabel("Log a meal")
+        case .accessoryRectangular:
+            VStack(alignment: .leading, spacing: 1) {
+                Label("QUICK LOG", systemImage: "fork.knife").font(.caption2.weight(.semibold))
+                Text("Log a meal").font(.headline).lineLimit(1)
+                Text("Dictate → iPhone").font(.caption2)
+            }
+        default: // accessoryCircular
+            ZStack {
+                AccessoryWidgetBackground()
+                Image(systemName: "fork.knife").font(.title3)
+            }
+            .widgetLabel("Log a meal")
+        }
     }
 }
 

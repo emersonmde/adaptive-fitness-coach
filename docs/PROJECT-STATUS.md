@@ -313,11 +313,23 @@ that hypothesis was checked and excluded.
   dissolved into a plain `queueOffline:` param. (6) Blue-outside-workout documented as the
   deliberate info-accent exception on `WatchTheme.recover`. Stale live-path docs fixed
   (`QuickLogHandling`, codec key, `QuickLog.swift` header, this file's Phase 3 list).
+- **Quick-log complication (user request, post-build-18):** `QuickLogComplication` in the
+  watch widget bundle (stateless, all four accessory families, fork.knife) → `widgetURL`
+  `afcoach://quicklog` → app `onOpenURL` → `WorkoutLaunchRequest.requestQuickLog()` →
+  `SessionContainerView` presents the sheet (now attached at the TOP level so it reaches
+  every non-session state — empty library, syncing, picker; a meal log needs no routines).
+  Consume-even-when-dropped: an in-progress session keeps the screen and the request dies
+  (never a stale sheet minutes later; `QuickLogLaunchRequestTests`). Plus `LogMealIntent`
+  (Shortcuts/Action Button). NOTE: watchOS has no LS custom-scheme opening — `widgetURL`
+  is a special WidgetKit delivery path, so `simctl openurl` can NOT drive watch deep links
+  (tried; error 115; a `CFBundleURLTypes` registration is dead config on watchOS).
 - **On-device validation (replaces the Phase 3 list):** dictation input feel; phone locked
   in pocket → "Saved for iPhone" within ~1s; review card (with timestamp) appears exactly
   once, tap → lookup at foreground speed → commit → Health write, card + notification
-  clear; long-press dismiss; cold-launch quick-log before activation completes still
-  reaches the phone (the persistence fix); 4h notification fires while something waits.
+  clear; long-press dismiss + in-sheet trash; cold-launch quick-log before activation
+  completes still reaches the phone (the persistence fix); 4h notification fires while
+  something waits; **add the "Log a Meal" complication to a face → tap → sheet opens (also
+  mid-workout: tap should land on the workout, no sheet)**.
 
 ### P6 Phase 4 — Entry refresh / alternates ✅ IMPLEMENTED (2026-07-05, on `p6`)
 The "wrong item / wrong size" fix: the edit sheet's "Look up again" now also surfaces the
