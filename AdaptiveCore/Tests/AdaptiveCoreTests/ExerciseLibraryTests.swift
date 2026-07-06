@@ -38,12 +38,13 @@ struct ExerciseLibraryTests {
                 #expect(repRange.count >= 3)
                 // Seed loads are conservative: dumbbell seeds sit in a beginner band; barbell
                 // seeds start at the empty 45 lb bar (deadlift with light plates); machine
-                // stacks a bit higher. Steps are real increments: 2.5/5 lb plates, or 10 lb
-                // for machine stacks and big pulls.
+                // stacks a bit higher. Everything lives on the real-dumbbell 5 lb grid
+                // (user decision 2026-07-05): seeds are multiples of 5, steps are 5 or 10.
                 if let seedWeight {
                     let ceiling: Double = exercise.equipment.contains(.machine) ? 100 : 65
                     #expect(seedWeight.pounds > 0 && seedWeight.pounds <= ceiling)
-                    #expect([2.5, 5, 10].contains(exercise.weightStepPounds))
+                    #expect(seedWeight.pounds.truncatingRemainder(dividingBy: 5) == 0)
+                    #expect([5, 10].contains(exercise.weightStepPounds))
                 }
             case let .hold(defaultSeconds):
                 // Hold seeds start inside the policy's [floor, cap] band.

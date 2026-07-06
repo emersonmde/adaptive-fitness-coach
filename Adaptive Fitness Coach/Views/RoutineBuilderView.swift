@@ -306,12 +306,12 @@ private struct ExerciseCardEditor: View {
                 Text("Weight").font(.caption).foregroundStyle(Theme.textTertiary)
                 Spacer()
                 HStack(spacing: 10) {
-                    weightButton("minus") { item.seedWeight = weight.adjusted(byPounds: -5) }
+                    weightButton("minus") { item.seedWeight = weight.stepped(byPounds: -5) }
                     Text(weight.displayString())
                         .font(.subheadline.weight(.semibold).monospacedDigit())
                         .foregroundStyle(Theme.strength)
                         .frame(minWidth: 56)
-                    weightButton("plus") { item.seedWeight = weight.adjusted(byPounds: 5) }
+                    weightButton("plus") { item.seedWeight = weight.stepped(byPounds: 5) }
                 }
             }
         } else {

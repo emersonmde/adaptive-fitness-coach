@@ -45,13 +45,32 @@ struct StrengthProgressionPolicyTests {
         #expect(next.reps == 8)         // back to the bottom of the band
     }
 
-    @Test func isolationUsesTheSmallStep() {
-        let curl = ExerciseLibrary.exercise(id: "db_curl")! // 10...15, 2.5 lb
-        let current = StrengthPrescription(reps: 15, weight: .lb(12.5))
+    @Test func isolationStepsOnTheFiveGrid() {
+        let curl = ExerciseLibrary.exercise(id: "db_curl")! // 10...15, 5 lb (real-dumbbell grid)
+        let current = StrengthPrescription(reps: 15, weight: .lb(10))
         let next = policy.nextPrescription(current: current, exercise: curl,
                                            outcome: outcome(id: "db_curl", reps: [15, 15, 15], prescribed: 15), endedEarly: false)
-        #expect(next.weight == .lb(15)) // +2.5
+        #expect(next.weight == .lb(15)) // +5
         #expect(next.reps == 10)
+    }
+
+    // MARK: - Legacy off-grid loads (pre-grid 2.5-step seeds, e.g. the stuck 22.5)
+
+    @Test func offGridLoadAdvancesToTheAdjacentMultipleOfFive() {
+        let curl = ExerciseLibrary.exercise(id: "db_curl")!
+        let current = StrengthPrescription(reps: 15, weight: .lb(22.5))
+        let next = policy.nextPrescription(current: current, exercise: curl,
+                                           outcome: outcome(id: "db_curl", reps: [15, 15, 15], prescribed: 15), endedEarly: false)
+        #expect(next.weight == .lb(25)) // adjacent grid point, not 27.5
+    }
+
+    @Test func offGridLoadSnapsDownOnHold() {
+        let curl = ExerciseLibrary.exercise(id: "db_curl")!
+        let current = StrengthPrescription(reps: 12, weight: .lb(22.5))
+        let next = policy.nextPrescription(current: current, exercise: curl,
+                                           outcome: outcome(id: "db_curl", reps: [11, 12, 12], prescribed: 12), endedEarly: false)
+        #expect(next.weight == .lb(20)) // a hold still converges to the grid; midpoint eases
+        #expect(next.reps == 12)
     }
 
     @Test func twoShortSetsEaseOneRep() {
@@ -79,10 +98,10 @@ struct StrengthProgressionPolicyTests {
 
     @Test func easedWeightNeverFallsBelowTheSmallestDumbbell() {
         let curl = ExerciseLibrary.exercise(id: "db_curl")!
-        let current = StrengthPrescription(reps: 10, weight: .lb(2.5))
+        let current = StrengthPrescription(reps: 10, weight: .lb(5))
         let next = policy.nextPrescription(current: current, exercise: curl,
                                            outcome: outcome(id: "db_curl", reps: [7, 7, 7], prescribed: 10), endedEarly: false)
-        #expect(next.weight == .lb(2.5))
+        #expect(next.weight == .lb(5)) // floored at the 5 lb grid unit
     }
 
     // MARK: - Advance gates
@@ -220,6 +239,8 @@ struct StrengthProgressionPolicyTests {
             let currentReps = range.map { $0.lowerBound + rand($0.count + 6) - 3 } // may be out of band
             let weight: Weight? = {
                 if isHold { return nil }
+                // Deliberately includes off-grid legacy values (2.5 steps) — the policy
+                // must converge them onto the 5 lb grid, whatever the decision.
                 if case let .reps(_, seed) = exercise.kind, seed != nil { return .lb(Double(rand(10)) * 2.5 + 2.5) }
                 return nil
             }()
@@ -255,10 +276,13 @@ struct StrengthProgressionPolicyTests {
             }
             // Deltas are single steps (post-clamp comparisons).
             if let w = current.weight, let nw = next.weight {
-                // At most one step in either direction; the ease floor (2.5 lb) can shorten
-                // a downward step, never lengthen one.
+                // At most one step in either direction; the ease floor (5 lb) and the grid
+                // snap can shorten a step, never lengthen one.
                 let delta = abs(nw.pounds - w.pounds)
                 #expect(delta <= exercise.weightStepPounds + 0.001)
+                // Whatever the decision, the proposed load lands on the 5 lb grid.
+                let remainder = nw.pounds.truncatingRemainder(dividingBy: 5)
+                #expect(min(remainder, 5 - remainder) < 0.001)
             }
         }
     }

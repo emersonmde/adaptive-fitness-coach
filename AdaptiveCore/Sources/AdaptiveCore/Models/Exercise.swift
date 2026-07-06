@@ -59,9 +59,10 @@ public struct Exercise: Codable, Sendable, Hashable, Identifiable {
     /// Whether the movement is counted in reps (with an optional load) or held for time.
     public var kind: ExerciseKind
     /// Load increment in pounds when double progression tops out the rep range: 5 lb for
-    /// compounds, 2.5 lb for small-muscle isolation. At these dumbbell loads a step lands in
-    /// the 2–10% band the ACSM Position Stand prescribes for load increases (ACSM, "Progression
-    /// Models in Resistance Training for Healthy Adults," MSSE 41(3), 2009). Ignored for
+    /// dumbbell movements, 10 lb for barbell compounds — always a multiple of the 5 lb grid,
+    /// because that's what real racks stock (user decision; the ACSM 2–10% band — "Progression
+    /// Models in Resistance Training for Healthy Adults," MSSE 41(3), 2009 — is honored by the
+    /// slow rep-climb before any load step, not by fractional plates). Ignored for
     /// bodyweight/hold movements.
     public var weightStepPounds: Double
     /// Evidence-based rest seed between sets of this movement, used to seed rest cards in the

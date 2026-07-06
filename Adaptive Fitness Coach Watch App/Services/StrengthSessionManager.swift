@@ -334,7 +334,9 @@ final class StrengthSessionManager {
     func adjustWeight(byPounds delta: Double) {
         guard sessionState == .active, case let .exercise(item) = currentCard,
               let weight = currentItem?.seedWeight ?? item.seedWeight else { return }
-        weightOverrides[item.exerciseId] = weight.adjusted(byPounds: delta)
+        // Grid-stepped: from a legacy off-grid load (22.5) the first tap snaps to the
+        // adjacent multiple of 5 in the tapped direction (20 or 25), then steps in 5s.
+        weightOverrides[item.exerciseId] = weight.stepped(byPounds: delta)
     }
 
     /// Adjust the current exercise's proposed reps by a delta (clamped at 1 — a set is ≥ 1 rep). A

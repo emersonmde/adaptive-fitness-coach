@@ -159,7 +159,7 @@ public struct StrengthProgressionConfig: Sendable, Hashable {
     public var holdStep: TimeInterval
     public var holdFloor: TimeInterval
     public var holdCap: TimeInterval
-    /// Easing never produces a load below the smallest real dumbbell.
+    /// Easing never produces a load below the smallest real dumbbell (5 lb — the grid unit).
     public var minWeightPounds: Double
     /// A perceived-effort rating at/above this (1–10) downgrades an otherwise-clean advance to
     /// hold — same "block advance without easing" philosophy as `suspicionUnrecoveredRests`.
@@ -172,7 +172,7 @@ public struct StrengthProgressionConfig: Sendable, Hashable {
         holdStep: TimeInterval = 5,
         holdFloor: TimeInterval = 15,
         holdCap: TimeInterval = 120,
-        minWeightPounds: Double = 2.5,
+        minWeightPounds: Double = Weight.gridPounds,
         highEffortThreshold: Int = 8
     ) {
         self.shortfallReps = shortfallReps
@@ -252,25 +252,26 @@ public struct StrengthProgressionPolicy: Sendable {
 
         switch decision(for: outcome, endedEarly: endedEarly, perceivedEffort: perceivedEffort) {
         case .hold:
-            return next
+            break
 
         case .advance:
             if next.holdSeconds != nil {
                 next.holdSeconds = min(next.holdSeconds! + config.holdStep, config.holdCap)
-            } else if let range = exercise.repRange, let reps = next.reps {
-                // A manual change to a dimension freezes it this session (already progressed).
-                if outcome.repsManuallyChanged || outcome.weightManuallyRaised { return next }
+            } else if let range = exercise.repRange, let reps = next.reps,
+                      // A manual change to a dimension freezes it this session (already progressed).
+                      !outcome.repsManuallyChanged, !outcome.weightManuallyRaised {
                 if reps < range.upperBound {
                     next.reps = reps + 1
                 } else if let weight = next.weight {
                     // Band topped out: load steps up, reps reset to the bottom (ACSM 2009).
-                    next.weight = weight.adjusted(byPounds: exercise.weightStepPounds)
+                    // Grid-stepped: an off-grid legacy load advances only to the adjacent
+                    // multiple of 5 (22.5 → 25, conservatively short of a full step).
+                    next.weight = weight.stepped(byPounds: exercise.weightStepPounds)
                     next.reps = range.lowerBound
                 }
                 // Bodyweight at the top of its band: hold. A heavier "step" doesn't exist;
                 // P3's AI can suggest a harder variation (e.g. push-up → decline push-up).
             }
-            return next
 
         case .ease:
             if next.holdSeconds != nil {
@@ -279,12 +280,22 @@ public struct StrengthProgressionPolicy: Sendable {
                 if reps > range.lowerBound {
                     next.reps = reps - 1
                 } else if let weight = next.weight {
-                    let eased = weight.adjusted(byPounds: -exercise.weightStepPounds)
-                    next.weight = eased.pounds < config.minWeightPounds ? Weight.lb(config.minWeightPounds) : eased
+                    next.weight = weight.stepped(byPounds: -exercise.weightStepPounds)
                 }
             }
-            return next
         }
+
+        // Every prescription leaves on the 5 lb grid, whatever path produced it — this is
+        // where legacy 2.5-step loads (22.5) converge (holds included; midpoints snap down).
+        // A loaded movement is floored at the smallest real dumbbell: easing/snapping may
+        // never turn a weighted exercise into a phantom 0 lb one.
+        let hadLoad = (current.weight?.pounds ?? 0) > 0
+        next.weight = next.weight.map { weight in
+            let snapped = weight.snappedToGrid()
+            return (snapped.pounds < config.minWeightPounds && hadLoad)
+                ? Weight.lb(config.minWeightPounds) : snapped
+        }
+        return next
     }
 
     /// A clean session for this exercise: all planned sets done, every set at/above

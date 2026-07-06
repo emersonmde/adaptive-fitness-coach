@@ -125,4 +125,32 @@ struct ExerciseModelTests {
         #expect(Weight.lb(10).adjusted(byPounds: 5) == .lb(15))
         #expect(Weight.lb(2.5).adjusted(byPounds: -5) == .lb(0))
     }
+
+    // MARK: - The 5 lb grid (user decision: loads are always multiples of 5, adjustable in 5s)
+
+    @Test func onGridLoadsStepByTheFullDelta() {
+        #expect(Weight.lb(20).stepped(byPounds: 5) == .lb(25))
+        #expect(Weight.lb(20).stepped(byPounds: -5) == .lb(15))
+        #expect(Weight.lb(40).stepped(byPounds: 10) == .lb(50))
+    }
+
+    @Test func offGridLegacyLoadSnapsToTheAdjacentGridPoint() {
+        // The stuck-at-22.5 case: ± must reach 20 and 25, never 17.5/27.5.
+        #expect(Weight.lb(22.5).stepped(byPounds: 5) == .lb(25))
+        #expect(Weight.lb(22.5).stepped(byPounds: -5) == .lb(20))
+        // Even a large step from off-grid only snaps to the adjacent multiple (conservative).
+        #expect(Weight.lb(22.5).stepped(byPounds: 10) == .lb(25))
+    }
+
+    @Test func steppedClampsAtZero() {
+        #expect(Weight.lb(5).stepped(byPounds: -5) == .lb(0))
+        #expect(Weight.lb(2.5).stepped(byPounds: -5) == .lb(0))
+    }
+
+    @Test func snapToGridRoundsMidpointsDown() {
+        #expect(Weight.lb(22.5).snappedToGrid() == .lb(20))   // midpoint → easier (principle 10)
+        #expect(Weight.lb(23).snappedToGrid() == .lb(25))
+        #expect(Weight.lb(21).snappedToGrid() == .lb(20))
+        #expect(Weight.lb(20).snappedToGrid() == .lb(20))
+    }
 }

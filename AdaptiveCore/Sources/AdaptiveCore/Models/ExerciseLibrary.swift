@@ -81,8 +81,8 @@ public enum ExerciseLibrary {
             tips: ["Keep your elbows pinned to your sides.", "Don't swing — let the biceps do the work."],
             formDemo: .symbol("figure.strengthtraining.traditional"),
             defaultSets: 3,
-            kind: .reps(repRange: 10...15, seedWeight: .lb(12.5)),
-            weightStepPounds: 2.5,
+            kind: .reps(repRange: 10...15, seedWeight: .lb(10)),
+            weightStepPounds: 5,
             restSeedSeconds: 75,
             equipment: [.dumbbell]
         ),
@@ -126,8 +126,8 @@ public enum ExerciseLibrary {
             tips: ["Go light — this is a control exercise, not a heavy one.", "Lead with your elbows, not your hands."],
             formDemo: .symbol("figure.strengthtraining.traditional"),
             defaultSets: 3,
-            kind: .reps(repRange: 10...15, seedWeight: .lb(7.5)),
-            weightStepPounds: 2.5,
+            kind: .reps(repRange: 10...15, seedWeight: .lb(5)),
+            weightStepPounds: 5,
             restSeedSeconds: 75,
             equipment: [.dumbbell]
         ),
