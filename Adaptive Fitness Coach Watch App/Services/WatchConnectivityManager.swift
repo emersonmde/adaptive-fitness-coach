@@ -67,21 +67,21 @@ final class WatchConnectivityManager: NSObject {
         }
     }
 
-    /// Record progressions from a finished session: apply them to the local store so the next watch
-    /// workout already reflects the new seed, and queue them to the phone (which re-broadcasts the
-    /// corrected routine back). `broadcast: false` locally — the watch never broadcasts (N4), and the
-    /// phone is the sole re-broadcaster, so the round trip converges without ping-pong.
-    func recordProgressions(routineId: UUID, _ updates: [ProgressionUpdate]) {
-        store.applyProgressions(updates, toRoutineId: routineId, broadcast: false)
-        sendProgression(ProgressionBatch(routineId: routineId, updates: updates))
-        WidgetCenter.shared.reloadTimelines(ofKind: Self.complicationKind)
-    }
-
-    /// Record a finished run session's new interval seeds. Same contract as
-    /// `recordProgressions`: apply locally without broadcasting, queue to the phone.
-    func recordRunProgression(routineId: UUID, _ updates: [RunProgressionUpdate]) {
-        let batch = ProgressionBatch(routineId: routineId, runUpdates: updates)
-        store.applyProgressions(batch, broadcast: false)
+    /// Record a finished session's progression batch: apply the **micro lanes only** to the
+    /// local store so the next watch workout already reflects the new seed, and queue the
+    /// whole batch to the phone (which re-broadcasts the corrected routine back).
+    /// `broadcast: false` locally — the watch never broadcasts (N4), and the phone is the sole
+    /// re-broadcaster, so the round trip converges without ping-pong. Structural proposals are
+    /// deliberately NOT applied here (P6): the phone gates them behind the user's confirm, and
+    /// the confirmed seed arrives back via the normal routine sync.
+    func record(_ batch: ProgressionBatch) {
+        if !batch.updates.isEmpty || !batch.runUpdates.isEmpty {
+            store.applyProgressions(
+                ProgressionBatch(routineId: batch.routineId,
+                                 updates: batch.updates, runUpdates: batch.runUpdates),
+                broadcast: false
+            )
+        }
         sendProgression(batch)
         WidgetCenter.shared.reloadTimelines(ofKind: Self.complicationKind)
     }

@@ -93,10 +93,12 @@ final class StrengthSessionManager {
     /// Cap on background catch-up per tick, mirroring the run manager.
     private let maxTickDelta: TimeInterval = 3
 
-    /// Fired on finish with the routine's id and the progressions recorded this session (one per
-    /// adjusted exercise). Empty/absent when nothing was changed or this is a demo. A closure so the
-    /// manager stays free of WatchConnectivity/store (same purity discipline as the run manager).
-    var onProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
+    /// Fired on finish with the session's full progression batch: applied micro-steps in
+    /// `updates`, structural load step-ups in `proposals` (P6 — the phone gates those behind a
+    /// confirm), plus the effort rating. Absent when nothing changed or this is a demo. A
+    /// closure so the manager stays free of WatchConnectivity/store (same purity discipline as
+    /// the run manager).
+    var onProgressions: (@MainActor (ProgressionBatch) -> Void)?
 
     private let injectedBackend: WorkoutBackend?
     private var backend: WorkoutBackend?
@@ -488,10 +490,16 @@ final class StrengthSessionManager {
     /// and write the effort score to Health (build 9). Called from the complete screen on
     /// Done (rate or skip → nil effort).
     func finalizeProgression(perceivedEffort: Int?) async {
-        let (progressions, notes) = computeProgressions(perceivedEffort: perceivedEffort)
+        let (updates, proposals, notes) = computeProgressions(perceivedEffort: perceivedEffort)
         if var filled = summary { filled.progressionNotes = notes; summary = filled }
-        if let routineId, !progressions.isEmpty {
-            onProgressions?(routineId, progressions)
+        if let routineId, !updates.isEmpty || !proposals.isEmpty {
+            onProgressions?(ProgressionBatch(
+                routineId: routineId,
+                updates: updates,
+                proposals: proposals,
+                perceivedEffort: perceivedEffort,
+                sessionDate: now()
+            ))
         }
         if let perceivedEffort {
             await finalizeTask?.value   // the workout must be finalized before relating a score
@@ -505,8 +513,10 @@ final class StrengthSessionManager {
         computeProgressions(perceivedEffort: perceivedEffort).notes
     }
 
-    private func computeProgressions(perceivedEffort: Int?) -> (updates: [ProgressionUpdate], notes: [String]) {
-        guard !setLog.isEmpty else { return (pendingProgressions(now: now()), []) }
+    private func computeProgressions(
+        perceivedEffort: Int?
+    ) -> (updates: [ProgressionUpdate], proposals: [ProgressionUpdate], notes: [String]) {
+        guard !setLog.isEmpty else { return (pendingProgressions(now: now()), [], []) }
 
         // Manual-change signals derive from overrides vs the original card seeds.
         var lowered = Set<String>(), raised = Set<String>(), repsChanged = Set<String>()
@@ -536,6 +546,7 @@ final class StrengthSessionManager {
 
         let policy = StrengthProgressionPolicy()
         var updates: [ProgressionUpdate] = []
+        var proposals: [ProgressionUpdate] = []
         var notes: [String] = []
         let stamp = now()
         for exerciseOutcome in outcome.exercises {
@@ -547,22 +558,32 @@ final class StrengthSessionManager {
             if let weight = weightOverrides[id] { base.weight = weight }
             if let reps = repsOverrides[id] { base.reps = reps }
 
-            let next = policy.nextPrescription(current: base, exercise: exercise,
-                                               outcome: exerciseOutcome, endedEarly: endedEarly,
-                                               perceivedEffort: perceivedEffort)
+            let evaluation = policy.evaluate(current: base, exercise: exercise,
+                                             outcome: exerciseOutcome, endedEarly: endedEarly,
+                                             perceivedEffort: perceivedEffort)
+            let next = evaluation.next
             guard next != seed else { continue }
-            updates.append(ProgressionUpdate(
+            let update = ProgressionUpdate(
                 exerciseId: id,
                 weight: next.weight != seed.weight ? next.weight : nil,
                 reps: next.reps != seed.reps ? next.reps : nil,
                 holdSeconds: next.holdSeconds != seed.holdSeconds ? next.holdSeconds : nil,
-                date: stamp
-            ))
-            if let note = StrengthPrescription.progressionNote(exerciseName: exercise.name, from: seed, to: next) {
-                notes.append(note)
+                date: stamp,
+                reason: evaluation.reason.summary
+            )
+            if evaluation.steppedLoad {
+                // The band-topped load step is structural (P6): not applied here, sent as a
+                // proposal the user confirms on the phone. Declining = hold.
+                proposals.append(update)
+                notes.append("\(exercise.name) → \(next.weight?.displayString() ?? "") — confirm on iPhone")
+            } else {
+                updates.append(update)
+                if let note = StrengthPrescription.progressionNote(exerciseName: exercise.name, from: seed, to: next) {
+                    notes.append(note)
+                }
             }
         }
-        return (updates, notes)
+        return (updates, proposals, notes)
     }
 
     func reset() {

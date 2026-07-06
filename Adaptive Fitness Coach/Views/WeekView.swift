@@ -7,7 +7,11 @@ import AdaptiveCore
 /// no more day-section duplication). "New routine" is the focal lime CTA.
 struct WeekView: View {
     let store: RoutineStore
+    /// P6: the progression journal (pushed screen) and pending structural confirms (cards).
+    let journal: ProgressionJournal
+    let proposals: ProgressionProposalStore
     @State private var showingNewRoutine = false
+    @State private var showingJournal = false
 
     // P3 coach: a tapped entry point stages an intent; the sheet owns the conversation.
     @State private var coachLaunch: CoachLaunch?
@@ -57,6 +61,14 @@ struct WeekView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     claudeMenu
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showingJournal = true
+                    } label: {
+                        Label("Progression", systemImage: "chart.line.uptrend.xyaxis")
+                    }
+                    .accessibilityIdentifier("journalToolbar")
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
                         showingNewRoutine = true
@@ -100,6 +112,9 @@ struct WeekView: View {
             }
             .navigationDestination(for: Routine.self) { routine in
                 RoutineDetailView(store: store, routineID: routine.id)
+            }
+            .navigationDestination(isPresented: $showingJournal) {
+                ProgressionJournalView(journal: journal)
             }
             .fullScreenCover(isPresented: $showingMealCapture) {
                 MealCaptureView { capture in
@@ -282,6 +297,14 @@ struct WeekView: View {
                         UpNextCard(routine: next.routine, date: next.date)
                     }
                     .buttonStyle(.plain)
+                }
+
+                // P6 structural confirms: a proposed load step-up / run graduation waits
+                // here until answered. Declined or confirmed, the card leaves; unanswered,
+                // the next session simply runs the old seed (hold).
+                ForEach(proposals.proposals) { proposal in
+                    PendingProposalCard(proposal: proposal, store: store,
+                                        journal: journal, proposals: proposals)
                 }
 
                 WeekStrip(store: store, doneDays: doneDays)

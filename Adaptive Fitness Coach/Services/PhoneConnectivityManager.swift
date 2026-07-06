@@ -18,6 +18,11 @@ final class PhoneConnectivityManager: NSObject {
 
     /// The routine store, set at app launch. Inbound progressions (watch → phone) are applied here.
     weak var store: RoutineStore?
+    /// The progression journal + structural-proposal store (P6), set at app launch alongside
+    /// `store`. Inbound batches land through `ProgressionIntake` so every applied change is
+    /// journaled and structural proposals wait for the user's confirm.
+    weak var journal: ProgressionJournal?
+    weak var proposals: ProgressionProposalStore?
 
     func activate() {
         guard WCSession.isSupported() else { return }
@@ -73,8 +78,14 @@ extension PhoneConnectivityManager: WCSessionDelegate {
     /// cannot ping-pong. A malformed/unrelated transfer is ignored (N6).
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
         Task { @MainActor in
-            guard let batch = try? WCMessageCodec.decodeProgression(from: userInfo) else { return }
-            self.store?.applyProgressions(batch, broadcast: true)
+            guard let batch = try? WCMessageCodec.decodeProgression(from: userInfo),
+                  let store = self.store else { return }
+            if let journal = self.journal, let proposals = self.proposals {
+                // P6 path: apply micro + journal it, stash structural proposals for the card.
+                ProgressionIntake.receive(batch, store: store, journal: journal, proposals: proposals)
+            } else {
+                store.applyProgressions(batch, broadcast: true)
+            }
         }
     }
 }

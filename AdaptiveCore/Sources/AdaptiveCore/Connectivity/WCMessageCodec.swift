@@ -30,7 +30,9 @@ public enum WCMessageCodec {
     /// so a progression-format change never forces stale peers to reject the (unchanged) routines.
     /// v2: `ProgressionBatch` gained `runUpdates` (run/walk seed progression).
     /// v3: `ProgressionUpdate` gained `holdSeconds` (hold progression).
-    public static let currentProgressionVersion = 3
+    /// v4: updates carry `reason` (journal); batch gained `proposals`/`runProposals`
+    ///     (structural moves awaiting confirm) + `perceivedEffort`/`sessionDate`.
+    public static let currentProgressionVersion = 4
 
     public enum CodecError: Error, Equatable {
         case missingRoutines

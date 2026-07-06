@@ -172,15 +172,38 @@ public struct RunProgressionPolicy: Sendable {
         (outcome.perceivedEffort ?? 0) >= highEffortThreshold
     }
 
+    /// The full result of one session's evaluation: next seeds plus the classification the
+    /// P6 journal and structural-confirm gate need. `isStructural` marks advance-direction
+    /// *shape* changes only — a walk shrink or the crossing into continuous running. Easing
+    /// also moves the walk seed, but backing off is never gated behind a confirm (the PRD's
+    /// bias toward backing off), so a struggle result is structural-false by construction.
+    public struct Evaluation: Sendable, Hashable {
+        public let seeds: RunSeeds
+        public let reason: ProgressionReason
+        public let isStructural: Bool
+    }
+
     /// Next session's seeds given this session's outcome.
     public func nextSeeds(current: RunSeeds, outcome: RunSessionOutcome) -> RunSeeds {
+        // Int.max block: the wrapper predates the continuous-graduation check and never
+        // consumed the structural flag — seeds math is identical either way.
+        evaluate(current: current, outcome: outcome, blockSeconds: Int.max).seeds
+    }
+
+    /// `nextSeeds` plus the reason and the structural flag. `blockSeconds` is the run block's
+    /// planned length — the same denominator `RunSeeds.progressionNote` uses to say
+    /// "continuous"; a seed reaching it is the run-shape graduation P6 gates.
+    public func evaluate(current: RunSeeds, outcome: RunSessionOutcome, blockSeconds: Int) -> Evaluation {
         var seeds = current
+        var reason: ProgressionReason = .mixedSession
+        var snapped = false
 
         if isStruggle(outcome) {
             seeds.runSeconds = max(minRunSeconds, current.runSeconds - regressStep)
             // A struggle only ever *eases*: lengthen the walk toward the cap, but never pull
             // an already-longer walk seed down (that would raise effort on a struggle signal).
             seeds.walkSeconds = max(current.walkSeconds, min(maxWalkSeconds, current.walkSeconds + regressStep))
+            reason = outcome.runBackOffCount >= regressBackOffCount ? .repeatedBackOffs : .endedEarly
         } else if isClean(outcome) && !isHighEffort(outcome) {
             // Advance only when the session was clean AND didn't feel all-out. A clean session
             // rated high effort falls through to hold — the runner is near their ceiling even
@@ -189,7 +212,8 @@ public struct RunProgressionPolicy: Sendable {
             // A strong session — every walk ended at the floor, i.e. the user out-recovered
             // the plan everywhere — jumps two notches instead of one, so a mis-seeded fit
             // runner reaches their real level in a couple of sessions, not a month.
-            let notches = isStrong(outcome) ? 2 : 1
+            let strong = isStrong(outcome)
+            let notches = strong ? 2 : 1
             for _ in 0..<notches {
                 let step = min(maxAdvanceStep, max(15, seeds.runSeconds / 4))
                 seeds.runSeconds += step
@@ -197,6 +221,9 @@ public struct RunProgressionPolicy: Sendable {
                     seeds.walkSeconds = max(minWalkSeconds, seeds.walkSeconds - walkShrinkStep)
                 }
             }
+            reason = strong ? .strongSession : .cleanSession
+        } else if isClean(outcome), let effort = outcome.perceivedEffort, isHighEffort(outcome) {
+            reason = .highEffort(effort)
         }
         // Anything in between: hold. A held seed is a fine seed (N7).
 
@@ -211,6 +238,7 @@ public struct RunProgressionPolicy: Sendable {
         if !isStruggle(outcome) && !isHighEffort(outcome) {
             let demonstrated = Int(outcome.longestRunSeconds / 15) * 15
             if Double(demonstrated) >= Double(current.runSeconds) * snapRatio {
+                if demonstrated > seeds.runSeconds { snapped = true }
                 seeds.runSeconds = max(seeds.runSeconds, demonstrated)
                 if seeds.runSeconds >= walkShrinkThreshold {
                     seeds.walkSeconds = max(minWalkSeconds, min(seeds.walkSeconds, snapWalkCeiling))
@@ -218,7 +246,15 @@ public struct RunProgressionPolicy: Sendable {
             }
         }
 
-        return seeds
+        if snapped { reason = .snapToCapacity }
+
+        // Advance-direction shape changes only: a shrunk walk, or the run seed crossing the
+        // block length (the plan factory then emits a single continuous run). Easing lengthens
+        // the walk but is never structural — backing off stays automatic.
+        let becameContinuous = seeds.runSeconds >= blockSeconds && current.runSeconds < blockSeconds
+        let isStructural = seeds.walkSeconds < current.walkSeconds || becameContinuous
+
+        return Evaluation(seeds: seeds, reason: reason, isStructural: isStructural)
     }
 
     /// A clean session: every planned run reached, none cut short, no walk pinned at the cap.

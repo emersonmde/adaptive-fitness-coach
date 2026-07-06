@@ -5,7 +5,7 @@ import AdaptiveCore
 /// drives a `StrengthSessionManager` (user-advanced, no real-time adaptation in P1).
 struct StrengthSessionContainerView: View {
     let store: RoutineStore
-    var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
+    var recordProgression: (@MainActor (ProgressionBatch) -> Void)?
     /// When set (from the launch picker), run this routine and auto-start — skipping this
     /// container's own launch screen, which the picker has replaced.
     var forcedRoutine: Routine?
@@ -16,12 +16,12 @@ struct StrengthSessionContainerView: View {
 
     init(store: RoutineStore, simulate: Bool,
          forcedRoutine: Routine? = nil,
-         recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil,
+         recordProgression: (@MainActor (ProgressionBatch) -> Void)? = nil,
          onFinish: (() -> Void)? = nil) {
         self.store = store
         self.simulate = simulate
         self.forcedRoutine = forcedRoutine
-        self.recordProgressions = recordProgressions
+        self.recordProgression = recordProgression
         self.onFinish = onFinish
         _manager = State(initialValue: simulate
             ? StrengthSessionManager(backend: SimulatedStrengthBackend())
@@ -74,7 +74,7 @@ struct StrengthSessionContainerView: View {
             }
         }
         .task {
-            manager.onProgressions = recordProgressions
+            manager.onProgressions = recordProgression
             if (simulate || forcedRoutine != nil), manager.sessionState == .idle { start() }
             if simulate { await autoDrive() }
         }

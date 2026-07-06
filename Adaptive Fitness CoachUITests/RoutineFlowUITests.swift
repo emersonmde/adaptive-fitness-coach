@@ -64,6 +64,48 @@ final class RoutineFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Push Day"].waitForExistence(timeout: 5))
     }
 
+    // MARK: - P6 progression journal + structural confirms
+
+    /// `-seedProposal` routes a real v4 batch through ProgressionIntake at launch: a micro
+    /// curl bump (journaled) plus a structural squat load-step proposal (pending). Confirming
+    /// the card applies the step and the journal shows both rows.
+    func testProposalCardConfirmAppliesAndJournals() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-seedProposal"]
+        app.launch()
+
+        let card = app.otherElements["proposal.card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        let changeLine = app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH 'Goblet Squat'")
+        ).firstMatch
+        XCTAssertTrue(changeLine.exists)
+
+        app.buttons["proposal.confirm"].tap()
+        XCTAssertFalse(card.waitForExistence(timeout: 2))
+
+        // The journal shows the confirmed structural step and the automatic micro bump.
+        app.buttons["journalToolbar"].tap()
+        XCTAssertTrue(app.staticTexts["Goblet Squat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Dumbbell Curl"].exists)
+        XCTAssertTrue(app.staticTexts["CONFIRMED"].exists)
+    }
+
+    /// Hold declines the structural step: the seed stays, the journal records "HELD".
+    func testProposalCardHoldDeclines() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-seedProposal"]
+        app.launch()
+
+        let card = app.otherElements["proposal.card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        app.buttons["proposal.hold"].tap()
+        XCTAssertFalse(card.waitForExistence(timeout: 2))
+
+        app.buttons["journalToolbar"].tap()
+        XCTAssertTrue(app.staticTexts["HELD"].waitForExistence(timeout: 5))
+    }
+
     func testCreatedRoutineOpensDetail() throws {
         let app = launchApp()
 
