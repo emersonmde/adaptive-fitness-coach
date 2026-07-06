@@ -1,9 +1,13 @@
 import Foundation
 
-/// The phone-side brain of the watch quick-log (P6): turns a dictated request into a compact
-/// draft (identify → resolve, the standard pipeline), holds what it resolved, and commits
-/// EXACTLY that on confirm through the standard recorder funnel — the watch never sees the
-/// pipeline, and nothing records that wasn't shown on the wrist first.
+/// The phone-side brain of the watch quick-log (P6). Since the always-pending rework
+/// (2026-07), `enqueueForReview` is the primary path: every watch log parks as a
+/// pending-REVIEW row, looked up when the user opens the review card.
+///
+/// `draft`/`commit` serve the RETIRED live channel — build-≤17 watches still round-trip
+/// through them (identify → resolve into a compact draft, held so confirm commits EXACTLY
+/// what the wrist showed). Delete alongside `QuickLogCoordinator.handleLive` once
+/// always-pending watches are the installed floor.
 ///
 /// Deliberately separate from `MealLogController`: the controller's phases drive the phone's
 /// own confirmation UI (its `.confirming` state presents a sheet), and a watch-originated

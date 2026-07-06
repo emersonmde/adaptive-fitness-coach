@@ -1,11 +1,14 @@
 import Foundation
 
-/// P6 watch quick-log transport — the first *live* (request/reply) WatchConnectivity channel
-/// in the app. The watch dictates text; the phone (the brain — the model never runs on
-/// watch) identifies + resolves it and replies with a compact draft; the watch shows one
-/// glanceable confirm; the phone commits through the standard recorder funnel. Offline, the
-/// raw request rides `transferUserInfo` into the phone's pending-REVIEW flow — queued text
-/// is never auto-committed into Health (N2/N6: no number the user never saw).
+/// P6 watch quick-log transport. Since the always-pending rework (2026-07): the watch
+/// dictates text and the raw request rides `transferUserInfo` into the phone's
+/// pending-REVIEW flow — queued text is never auto-committed into Health (N2/N6: no number
+/// the user never saw). The phone (the brain — the model never runs on watch) looks it up
+/// when the user opens the review card.
+///
+/// `QuickLogDraft`/`QuickLogConfirm`/`QuickLogOutcome` belong to the retired *live*
+/// (request/reply) channel — build-≤17 watches still send it, so the shapes and the phone's
+/// handler survive for compatibility until that floor rises. New watches never use them.
 public struct QuickLogRequest: Codable, Sendable, Hashable, Identifiable {
     public let id: UUID
     /// The dictated/scribbled text, verbatim.

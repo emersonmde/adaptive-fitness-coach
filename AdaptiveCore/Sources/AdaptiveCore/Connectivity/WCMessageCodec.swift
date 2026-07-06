@@ -15,8 +15,9 @@ public enum WCMessageCodec {
         /// The watch → phone progression channel (a `ProgressionBatch` JSON blob).
         public static let progression = "progression"
         public static let progressionVersion = "progressionVersion"
-        /// The bidirectional quick-log channel (a `QuickLogMessage` JSON blob) — live
-        /// `sendMessage` round trips, with `transferUserInfo` as the offline fallback.
+        /// The quick-log channel (a `QuickLogMessage` JSON blob) — always-pending
+        /// `transferUserInfo` requests since the 2026-07 rework; build-≤17 watches still
+        /// send the retired live `sendMessage` round trips (same key, same version).
         public static let quickLog = "quickLog"
         public static let quickLogVersion = "quickLogVersion"
     }

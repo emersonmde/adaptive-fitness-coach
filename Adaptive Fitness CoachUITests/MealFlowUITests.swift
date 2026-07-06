@@ -91,6 +91,29 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertFalse(card.exists)
     }
 
+    /// A junk dictation's only exit that doesn't commit to Health: long-press the review
+    /// card → "Dismiss — don't save" removes the row (the wrist no longer previews drafts,
+    /// so garbage lands here — always-pending rework).
+    func testWatchQuickLogReviewCardDismisses() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-simulateMealScan", "-seedNeedsReview"]
+        app.launch()
+
+        let card = app.buttons["quicklog.review.card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.press(forDuration: 1.0)
+
+        let dismiss = app.buttons["Dismiss — don't save"]
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 5), "context menu didn't present")
+        dismiss.tap()
+
+        let deadline = Date().addingTimeInterval(5)
+        while card.exists, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        XCTAssertFalse(card.exists, "dismiss should remove the review card without logging")
+    }
+
     /// The barcode fast path: scan → single pre-checked item → Log → total lands.
     func testBarcodeFastPath() throws {
         let app = launchApp()

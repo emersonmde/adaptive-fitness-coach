@@ -51,8 +51,8 @@ struct SessionContainerView: View {
     var body: some View {
         if simulateQuickLog {
             // The only way to see the quick-log flow without hardware (paired-sim WC is
-            // unreliable) — a canned transport drafts a fixed salad.
-            NavigationStack { QuickLogView(transport: .scripted) }
+            // unreliable) — the park is a no-op here.
+            NavigationStack { QuickLogView(queueOffline: { _ in }, initialText: "Chicken caesar salad") }
         } else if simulateMixed {
             WorkoutSequenceView(routineName: "Mixed Demo", blocks: Self.demoMixedBlocks, simulate: true)
         } else if simulateStrength {
@@ -94,7 +94,9 @@ struct SessionContainerView: View {
                     }
                     .sheet(isPresented: $showingQuickLog) {
                         if let connectivity {
-                            QuickLogView(transport: .live(connectivity)) { showingQuickLog = false }
+                            QuickLogView(queueOffline: { connectivity.queueQuickLogOffline($0) }) {
+                                showingQuickLog = false
+                            }
                         }
                     }
             }
