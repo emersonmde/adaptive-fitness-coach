@@ -301,10 +301,11 @@ that hypothesis was checked and excluded.
   **persists to disk** (`pending-transfers.plist`, injectable URL, load-at-init,
   hand-to-WCSession-before-clear = at-least-once) — an app death can no longer discard a
   meal the wrist already confirmed (N6); covered by new `WatchPendingTransferTests`.
-  (2) Review cards gained their only non-committing exit: long-press → "Dismiss — don't
-  save" (the wrist no longer previews drafts, so junk dictations land on the phone;
-  context-menu precedent from the food rows) — covered by
-  `testWatchQuickLogReviewCardDismisses`. (3) Card polish: relative dictation-time line
+  (2) Review cards gained non-committing exits: long-press → "Dismiss — don't save"
+  (context-menu precedent from the food rows; `testWatchQuickLogReviewCardDismisses`) and —
+  after the user hit the gap on hardware without discovering the long-press — an in-sheet
+  trash on the review confirmation (`MealConfirmationSheet.onDiscardReview`, review flows
+  only; Cancel still means "keep it waiting"; `testWatchQuickLogReviewSheetDeletes`). (3) Card polish: relative dictation-time line
   (items pool for days by design), `Theme.info` stroke so "waiting on you" reads against
   the passive Food row, VoiceOver reads the card as one element. (4) Watch subtitle made
   the user the actor ("Review it on your iPhone to finish logging" — passive "it'll be

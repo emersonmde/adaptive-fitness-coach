@@ -114,6 +114,32 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertFalse(card.exists, "dismiss should remove the review card without logging")
     }
 
+    /// The in-sheet exit for a mistaken dictation: open the review card's confirmation,
+    /// trash → confirm → the pending row is deleted (Cancel would have kept it waiting).
+    func testWatchQuickLogReviewSheetDeletes() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-simulateMealScan", "-seedNeedsReview"]
+        app.launch()
+
+        let card = app.buttons["quicklog.review.card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        card.tap()
+
+        let trash = app.buttons["meal.confirm.discardReview"]
+        XCTAssertTrue(trash.waitForExistence(timeout: 5), "review flows should show the delete")
+        trash.tap()
+
+        let confirm = app.buttons["Delete — don't save"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "confirmation dialog didn't present")
+        confirm.tap()
+
+        let deadline = Date().addingTimeInterval(5)
+        while card.exists, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        XCTAssertFalse(card.exists, "delete should remove the pending row for good")
+    }
+
     /// The barcode fast path: scan → single pre-checked item → Log → total lands.
     func testBarcodeFastPath() throws {
         let app = launchApp()

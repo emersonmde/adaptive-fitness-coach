@@ -11,7 +11,14 @@ import AdaptiveCore
 /// rule survives: unchecked items still never spend a lookup.
 struct MealConfirmationSheet: View {
     @Bindable var controller: MealLogController
+    /// Set ONLY when this flow was opened from a watch quick-log review card: deletes the
+    /// pending row for good. Cancel deliberately keeps the row ("not now"); without this,
+    /// a mistaken dictation's only in-sheet exit re-parked it forever (the card's
+    /// long-press dismiss exists but wasn't being discovered).
+    var onDiscardReview: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
+
+    @State private var confirmingDiscard = false
 
     var body: some View {
         NavigationStack {
@@ -43,6 +50,25 @@ struct MealConfirmationSheet: View {
                     }
                     .accessibilityIdentifier("meal.confirm.cancel")
                 }
+                if onDiscardReview != nil {
+                    ToolbarItem(placement: .destructiveAction) {
+                        Button(role: .destructive) {
+                            confirmingDiscard = true
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .accessibilityLabel("Delete this watch log")
+                        .accessibilityIdentifier("meal.confirm.discardReview")
+                    }
+                }
+            }
+            .confirmationDialog("Delete this watch log?", isPresented: $confirmingDiscard,
+                                titleVisibility: .visible) {
+                Button("Delete — don't save", role: .destructive) {
+                    onDiscardReview?()
+                }
+            } message: {
+                Text("Nothing will be saved to Health. Cancel keeps it waiting instead.")
             }
         }
         .interactiveDismissDisabled()   // Cancel is explicit; a swipe shouldn't silently drop edits

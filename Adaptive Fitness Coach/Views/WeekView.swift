@@ -144,7 +144,17 @@ struct WeekView: View {
                     }
                 }
             )) {
-                MealConfirmationSheet(controller: mealController)
+                MealConfirmationSheet(
+                    controller: mealController,
+                    // Review flows only: the in-sheet "delete this watch log" exit.
+                    onDiscardReview: activeReviewID.map { id in
+                        {
+                            quickLog.completeReview(id: id)
+                            activeReviewID = nil
+                            mealController.cancel()   // phase → .idle auto-dismisses the sheet
+                        }
+                    }
+                )
             }
             .sheet(isPresented: $showingTypedEntry) {
                 TypedEntryView { capture in
