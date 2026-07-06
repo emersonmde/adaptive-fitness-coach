@@ -64,6 +64,102 @@ final class RoutineFlowUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Push Day"].waitForExistence(timeout: 5))
     }
 
+    // MARK: - P6 progression journal + structural confirms
+
+    /// `-seedProposal` routes a real v4 batch through ProgressionIntake at launch: a micro
+    /// curl bump (journaled) plus a structural squat load-step proposal (pending). Confirming
+    /// the card applies the step and the journal shows both rows.
+    func testProposalCardConfirmAppliesAndJournals() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-seedProposal"]
+        app.launch()
+
+        let card = app.otherElements["proposal.card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        let changeLine = app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH 'Goblet Squat'")
+        ).firstMatch
+        XCTAssertTrue(changeLine.exists)
+
+        app.buttons["proposal.confirm"].tap()
+        XCTAssertFalse(card.waitForExistence(timeout: 2))
+
+        // The journal shows the confirmed structural step and the automatic micro bump.
+        app.buttons["journalToolbar"].tap()
+        XCTAssertTrue(app.staticTexts["Goblet Squat"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Dumbbell Curl"].exists)
+        XCTAssertTrue(app.staticTexts["CONFIRMED"].exists)
+    }
+
+    /// Hold declines the structural step: the seed stays, the journal records "HELD".
+    func testProposalCardHoldDeclines() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-seedProposal"]
+        app.launch()
+
+        let card = app.otherElements["proposal.card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        app.buttons["proposal.hold"].tap()
+        XCTAssertFalse(card.waitForExistence(timeout: 2))
+
+        app.buttons["journalToolbar"].tap()
+        XCTAssertTrue(app.staticTexts["HELD"].waitForExistence(timeout: 5))
+    }
+
+    // MARK: - P6 Export to Claude
+
+    /// The export sheet: use-case presets drive the scope, the includes-line stays honest,
+    /// and the FIRST health-inclusive copy shows the one-time disclosure before copying.
+    func testExportPackDisclosureThenCopy() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-seedProposal"]   // seeded routine to export
+        app.launch()
+
+        app.buttons["claudeMenu"].tap()
+        // Menu items surface to XCUI by their label, not the SwiftUI identifier.
+        let exportItem = app.buttons["Export to Claude…"]
+        XCTAssertTrue(exportItem.waitForExistence(timeout: 5))
+        exportItem.tap()
+
+        let includesLine = app.staticTexts["export.includesLine"]
+        XCTAssertTrue(includesLine.waitForExistence(timeout: 5))
+        // Program design preset: routines + snapshot + 30-day progression, no meals.
+        XCTAssertTrue(includesLine.label.contains("fitness snapshot"))
+        XCTAssertTrue(includesLine.label.contains("no meals"))
+
+        // Snapshot is on → the first copy passes the one-time disclosure.
+        app.buttons["export.copy"].tap()
+        let disclosure = app.buttons["export.disclosure.continue"]
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 5))
+        disclosure.tap()
+
+        XCTAssertTrue(app.alerts["Copied for Claude"].waitForExistence(timeout: 5))
+        app.alerts.buttons["OK"].tap()
+
+        // Second copy: no disclosure again (per-launch flag under -uiTesting).
+        app.buttons["export.copy"].tap()
+        XCTAssertTrue(app.alerts["Copied for Claude"].waitForExistence(timeout: 5))
+    }
+
+    /// A health-free scope (check-in with everything health off) copies without disclosure.
+    func testExportWithoutHealthDataSkipsDisclosure() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-seedProposal"]
+        app.launch()
+
+        app.buttons["claudeMenu"].tap()
+        let exportItem = app.buttons["Export to Claude…"]
+        XCTAssertTrue(exportItem.waitForExistence(timeout: 5))
+        exportItem.tap()
+
+        let snapshotToggle = app.switches["export.scope.snapshot"]
+        XCTAssertTrue(snapshotToggle.waitForExistence(timeout: 5))
+        if (snapshotToggle.value as? String) == "1" { snapshotToggle.tap() }
+
+        app.buttons["export.copy"].tap()
+        XCTAssertTrue(app.alerts["Copied for Claude"].waitForExistence(timeout: 5))
+    }
+
     func testCreatedRoutineOpensDetail() throws {
         let app = launchApp()
 

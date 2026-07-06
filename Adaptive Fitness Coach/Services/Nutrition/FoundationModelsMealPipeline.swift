@@ -223,11 +223,15 @@ struct FoundationModelsMealPipeline: MealPipeline {
 // MARK: - Ladder rung adapters
 
 /// Rung 2b as an injectable — the resolver composes these; LookupLab measures them apart.
-struct FoundationModelsAdjudicator: ExcerptAdjudicator {
+struct FoundationModelsAdjudicator: CandidateAdjudicator {
     let pipeline = FoundationModelsMealPipeline()
 
     func adjudicate(item: DraftItem, seller: Seller?, excerpts: [SearchExcerpt]) async throws -> ResolvedNutrition? {
         try await pipeline.adjudicateExcerpts(item: item, seller: seller, excerpts: excerpts)
+    }
+
+    func adjudicateCandidates(item: DraftItem, seller: Seller?, excerpts: [SearchExcerpt]) async throws -> [ResolvedAlternative] {
+        try await pipeline.adjudicateCandidateExcerpts(item: item, seller: seller, excerpts: excerpts)
     }
 }
 
@@ -279,5 +283,30 @@ extension FoundationModelsMealPipeline {
     /// Internal seam so the adjudicator rung struct can reach the private implementation.
     func adjudicateExcerpts(item: DraftItem, seller: Seller?, excerpts: [SearchExcerpt]) async throws -> ResolvedNutrition? {
         try await adjudicate(item: item, seller: seller, answers: [], excerpts: excerpts)
+    }
+
+    /// P6 refresh/alternates: the same single call over the same excerpts, reporting up to
+    /// a few DISTINCT matches (first = best) — different item, size, or preparation the
+    /// excerpts also state numbers for. Same never-approximate contract per candidate.
+    func adjudicateCandidateExcerpts(
+        item: DraftItem, seller: Seller?, excerpts: [SearchExcerpt]
+    ) async throws -> [ResolvedAlternative] {
+        guard !excerpts.isEmpty else { return [] }
+        let session = try makeSession(instructions: """
+        You extract nutrition numbers from web search excerpts. You only report numbers an \
+        excerpt actually states; a wrong-but-confident number is the one unacceptable \
+        failure. Report the best match for the exact item asked about FIRST, then up to 3 \
+        other distinct matches the excerpts also state numbers for (a different size, \
+        variant, or closely related item) — only if genuinely present. Never repeat the \
+        same item and number twice.
+        """)
+        let response = try await session.respond(
+            to: MealPromptBuilder.adjudicationPrompt(
+                item: item, seller: seller, answers: [],
+                excerpts: excerpts, budget: Self.excerptBudget
+            ),
+            generating: GenerableLookupCandidates.self
+        )
+        return response.content.toPackage(seller: seller)
     }
 }

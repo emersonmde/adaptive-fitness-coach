@@ -17,8 +17,7 @@ struct WorkoutSequenceView: View {
     /// The routine these blocks came from, so a strength block can persist its weight/rep bumps.
     /// `nil` under simulate (a scripted demo isn't a saved routine).
     var routineId: UUID?
-    var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
-    var recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?
+    var recordProgression: (@MainActor (ProgressionBatch) -> Void)?
     /// Skip this view's own launch screen and start immediately — the crown picker already launched.
     var autostart = false
     /// Called from the done screen when launched by the picker, to return to it.
@@ -47,11 +46,11 @@ struct WorkoutSequenceView: View {
         switch block.kind {
         case .run:
             RunBlockView(card: block.cards.firstRunCard ?? RunCard(), simulate: simulate,
-                         routineId: routineId, recordRunProgression: recordRunProgression,
+                         routineId: routineId, recordProgression: recordProgression,
                          onComplete: onComplete, onExit: onExit)
         case .strength:
             StrengthBlockView(cards: block.cards, simulate: simulate,
-                              routineId: routineId, recordProgressions: recordProgressions,
+                              routineId: routineId, recordProgression: recordProgression,
                               onComplete: onComplete, onExit: onExit)
         }
     }
@@ -71,7 +70,7 @@ private struct RunBlockView: View {
     let card: RunCard
     let simulate: Bool
     let routineId: UUID?
-    let recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?
+    let recordProgression: (@MainActor (ProgressionBatch) -> Void)?
     let onComplete: () -> Void
     var onExit: (() -> Void)?
     @State private var manager: WorkoutSessionManager
@@ -79,12 +78,12 @@ private struct RunBlockView: View {
     @State private var activeCard: RunCard?
 
     init(card: RunCard, simulate: Bool, routineId: UUID?,
-         recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?,
+         recordProgression: (@MainActor (ProgressionBatch) -> Void)?,
          onComplete: @escaping () -> Void, onExit: (() -> Void)? = nil) {
         self.card = card
         self.simulate = simulate
         self.routineId = routineId
-        self.recordRunProgression = recordRunProgression
+        self.recordProgression = recordProgression
         self.onComplete = onComplete
         self.onExit = onExit
         _manager = State(initialValue: simulate
@@ -125,13 +124,26 @@ private struct RunBlockView: View {
     /// Fires exactly once, on the `.complete` transition, before handing to the next block.
     private func recordOutcome() {
         guard !simulate,
-              let record = recordRunProgression, let routineId,
+              let record = recordProgression, let routineId,
               let summary = manager.summary else { return }
         let active = activeCard ?? card
         let current = RunSeeds(runSeconds: active.runSeconds, walkSeconds: active.walkSeconds)
-        let next = RunProgressionPolicy().nextSeeds(current: current, outcome: RunSessionOutcome(summary: summary))
+        let blockSeconds = active.durationMinutes * 60
+        let evaluation = RunProgressionPolicy().evaluate(
+            current: current, outcome: RunSessionOutcome(summary: summary), blockSeconds: blockSeconds
+        )
+        let next = evaluation.seeds
         guard next != current || !active.seedsCalibrated else { return }
-        record(routineId, [RunProgressionUpdate(cardId: card.id, runSeconds: next.runSeconds, walkSeconds: next.walkSeconds)])
+        let update = RunProgressionUpdate(cardId: card.id,
+                                          runSeconds: next.runSeconds, walkSeconds: next.walkSeconds,
+                                          reason: evaluation.reason.summary, blockSeconds: blockSeconds)
+        // Same structural gate as the standalone run flow: shape graduations are proposed,
+        // not applied (P6).
+        if evaluation.isStructural, next != current {
+            record(ProgressionBatch(routineId: routineId, runProposals: [update], sessionDate: Date()))
+        } else {
+            record(ProgressionBatch(routineId: routineId, runUpdates: [update], sessionDate: Date()))
+        }
     }
 }
 
@@ -140,18 +152,18 @@ private struct StrengthBlockView: View {
     let cards: [WorkoutCard]
     let simulate: Bool
     let routineId: UUID?
-    let recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
+    let recordProgression: (@MainActor (ProgressionBatch) -> Void)?
     let onComplete: () -> Void
     var onExit: (() -> Void)?
     @State private var manager: StrengthSessionManager
 
     init(cards: [WorkoutCard], simulate: Bool, routineId: UUID?,
-         recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?,
+         recordProgression: (@MainActor (ProgressionBatch) -> Void)?,
          onComplete: @escaping () -> Void, onExit: (() -> Void)? = nil) {
         self.cards = cards
         self.simulate = simulate
         self.routineId = routineId
-        self.recordProgressions = recordProgressions
+        self.recordProgression = recordProgression
         self.onComplete = onComplete
         self.onExit = onExit
         _manager = State(initialValue: simulate
@@ -169,7 +181,7 @@ private struct StrengthBlockView: View {
             }
         }
         .task {
-            manager.onProgressions = recordProgressions
+            manager.onProgressions = recordProgression
             if manager.sessionState == .idle {
                 manager.start(cards: cards, routineId: routineId, routineName: "Strength")
             }

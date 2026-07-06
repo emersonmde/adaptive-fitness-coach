@@ -2,7 +2,9 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-05 (night): **P0–P5 shipped; TestFlight build 16 = the P5 polish deep dive + the post-15 gesture settlement (chevrons-only day nav + Notification-style SwipeableRow + day snapshot cache).** P5 (see its section): one motion vocabulary + Reduce-Motion gap closed, deliberate phone haptics (`Theme.Haptics`), token compliance both targets (watch gray drift, `info`/`heat`/`metricNumber`/radius scale), honest states (watch "Syncing from iPhone…" first launch, exit-ful wrap-up), accessibility pass (DailyIntakeLine container bug, labels, contrast floor), dark-mode declared to the OS, iPhone-only portrait, AccentColor populated, FoodDayView structural cleanup + SwipeableRow extraction. **NEXT = P6, RESHAPED 2026-07-05 after the user's build-16 verdict (on-device model: meal-NLP only, fails at routine building; the Claude export loop is the invested path — read the P6 Roadmap section):** progression journal + structural-confirm gate, **"Export to Claude" context packs** (fitness snapshot / check-in / meal planning / plateau / constraint rework; scope picker + honest health-export disclosure), watch quick-log, entry refresh/alternates; agentic rung 3 + FoundationModels-coach investment PUSHED pending the PCC grant. **On the tree UNRELEASED: the 5 lb weight-grid fix** (`Weight.stepped`/`snappedToGrid`, curl/lateral-raise seeds+steps on-grid, progression exits through a grid snap — fixes the stuck-22.5; 393 package + watch unit + phone build green, awaiting ship-or-hold). Also the confirm-on-device list (Health deep-link probes, LookupLab, PCC flow). Build 15 was the hybrid gesture split (summary zone swipes days), retired same-day by on-device feel; build 14's full-page pager stole row swipes and animated backwards. Build 14 carried the rest of the repage (pinned add bar, past-day backfill via when-row prefill, relog toast instead of teleport, full action set on tap/long-press). Build 13 carried the typed-meal parsing fixes (mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
+_Last updated 2026-07-05 (P6 code-complete on the `p6` branch): **ALL FOUR P6 PHASES IMPLEMENTED — see their milestone sections** (Phase 1: progression channel v4, reasons on the wire, watch proposal lane, phone journal + confirm cards. Phase 2: ContextPackComposer + ExportPackSheet + one-time health disclosure + return-from-break card. Phase 3: watch quick-log — first live WC channel, QuickLogService, pending-REVIEW flow + one notification, `-simulateQuickLog`. Phase 4: multi-candidate adjudication + edit-sheet alternates). 449 package tests; all phone suites + watch unit green. **Next: merge `p6` → `main` and ship ONE TestFlight build (17) — confirm with the user first**; then the on-device validation list (each phase's section). The 5 lb weight-grid fix is COMMITTED to main. String Catalogs adopted on both app targets (P6 step 0)._
+
+_Previous update 2026-07-05 (night): **P0–P5 shipped; TestFlight build 16 = the P5 polish deep dive + the post-15 gesture settlement (chevrons-only day nav + Notification-style SwipeableRow + day snapshot cache).** P5 (see its section): one motion vocabulary + Reduce-Motion gap closed, deliberate phone haptics (`Theme.Haptics`), token compliance both targets (watch gray drift, `info`/`heat`/`metricNumber`/radius scale), honest states (watch "Syncing from iPhone…" first launch, exit-ful wrap-up), accessibility pass (DailyIntakeLine container bug, labels, contrast floor), dark-mode declared to the OS, iPhone-only portrait, AccentColor populated, FoodDayView structural cleanup + SwipeableRow extraction. **NEXT = P6, RESHAPED 2026-07-05 after the user's build-16 verdict (on-device model: meal-NLP only, fails at routine building; the Claude export loop is the invested path — read the P6 Roadmap section):** progression journal + structural-confirm gate, **"Export to Claude" context packs** (fitness snapshot / check-in / meal planning / plateau / constraint rework; scope picker + honest health-export disclosure), watch quick-log, entry refresh/alternates; agentic rung 3 + FoundationModels-coach investment PUSHED pending the PCC grant. **On the tree UNRELEASED: the 5 lb weight-grid fix** (`Weight.stepped`/`snappedToGrid`, curl/lateral-raise seeds+steps on-grid, progression exits through a grid snap — fixes the stuck-22.5; 393 package + watch unit + phone build green, awaiting ship-or-hold). Also the confirm-on-device list (Health deep-link probes, LookupLab, PCC flow). Build 15 was the hybrid gesture split (summary zone swipes days), retired same-day by on-device feel; build 14's full-page pager stole row swipes and animated backwards. Build 14 carried the rest of the repage (pinned add bar, past-day backfill via when-row prefill, relog toast instead of teleport, full action set on tap/long-press). Build 13 carried the typed-meal parsing fixes (mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
 
 > **Routines are now a generic card stack.** A `Routine` is `cards: [WorkoutCard]` (`.run` / `.exercise` / `.rest`) plus a `rounds` count that repeats the whole list (= sets; a trailing rest card becomes rest between rounds). The phone builds it from a typed card list; the watch walks it and starts/stops the right Apple workout per card type automatically (`workoutBlocks()`), reusing the existing run and strength screens. The old `type`/`durationMinutes`/`exercises` fields are gone (migrated on decode). WC payload is **v4** (progression channel v2). This supersedes the type-branched descriptions below — treat them as history.
 
@@ -101,6 +103,151 @@ Watch in-workout screen is pure glance: HR · progress · clock / verb + timer /
 ---
 
 ## Milestones
+
+### P6 Phase 1 — Progression journal + structural confirms ✅ IMPLEMENTED (2026-07-05, on `p6`)
+The first P6 slice (see the P6 Roadmap section): adaptation made legible and consented.
+- **Policies expose their reasoning.** `StrengthProgressionPolicy.evaluate(...)` /
+  `RunProgressionPolicy.evaluate(current:outcome:blockSeconds:)` return `Evaluation`
+  (next prescription/seeds + `Decision` + `ProgressionReason` + the structural flag);
+  `nextPrescription`/`nextSeeds` are wrappers, zero test churn. `ProgressionReason`
+  (Models/) renders the journal clause ("clean session", "felt all-out (effort 9)").
+  Structural = the band-topped load-step **branch** (a flag set inside it — never a weight
+  comparison, because the trailing grid snap moves legacy 22.5 loads on ANY path) and
+  advance-direction run-shape changes (walk shrink / continuous crossing). **Easing is
+  never structural** — backing off stays automatic by construction (PRD bias).
+- **Progression channel v4** (`WCMessageCodec.currentProgressionVersion = 4`): updates
+  carry `reason: String?` (a string on the wire so future reasons can't break decode) +
+  run updates carry `blockSeconds`; `ProgressionBatch` gained `proposals`/`runProposals`
+  (structural moves awaiting confirm) + `perceivedEffort`/`sessionDate` — the first time
+  effort crosses to the phone (feeds Phase 2's check-in pack).
+- **Watch partitions micro vs structural.** Micro (+1 rep, ±5s hold, run-length steps)
+  applies locally + syncs as before (N3 intact). Structural moves are NOT applied on
+  watch; they ride the batch's proposal lane; complete-screen note says "… — confirm on
+  iPhone". One unified callback (`recordProgression: (ProgressionBatch) -> Void` →
+  `WatchConnectivityManager.record`) replaced the two per-kind closures.
+- **Phone is the single journal writer.** `ProgressionIntake` (package) is the landing
+  point: applies micro via the untouched `applyProgressions` path, journals every change
+  with old → new text + reason + effort, stashes proposals. `ProgressionJournal` (App
+  Group file, newest-first, cap 500, `.corrupt` sidecar) + `ProgressionProposalStore`
+  (persists until acted; newer proposal for the same exercise/card supersedes).
+  Confirm → apply + re-broadcast + journal "CONFIRMED"; decline → journal "HELD" (= the
+  policy's first-class hold; no expiry, no nag).
+- **UI:** `PendingProposalCard` on WeekView ("STEP UP?" · change · reason · Confirm/Hold,
+  accent confirm, `Theme.Haptics`); `ProgressionJournalView` pushed from a new toolbar
+  icon (day-grouped rows, quiet micro entries, badges only for CONFIRMED/HELD).
+- **Testing:** 421 package tests (28 new: evaluation reasons/structural flags, v4
+  round-trip + v3 reject, journal persistence/cap/corrupt, proposal supersede/idempotent
+  confirm/decline, intake end-to-end); watch unit incl.
+  `bandToppedLoadStepIsProposedNotApplied`; phone `-seedProposal` launch arg seeds a real
+  v4 batch through the intake for 2 new RoutineFlowUITests (confirm applies + journals;
+  hold declines). All suites green 2026-07-05.
+- **On-device pending:** the real watch→phone v4 round trip + a real band-top session
+  producing the card (rides the end-of-P6 build 17).
+
+### P6 Phase 2 — "Export to Claude" context packs ✅ IMPLEMENTED (2026-07-05, on `p6`)
+The invested path made first-class: engine-agnostic packs = prompt + scoped context +
+response-format, clipboard → Claude app today, a future Claude-API `CoachEngine` consumes
+the same packs unchanged.
+- **`ContextPackComposer` (AdaptiveCore/Coach/ContextPack.swift, pure).** Six use cases
+  (`programDesign / checkIn / mealPlanning / plateau / constraintRework / returnFromBreak`),
+  each with a scope preset; `ContextPackScope` = routines (all/subset) · fitness snapshot ·
+  progression-journal window (30/90d) · recent meals; `includesHealthData` drives the
+  disclosure. **Response format forks:** the three import-capable cases end with the
+  exchange vocabulary + schema rules (same contract as `primingPrompt` — replies come back
+  through the validated ImportRoutinesSheet → graft path untouched); check-in/meal-planning/
+  plateau explicitly ask for prose (honest about what the app can ingest). Sections reuse
+  `RoutineExchange.exportJSON` + `CoachContextBuilder.progressionSummary`; the journal
+  section renders Phase 1's reasons + effort ("Goblet Squat 10 → 11 reps — clean session
+  (effort 5)", declined entries say "[held by me]"). `HealthSnapshot`/`NutritionDigest` are
+  plain value types — nil fields render as omitted lines (N6), all composition unit-tested
+  on macOS.
+- **Phone plumbing (thin):** `HealthSnapshotBuilder` (new HK reads — VO2max ml/kg·min per
+  the calibrator, resting HR, respiratory rate, weight + 30d delta, our-bundle workout
+  frequency 90d, `daysSinceLastWorkout(windowDays:)`; deferred-contextual auth, `toShare:
+  []`, every field independent); `NutritionDigestBuilder` (loops `recorder.intake(on:)`,
+  recurring sellers only). Phone Health share-usage string broadened in both pbxproj
+  configs.
+- **UI:** `ExportPackSheet` (use-case cards → scope toggles incl. per-routine checklist →
+  **always-visible includes-line** → pinned Copy/Share bar; builds the pack at export time
+  with a progress state); `HealthExportDisclosureSheet` — one-time, plain-words,
+  Oura/Whoop-register, gates only health-inclusive exports (UserDefaults flag; per-launch
+  under `-uiTesting`). Entry: claudeMenu → "Export to Claude…"; plus a quiet dismissible
+  **return-from-break card** on WeekView when `daysSinceLastWorkout ≥ 10`.
+- **Testing:** 432 package tests (11 new ContextPackTests: every case renders, JSON-ask
+  only on import-capable cases, scope subsetting, nil-field omission, journal window,
+  nutrition section, includes-line honesty); RoutineFlowUITests 7/7 (2 new: disclosure →
+  copy → no-second-disclosure; health-free scope skips disclosure). XCUI gotcha recorded:
+  SwiftUI Menu items surface by LABEL, not accessibilityIdentifier.
+- **On-device pending:** real HK aggregate values in a pack; an actual paste-into-Claude
+  round trip (user judgment on pack quality); the broadened Health prompt.
+
+### P6 Phase 3 — Watch quick-log ✅ IMPLEMENTED (2026-07-05, on `p6`)
+Meal logging reaches the wrist. The phone stays the brain (the model never runs on watch —
+the existing split); the watch gets dictation in, one glanceable confirm out.
+- **First live WC channel.** `WCMessageCodec` quick-log channel v1 (`Key.quickLog`, one
+  version constant, `QuickLogMessage` envelope discriminated inside the blob:
+  request/draft/confirm/outcome — `Connectivity/QuickLog.swift`). Reachable path =
+  `sendMessage` round trips (watch `sendQuickLog`/`confirmQuickLog`, `isReachable`-guarded,
+  error → nil); phone implements `didReceiveMessage:replyHandler:` (empty reply = "couldn't
+  draft", the watch's honest fallback trigger). Offline = `transferUserInfo` of the raw
+  request (same pre-activation buffering as progression); `didReceiveUserInfo` now demuxes
+  quick-log vs progression by payload key.
+- **`QuickLogService` (package, headless).** identify → resolve via the standard pipeline
+  seams; holds what it drafted so confirm records EXACTLY the numbers the wrist showed;
+  commit mirrors `MealLogController.commit`'s durability contract (enqueue-all → record →
+  remove; `saved` true only when every write confirmed). Deliberately not the controller —
+  its phases present phone UI, and a watch log must never pop a phone sheet.
+  `MealPipelineProvider.sharedQueue` is now ONE queue per launch (controller + coordinator
+  + review UI; two instances over one file would hold stale copies).
+- **Pending-REVIEW, never auto-commit.** `PendingMealQueue.PendingItem` gained
+  `needsReview`/`sourceText` (tolerant decode; pre-P6 rows = retry rows);
+  `resumePending()` skips review rows. Phone `QuickLogCoordinator` (@Observable) surfaces
+  them as **WeekView cards** ("From your watch — needs review" — deliberately the hub, not
+  buried in FoodDayView; also rendered on the empty state for meal-only use); tap → the
+  NORMAL typed-capture confirmation via `beginCapture(typedText:, preferredDate:)`; commit
+  clears the row (cancel keeps it). **First UNUserNotificationCenter use:** one
+  non-repeating nudge ~4h after arrival ("Meal waiting for review"), deferred-contextual
+  auth at first arrival, denial degrades to the card alone, cleared when nothing waits.
+- **Watch UI.** `QuickLogView` behind a `QuickLogTransport` seam (live | scripted):
+  TextField (dictation/scribble) → "Looking up…" → draft (name · **kcal hero** ·
+  provenance line · ✓/✗) → "Logged" only after the phone confirmed the write; unreachable
+  → "Save for iPhone" (queue) → honest "finish it there" state. Entry: a quiet
+  `fork.knife` toolbar door on the routine launch picker. **`-simulateQuickLog`** forces
+  the flow on a canned transport — the only way to see it without hardware.
+- **Testing:** 444 package tests (12 new: codec round-trip/version-reject/demux,
+  QuickLogService draft/commit/decline/failed-write/replay-safety/offline-park,
+  resumePending-skips-review, pre-P6 row decode); MealFlowUITests 16/16 (new:
+  `-seedNeedsReview` → review card → standard sheet → commit clears); watch unit suite
+  green; both targets build.
+- **On-device pending (the heavy phase — plan the hardware session around it):** real
+  `sendMessage` reachability/latency/timeout feel, dictation input, store-and-forward with
+  the phone locked/away, notification delivery, end-to-end Health write from the wrist.
+
+### P6 Phase 4 — Entry refresh / alternates ✅ IMPLEMENTED (2026-07-05, on `p6`)
+The "wrong item / wrong size" fix: the edit sheet's "Look up again" now also surfaces the
+OTHER defensible matches as pickable rows.
+- **One model call, multiple candidates.** `CandidateAdjudicator` (refines
+  `ExcerptAdjudicator`): the same single pass over the same excerpts reports up to 3
+  distinct adjudicated matches (first = best) — never raw excerpts in the UI (unadjudicated
+  numbers would violate N6). `MealResolver.resolveWithAlternates` engages it **opt-in
+  only** (`resolve` keeps the lean single-answer call — the heavier schema never taxes
+  everyday lookups on the 4K on-device model); dedupe by (name, kcal), cap 3; alternates
+  are transient, never persisted on `MealEntry`. Every non-search rung stays single-answer
+  by construction (stated number, printed label, barcode product, estimate).
+- **Production:** `GenerableLookupCandidates`/`GenerableLookupCandidate` mirrors (order
+  preserved, hollow rows dropped at the funnel, provenance graded per candidate);
+  `FoundationModelsAdjudicator` conforms. **Scripted:** `Script.alternatesByName`
+  (name-keyed — a rescan builds a fresh-id item) + `ScriptedAdjudicator` conformance; the
+  `-simulateMealScan` demo scripts cola size/variant candidates.
+- **UI:** `EntryEditSheet` renders "NOT THIS? PICK ANOTHER MATCH" rows (name · provenance ·
+  kcal) after a re-lookup; picking adopts the candidate wholesale (name + number +
+  provenance preview, recorded on Save through the existing `recorder.replace` path).
+- **Testing:** 449 package tests (5 new `MealResolverAlternatesTests`: dedupe/cap,
+  plain-resolve-never-runs-candidates spy, empty-fallthrough, stated-no-alternates,
+  scripted name-keyed rescan); `MealSchemaDriftTests` +1 (candidates funnel);
+  `testEditRescanReLooksUp` upgraded — the scripted ladder now FINDS the item and the test
+  picks the 20 oz variant end-to-end (its old "estimate" expectation was an artifact of the
+  id-keyed scripted gap). On-device pending: candidate quality/dedupe from the real model.
 
 ### P0 — Adaptive run/walk ✅ DONE
 Shipped, reviewed, redesigned. See snapshot above.

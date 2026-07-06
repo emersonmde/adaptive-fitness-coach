@@ -63,6 +63,27 @@ struct MealSchemaDriftTests {
         }
     }
 
+    @Test func lookupCandidatesFunnelDropsHollowRowsAndKeepsOrder() throws {
+        // P6 refresh/alternates mirror: order is the contract (first = best), zero-kcal rows
+        // drop at the funnel, and provenance grades per candidate through the same grader.
+        let seller = Seller(name: "Wendy's", domainHint: "wendys.com")
+        let mirror = GenerableLookupCandidates(candidates: [
+            GenerableLookupCandidate(name: "Dave's Single", kcal: 590,
+                                     sourceURL: "https://www.wendys.com/nutrition"),
+            GenerableLookupCandidate(name: "Phantom", kcal: 0),
+            GenerableLookupCandidate(name: "Dave's Double", kcal: 810,
+                                     sourceURL: "https://menuwithnutrition.com/x"),
+        ])
+        let converted = mirror.toPackage(seller: seller)
+        #expect(converted.map(\.name) == ["Dave's Single", "Dave's Double"])
+        guard case .verified = try #require(converted.first).nutrition.provenance else {
+            Issue.record("seller-domain candidate must grade verified"); return
+        }
+        guard case .database = try #require(converted.last).nutrition.provenance else {
+            Issue.record("aggregator candidate must grade database"); return
+        }
+    }
+
     @Test func estimateIsAlwaysARange() {
         // C3's binding invariant, enforced at the funnel even when the model misbehaves.
         let inverted = GenerableEstimate(lowKcal: 700, highKcal: 500, assumptions: ["Bowl"])

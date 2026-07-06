@@ -211,8 +211,8 @@ struct StrengthFlowTests {
     @Test func onProgressionsFiresOnFinishWithRoutineId() async {
         let manager = makeManager()
         let routineId = UUID()
-        var captured: (routineId: UUID, updates: [ProgressionUpdate])?
-        manager.onProgressions = { id, updates in captured = (id, updates) }
+        var captured: ProgressionBatch?
+        manager.onProgressions = { batch in captured = batch }
         await manager.begin(cards: sampleCards(), routineId: routineId, routineName: "Push Day")
         manager.adjustWeight(byPounds: 5)
         manager.endManually()
@@ -227,7 +227,7 @@ struct StrengthFlowTests {
     @Test func noProgressionsWithoutRoutineId() async {
         let manager = makeManager()
         var fired = false
-        manager.onProgressions = { _, _ in fired = true }
+        manager.onProgressions = { _ in fired = true }
         await manager.begin(cards: sampleCards(), routineName: "Push Day") // no routineId (e.g. demo)
         manager.adjustWeight(byPounds: 5)
         manager.endManually()
@@ -239,7 +239,7 @@ struct StrengthFlowTests {
     @Test func noProgressionsWhenNothingAdjusted() async {
         let manager = makeManager()
         var fired = false
-        manager.onProgressions = { _, _ in fired = true }
+        manager.onProgressions = { _ in fired = true }
         await manager.begin(cards: sampleCards(), routineId: UUID(), routineName: "Push Day")
         manager.endManually()
         await waitUntilComplete(manager)
@@ -435,7 +435,7 @@ struct StrengthFlowTests {
         var fired: [ProgressionUpdate] = []
         let routineId = UUID()
         let manager = makeManager()
-        manager.onProgressions = { _, updates in fired = updates }
+        manager.onProgressions = { batch in fired = batch.updates }
         // Prescriptions met on every set of a squat-only block (2 sets) + full plank hold.
         let cards: [WorkoutCard] = [
             .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
@@ -458,10 +458,38 @@ struct StrengthFlowTests {
         #expect(manager.summary?.setsCompleted == 2)
     }
 
+    @Test func bandToppedLoadStepIsProposedNotApplied() async {
+        // P6 structural confirm: a clean session at the top of the rep band produces a load
+        // step-up — that lands in the batch's PROPOSAL lane (phone confirms), never in the
+        // applied updates, and the summary note says so.
+        var captured: ProgressionBatch?
+        let manager = makeManager()
+        manager.onProgressions = { batch in captured = batch }
+        let cards: [WorkoutCard] = [
+            // goblet_squat band is 8...12 — prescribe the top.
+            .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 12, seedWeight: .lb(20))),
+            .rest(RestCard(seconds: 30)),
+            .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 12, seedWeight: .lb(20))),
+        ]
+        await manager.begin(cards: cards, routineId: UUID(), routineName: "Squats")
+        manager.completeSet(); manager.skipRest(); manager.completeSet()
+        await waitUntilComplete(manager)
+        await manager.finalizeProgression(perceivedEffort: 4)
+
+        #expect(captured?.updates.isEmpty == true)
+        let proposal = captured?.proposals.first
+        #expect(proposal?.exerciseId == "goblet_squat")
+        #expect(proposal?.weight == .lb(25))
+        #expect(proposal?.reps == 8)
+        #expect(proposal?.reason == "topped the rep band")
+        #expect(captured?.perceivedEffort == 4)
+        #expect(manager.summary?.progressionNotes.first?.contains("confirm on iPhone") == true)
+    }
+
     @Test func shortSetsEaseInsteadOfAdvance() async {
         var fired: [ProgressionUpdate] = []
         let manager = makeManager()
-        manager.onProgressions = { _, updates in fired = updates }
+        manager.onProgressions = { batch in fired = batch.updates }
         let cards: [WorkoutCard] = [
             .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
             .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
@@ -480,7 +508,7 @@ struct StrengthFlowTests {
         var fired: [ProgressionUpdate] = []
         let routineId = UUID()
         let manager = makeManager()
-        manager.onProgressions = { _, updates in fired = updates }
+        manager.onProgressions = { batch in fired = batch.updates }
         let cards: [WorkoutCard] = [
             .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
             .rest(RestCard(seconds: 30)),
@@ -507,7 +535,7 @@ struct StrengthFlowTests {
     @Test func manualAdjustmentBeatsPolicy() async {
         var fired: [ProgressionUpdate] = []
         let manager = makeManager()
-        manager.onProgressions = { _, updates in fired = updates }
+        manager.onProgressions = { batch in fired = batch.updates }
         let cards: [WorkoutCard] = [
             .exercise(StrengthExerciseItem(exerciseId: "goblet_squat", reps: 10, seedWeight: .lb(20))),
         ]

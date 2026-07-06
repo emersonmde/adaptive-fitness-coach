@@ -16,14 +16,43 @@ public final class PendingMealQueue: @unchecked Sendable {
         public var seller: Seller?
         public var answers: [QuestionAnswer]
         public var meal: MealSlot?
+        /// P6 watch quick-log offline path: true = this row is waiting for the USER, not for
+        /// a retry — `resumePending()` skips it, and it only ever commits through the normal
+        /// confirmation sheet. Queued text is never auto-committed into Health.
+        public var needsReview: Bool
+        /// The raw dictated text a review re-identifies from (review rows only).
+        public var sourceText: String?
 
-        public init(id: UUID = UUID(), date: Date, item: PendingDraft, seller: Seller?, answers: [QuestionAnswer], meal: MealSlot? = nil) {
+        public init(
+            id: UUID = UUID(), date: Date, item: PendingDraft, seller: Seller?,
+            answers: [QuestionAnswer], meal: MealSlot? = nil,
+            needsReview: Bool = false, sourceText: String? = nil
+        ) {
             self.id = id
             self.date = date
             self.item = item
             self.seller = seller
             self.answers = answers
             self.meal = meal
+            self.needsReview = needsReview
+            self.sourceText = sourceText
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case id, date, item, seller, answers, meal, needsReview, sourceText
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(UUID.self, forKey: .id)
+            date = try c.decode(Date.self, forKey: .date)
+            item = try c.decode(PendingDraft.self, forKey: .item)
+            seller = try c.decodeIfPresent(Seller.self, forKey: .seller)
+            answers = try c.decodeIfPresent([QuestionAnswer].self, forKey: .answers) ?? []
+            meal = try c.decodeIfPresent(MealSlot.self, forKey: .meal)
+            // Pre-P6 rows have no key → false (they're retry rows, drain as always).
+            needsReview = try c.decodeIfPresent(Bool.self, forKey: .needsReview) ?? false
+            sourceText = try c.decodeIfPresent(String.self, forKey: .sourceText)
         }
     }
 

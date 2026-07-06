@@ -27,6 +27,10 @@ public struct ProgressionUpdate: Codable, Sendable, Hashable, Identifiable {
     public let holdSeconds: TimeInterval?
     /// When the adjustment was made (unused by latest-value apply; the seed for history).
     public let date: Date
+    /// Why the policy moved this seed, as a rendered clause ("clean session") — P6's journal
+    /// line. A string on the wire deliberately: new reason variants can never break the
+    /// codec's exact-version decode. nil for manual adjustments and pre-v4 senders.
+    public let reason: String?
 
     public init(
         id: UUID = UUID(),
@@ -34,7 +38,8 @@ public struct ProgressionUpdate: Codable, Sendable, Hashable, Identifiable {
         weight: Weight? = nil,
         reps: Int? = nil,
         holdSeconds: TimeInterval? = nil,
-        date: Date = Date()
+        date: Date = Date(),
+        reason: String? = nil
     ) {
         self.id = id
         self.exerciseId = exerciseId
@@ -42,9 +47,10 @@ public struct ProgressionUpdate: Codable, Sendable, Hashable, Identifiable {
         self.reps = reps
         self.holdSeconds = holdSeconds
         self.date = date
+        self.reason = reason
     }
 
-    private enum CodingKeys: String, CodingKey { case id, exerciseId, weight, reps, holdSeconds, date }
+    private enum CodingKeys: String, CodingKey { case id, exerciseId, weight, reps, holdSeconds, date, reason }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -54,6 +60,7 @@ public struct ProgressionUpdate: Codable, Sendable, Hashable, Identifiable {
         reps = try c.decodeIfPresent(Int.self, forKey: .reps)
         holdSeconds = try c.decodeIfPresent(TimeInterval.self, forKey: .holdSeconds)
         date = try c.decode(Date.self, forKey: .date)
+        reason = try c.decodeIfPresent(String.self, forKey: .reason)
     }
 }
 
@@ -72,13 +79,28 @@ public struct RunProgressionUpdate: Codable, Sendable, Hashable, Identifiable {
     public let walkSeconds: Int
     /// When the session that produced this ended.
     public let date: Date
+    /// Why the seeds moved, as a rendered clause (see `ProgressionUpdate.reason`).
+    public let reason: String?
+    /// The run block's planned length when this was authored — lets the phone render
+    /// "continuous" honestly (seed ≥ block) without re-deriving the plan. nil pre-v4.
+    public let blockSeconds: Int?
 
-    public init(id: UUID = UUID(), cardId: UUID, runSeconds: Int, walkSeconds: Int, date: Date = Date()) {
+    public init(
+        id: UUID = UUID(),
+        cardId: UUID,
+        runSeconds: Int,
+        walkSeconds: Int,
+        date: Date = Date(),
+        reason: String? = nil,
+        blockSeconds: Int? = nil
+    ) {
         self.id = id
         self.cardId = cardId
         self.runSeconds = runSeconds
         self.walkSeconds = walkSeconds
         self.date = date
+        self.reason = reason
+        self.blockSeconds = blockSeconds
     }
 }
 
@@ -86,23 +108,56 @@ public struct RunProgressionUpdate: Codable, Sendable, Hashable, Identifiable {
 /// `routineId` is the routing key: the receiver applies the updates to the matching routine.
 /// Strength (`updates`) and run (`runUpdates`) progressions share the batch so one workout's
 /// results travel as one message.
+///
+/// v4 splits the batch into two lanes: `updates`/`runUpdates` are **applied** micro-steps
+/// (the watch already applied them locally; the phone applies on receipt, as always), while
+/// `proposals`/`runProposals` are **structural moves awaiting the user's confirm** — a load
+/// step-up or a run-shape graduation. The watch never applies a proposal; the phone stashes
+/// it for the confirm card and only a confirm sends it through `applyProgressions`.
 public struct ProgressionBatch: Codable, Sendable, Hashable {
     public let routineId: UUID
     public let updates: [ProgressionUpdate]
     public let runUpdates: [RunProgressionUpdate]
+    /// Structural strength moves (band-topped load steps) awaiting confirmation.
+    public let proposals: [ProgressionUpdate]
+    /// Structural run-shape moves (walk shrink / continuous graduation) awaiting confirmation.
+    public let runProposals: [RunProgressionUpdate]
+    /// The session's post-workout effort rating (1–10) — journal context; the only channel
+    /// effort crosses to the phone.
+    public let perceivedEffort: Int?
+    /// When the session that produced this batch ended.
+    public let sessionDate: Date?
 
-    public init(routineId: UUID, updates: [ProgressionUpdate] = [], runUpdates: [RunProgressionUpdate] = []) {
+    public init(
+        routineId: UUID,
+        updates: [ProgressionUpdate] = [],
+        runUpdates: [RunProgressionUpdate] = [],
+        proposals: [ProgressionUpdate] = [],
+        runProposals: [RunProgressionUpdate] = [],
+        perceivedEffort: Int? = nil,
+        sessionDate: Date? = nil
+    ) {
         self.routineId = routineId
         self.updates = updates
         self.runUpdates = runUpdates
+        self.proposals = proposals
+        self.runProposals = runProposals
+        self.perceivedEffort = perceivedEffort
+        self.sessionDate = sessionDate
     }
 
-    private enum CodingKeys: String, CodingKey { case routineId, updates, runUpdates }
+    private enum CodingKeys: String, CodingKey {
+        case routineId, updates, runUpdates, proposals, runProposals, perceivedEffort, sessionDate
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         routineId = try c.decode(UUID.self, forKey: .routineId)
         updates = try c.decodeIfPresent([ProgressionUpdate].self, forKey: .updates) ?? []
         runUpdates = try c.decodeIfPresent([RunProgressionUpdate].self, forKey: .runUpdates) ?? []
+        proposals = try c.decodeIfPresent([ProgressionUpdate].self, forKey: .proposals) ?? []
+        runProposals = try c.decodeIfPresent([RunProgressionUpdate].self, forKey: .runProposals) ?? []
+        perceivedEffort = try c.decodeIfPresent(Int.self, forKey: .perceivedEffort)
+        sessionDate = try c.decodeIfPresent(Date.self, forKey: .sessionDate)
     }
 }

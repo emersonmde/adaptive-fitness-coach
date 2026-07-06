@@ -18,6 +18,14 @@ final class PhoneConnectivityManager: NSObject {
 
     /// The routine store, set at app launch. Inbound progressions (watch → phone) are applied here.
     weak var store: RoutineStore?
+    /// The progression journal + structural-proposal store (P6), set at app launch alongside
+    /// `store`. Inbound batches land through `ProgressionIntake` so every applied change is
+    /// journaled and structural proposals wait for the user's confirm.
+    weak var journal: ProgressionJournal?
+    weak var proposals: ProgressionProposalStore?
+    /// The watch quick-log handler (P6), set at app launch. Live `sendMessage` round trips
+    /// and offline `transferUserInfo` deliveries both land here; the manager stays transport.
+    weak var quickLog: (any QuickLogHandling)?
 
     func activate() {
         guard WCSession.isSupported() else { return }
@@ -71,10 +79,43 @@ extension PhoneConnectivityManager: WCSessionDelegate {
     /// re-broadcast so the corrected routine flows back to the watch. The apply is idempotent
     /// latest-value and short-circuits once converged, so this round trip reaches a fixed point and
     /// cannot ping-pong. A malformed/unrelated transfer is ignored (N6).
-    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+    /// Live quick-log round trip (P6): the watch is waiting on the reply handler, so a
+    /// failure to produce a draft replies an EMPTY dictionary — the watch treats that as
+    /// "couldn't look it up" and offers its offline fallback (never a fabricated number).
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveMessage message: [String: Any],
+        replyHandler: @escaping ([String: Any]) -> Void
+    ) {
         Task { @MainActor in
-            guard let batch = try? WCMessageCodec.decodeProgression(from: userInfo) else { return }
-            self.store?.applyProgressions(batch, broadcast: true)
+            guard let inbound = try? WCMessageCodec.decodeQuickLog(from: message),
+                  let handler = self.quickLog,
+                  let reply = await handler.handleLive(inbound),
+                  let encoded = try? WCMessageCodec.encode(quickLog: reply) else {
+                replyHandler([:])
+                return
+            }
+            replyHandler(encoded)
+        }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+        // The userInfo channel carries two message families — demux by payload key.
+        if let quickLogMessage = try? WCMessageCodec.decodeQuickLog(from: userInfo) {
+            Task { @MainActor in
+                self.quickLog?.handleOffline(quickLogMessage)
+            }
+            return
+        }
+        Task { @MainActor in
+            guard let batch = try? WCMessageCodec.decodeProgression(from: userInfo),
+                  let store = self.store else { return }
+            if let journal = self.journal, let proposals = self.proposals {
+                // P6 path: apply micro + journal it, stash structural proposals for the card.
+                ProgressionIntake.receive(batch, store: store, journal: journal, proposals: proposals)
+            } else {
+                store.applyProgressions(batch, broadcast: true)
+            }
         }
     }
 }

@@ -57,6 +57,57 @@ final class WatchConnectivityManager: NSObject {
         }
     }
 
+    // MARK: - Quick-log (P6): live round trips, offline fallback
+
+    /// Send the dictated text for a live draft. nil = unreachable / timed out / the phone
+    /// couldn't produce one — the caller falls back to the offline queue, never a number.
+    func sendQuickLog(_ request: QuickLogRequest) async -> QuickLogDraft? {
+        guard WCSession.isSupported(), WCSession.default.isReachable,
+              let payload = try? WCMessageCodec.encode(quickLog: .request(request)) else { return nil }
+        return await withCheckedContinuation { continuation in
+            WCSession.default.sendMessage(payload, replyHandler: { reply in
+                if case .draft(let draft)? = try? WCMessageCodec.decodeQuickLog(from: reply) {
+                    continuation.resume(returning: draft)
+                } else {
+                    continuation.resume(returning: nil)
+                }
+            }, errorHandler: { _ in
+                continuation.resume(returning: nil)
+            })
+        }
+    }
+
+    /// Confirm (or cancel) a live draft. Returns true only when the phone confirmed every
+    /// Health write — "Logged" on the wrist is never a hope (N6).
+    func confirmQuickLog(_ confirm: QuickLogConfirm) async -> Bool {
+        guard WCSession.isSupported(), WCSession.default.isReachable,
+              let payload = try? WCMessageCodec.encode(quickLog: .confirm(confirm)) else { return false }
+        return await withCheckedContinuation { continuation in
+            WCSession.default.sendMessage(payload, replyHandler: { reply in
+                if case .outcome(let outcome)? = try? WCMessageCodec.decodeQuickLog(from: reply) {
+                    continuation.resume(returning: outcome.saved)
+                } else {
+                    continuation.resume(returning: false)
+                }
+            }, errorHandler: { _ in
+                continuation.resume(returning: false)
+            })
+        }
+    }
+
+    /// Offline fallback: park the raw text in the guaranteed-delivery queue. It lands in the
+    /// phone's pending-REVIEW flow — surfaced with a card, committed only after the user sees
+    /// it there (same buffering discipline as `sendProgression`).
+    func queueQuickLogOffline(_ request: QuickLogRequest) {
+        guard WCSession.isSupported(),
+              let message = try? WCMessageCodec.encode(quickLog: .request(request)) else { return }
+        if isActivated, WCSession.default.activationState == .activated {
+            WCSession.default.transferUserInfo(message)
+        } else {
+            pendingTransfers.append(message)
+        }
+    }
+
     /// Activation completed: hand the OS everything that queued up while it wasn't ready.
     private func flushPendingTransfers() {
         isActivated = true
@@ -67,21 +118,21 @@ final class WatchConnectivityManager: NSObject {
         }
     }
 
-    /// Record progressions from a finished session: apply them to the local store so the next watch
-    /// workout already reflects the new seed, and queue them to the phone (which re-broadcasts the
-    /// corrected routine back). `broadcast: false` locally — the watch never broadcasts (N4), and the
-    /// phone is the sole re-broadcaster, so the round trip converges without ping-pong.
-    func recordProgressions(routineId: UUID, _ updates: [ProgressionUpdate]) {
-        store.applyProgressions(updates, toRoutineId: routineId, broadcast: false)
-        sendProgression(ProgressionBatch(routineId: routineId, updates: updates))
-        WidgetCenter.shared.reloadTimelines(ofKind: Self.complicationKind)
-    }
-
-    /// Record a finished run session's new interval seeds. Same contract as
-    /// `recordProgressions`: apply locally without broadcasting, queue to the phone.
-    func recordRunProgression(routineId: UUID, _ updates: [RunProgressionUpdate]) {
-        let batch = ProgressionBatch(routineId: routineId, runUpdates: updates)
-        store.applyProgressions(batch, broadcast: false)
+    /// Record a finished session's progression batch: apply the **micro lanes only** to the
+    /// local store so the next watch workout already reflects the new seed, and queue the
+    /// whole batch to the phone (which re-broadcasts the corrected routine back).
+    /// `broadcast: false` locally — the watch never broadcasts (N4), and the phone is the sole
+    /// re-broadcaster, so the round trip converges without ping-pong. Structural proposals are
+    /// deliberately NOT applied here (P6): the phone gates them behind the user's confirm, and
+    /// the confirmed seed arrives back via the normal routine sync.
+    func record(_ batch: ProgressionBatch) {
+        if !batch.updates.isEmpty || !batch.runUpdates.isEmpty {
+            store.applyProgressions(
+                ProgressionBatch(routineId: batch.routineId,
+                                 updates: batch.updates, runUpdates: batch.runUpdates),
+                broadcast: false
+            )
+        }
         sendProgression(batch)
         WidgetCenter.shared.reloadTimelines(ofKind: Self.complicationKind)
     }

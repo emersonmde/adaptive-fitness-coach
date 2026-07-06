@@ -14,15 +14,18 @@ struct SessionContainerView: View {
     /// The sync receiver, observed for the "has the phone spoken yet?" signal that separates
     /// "syncing" from a genuine empty library. `nil` in previews/tests (treated as synced).
     var connectivity: WatchConnectivityManager?
-    /// Records a finished session's weight/rep bumps against a routine (local apply + sync to phone).
-    /// `nil` in previews/tests. Threaded to the strength flows.
-    var recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)?
-    /// Records a finished run session's new run/walk interval seeds (local apply + sync to phone).
-    var recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?
+    /// Records a finished session's progression batch — micro lanes applied locally + the
+    /// whole batch synced to the phone (structural proposals ride along for the P6 confirm
+    /// gate). `nil` in previews/tests. Threaded to both flows.
+    var recordProgression: (@MainActor (ProgressionBatch) -> Void)?
 
     private let simulateRun: Bool
     private let simulateStrength: Bool
     private let simulateMixed: Bool
+    private let simulateQuickLog: Bool
+
+    /// Quick-log sheet (P6) — reachable from the routine picker's toolbar.
+    @State private var showingQuickLog = false
 
     /// The routine the user picked to run (via the crown launch picker). `nil` = still picking.
     @State private var chosen: Routine?
@@ -34,20 +37,23 @@ struct SessionContainerView: View {
 
     init(store: RoutineStore,
          connectivity: WatchConnectivityManager? = nil,
-         recordProgressions: (@MainActor (UUID, [ProgressionUpdate]) -> Void)? = nil,
-         recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)? = nil) {
+         recordProgression: (@MainActor (ProgressionBatch) -> Void)? = nil) {
         self.store = store
         self.connectivity = connectivity
-        self.recordProgressions = recordProgressions
-        self.recordRunProgression = recordRunProgression
+        self.recordProgression = recordProgression
         let args = ProcessInfo.processInfo.arguments
         self.simulateRun = args.contains("-simulateWorkout")
         self.simulateStrength = args.contains("-simulateStrength")
         self.simulateMixed = args.contains("-simulateMixed")
+        self.simulateQuickLog = args.contains("-simulateQuickLog")
     }
 
     var body: some View {
-        if simulateMixed {
+        if simulateQuickLog {
+            // The only way to see the quick-log flow without hardware (paired-sim WC is
+            // unreliable) — a canned transport drafts a fixed salad.
+            NavigationStack { QuickLogView(transport: .scripted) }
+        } else if simulateMixed {
             WorkoutSequenceView(routineName: "Mixed Demo", blocks: Self.demoMixedBlocks, simulate: true)
         } else if simulateStrength {
             StrengthSessionContainerView(store: store, simulate: true)
@@ -72,12 +78,31 @@ struct SessionContainerView: View {
                 RunSessionContainerView(store: store, simulate: false)
             }
         } else {
-            RoutineLaunchPicker(routines: orderedRoutines, initialIndex: initialIndex) { chosen = $0 }
-                .task { routeLaunchRequest() }
-                .onReceive(launchRequest.$pendingRoutineId) { _ in routeLaunchRequest() }
-                // The complication can fire before the phone's routine context has synced —
-                // re-run the match when routines arrive so the request lands instead of dying.
-                .onChange(of: store.routines) { _, _ in routeLaunchRequest() }
+            NavigationStack {
+                RoutineLaunchPicker(routines: orderedRoutines, initialIndex: initialIndex) { chosen = $0 }
+                    .toolbar {
+                        // Quick-log (P6): the one non-workout action on the wrist. Quiet
+                        // toolbar door — the picker's Start stays the dominant element.
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showingQuickLog = true
+                            } label: {
+                                Image(systemName: "fork.knife")
+                            }
+                            .accessibilityLabel("Log a meal")
+                        }
+                    }
+                    .sheet(isPresented: $showingQuickLog) {
+                        if let connectivity {
+                            QuickLogView(transport: .live(connectivity)) { showingQuickLog = false }
+                        }
+                    }
+            }
+            .task { routeLaunchRequest() }
+            .onReceive(launchRequest.$pendingRoutineId) { _ in routeLaunchRequest() }
+            // The complication can fire before the phone's routine context has synced —
+            // re-run the match when routines arrive so the request lands instead of dying.
+            .onChange(of: store.routines) { _, _ in routeLaunchRequest() }
         }
     }
 
@@ -105,15 +130,14 @@ struct SessionContainerView: View {
         let blocks = routine.expandedCards.workoutBlocks()
         if blocks.count > 1 {
             WorkoutSequenceView(routineName: routine.name, blocks: blocks,
-                                routineId: routine.id, recordProgressions: recordProgressions,
-                                recordRunProgression: recordRunProgression,
+                                routineId: routine.id, recordProgression: recordProgression,
                                 autostart: true, onExit: { chosen = nil })
         } else if routine.type == .strength {
             StrengthSessionContainerView(store: store, simulate: false, forcedRoutine: routine,
-                                         recordProgressions: recordProgressions, onFinish: { chosen = nil })
+                                         recordProgression: recordProgression, onFinish: { chosen = nil })
         } else {
             RunSessionContainerView(store: store, simulate: false, forcedRoutine: routine,
-                                    recordRunProgression: recordRunProgression,
+                                    recordProgression: recordProgression,
                                     onFinish: { chosen = nil })
         }
     }
@@ -234,8 +258,9 @@ struct RunSessionContainerView: View {
     /// When set (from the launch picker), run this routine and auto-start — skipping this
     /// container's own launch screen, which the picker has replaced.
     var forcedRoutine: Routine?
-    /// Persists the session outcome's new run/walk seeds (local apply + sync to phone).
-    var recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)?
+    /// Persists the session outcome's progression batch (micro seeds applied + structural
+    /// shape changes proposed — local apply + sync to phone).
+    var recordProgression: (@MainActor (ProgressionBatch) -> Void)?
     /// Called when the user finishes/dismisses a forced session, to return to the picker.
     var onFinish: (() -> Void)?
     @State private var manager: WorkoutSessionManager
@@ -248,12 +273,12 @@ struct RunSessionContainerView: View {
     private let simulate: Bool
 
     init(store: RoutineStore, simulate: Bool, forcedRoutine: Routine? = nil,
-         recordRunProgression: (@MainActor (UUID, [RunProgressionUpdate]) -> Void)? = nil,
+         recordProgression: (@MainActor (ProgressionBatch) -> Void)? = nil,
          onFinish: (() -> Void)? = nil) {
         self.store = store
         self.simulate = simulate
         self.forcedRoutine = forcedRoutine
-        self.recordRunProgression = recordRunProgression
+        self.recordProgression = recordProgression
         self.onFinish = onFinish
         _manager = State(initialValue: simulate
             ? WorkoutSessionManager(backend: SimulatedWorkoutBackend())
@@ -329,15 +354,29 @@ struct RunSessionContainerView: View {
     /// summary screen); simulate sessions never persist.
     private func recordOutcome(_ summary: SessionSummary, effort: Int? = nil) {
         guard !simulate,
-              let record = recordRunProgression,
+              let record = recordProgression,
               let routineId = activeRoutineId else { return }
         let card = sessionCard
         var outcome = RunSessionOutcome(summary: summary)
         outcome.perceivedEffort = effort
         let current = RunSeeds(runSeconds: card.runSeconds, walkSeconds: card.walkSeconds)
-        let next = RunProgressionPolicy().nextSeeds(current: current, outcome: outcome)
+        let blockSeconds = card.durationMinutes * 60
+        let evaluation = RunProgressionPolicy().evaluate(current: current, outcome: outcome,
+                                                         blockSeconds: blockSeconds)
+        let next = evaluation.seeds
         guard next != current || !card.seedsCalibrated else { return }
-        record(routineId, [RunProgressionUpdate(cardId: card.id, runSeconds: next.runSeconds, walkSeconds: next.walkSeconds)])
+        let update = RunProgressionUpdate(cardId: card.id,
+                                          runSeconds: next.runSeconds, walkSeconds: next.walkSeconds,
+                                          reason: evaluation.reason.summary, blockSeconds: blockSeconds)
+        // A shape graduation (walk shrink / continuous) is structural (P6): proposed, not
+        // applied — the phone gates it behind a confirm. Everything else applies as before.
+        if evaluation.isStructural, next != current {
+            record(ProgressionBatch(routineId: routineId, runProposals: [update],
+                                    perceivedEffort: effort, sessionDate: Date()))
+        } else {
+            record(ProgressionBatch(routineId: routineId, runUpdates: [update],
+                                    perceivedEffort: effort, sessionDate: Date()))
+        }
     }
 
     /// Live preview of the "Next run" note as the user turns the effort crown — shows the
@@ -347,8 +386,12 @@ struct RunSessionContainerView: View {
         var outcome = RunSessionOutcome(summary: summary)
         outcome.perceivedEffort = effort
         let current = RunSeeds(runSeconds: card.runSeconds, walkSeconds: card.walkSeconds)
-        let next = RunProgressionPolicy().nextSeeds(current: current, outcome: outcome)
-        return RunSeeds.progressionNote(from: current, to: next, blockSeconds: card.durationMinutes * 60)
+        let blockSeconds = card.durationMinutes * 60
+        let evaluation = RunProgressionPolicy().evaluate(current: current, outcome: outcome,
+                                                         blockSeconds: blockSeconds)
+        let note = RunSeeds.progressionNote(from: current, to: evaluation.seeds, blockSeconds: blockSeconds)
+        guard let note else { return nil }
+        return evaluation.isStructural ? "\(note) — confirm on iPhone" : note
     }
 
     /// The next adaptive-run routine to surface on the launch screen, based on the current

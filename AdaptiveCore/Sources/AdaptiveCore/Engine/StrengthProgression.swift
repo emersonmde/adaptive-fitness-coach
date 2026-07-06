@@ -218,6 +218,18 @@ public struct StrengthProgressionPolicy: Sendable {
 
     public enum Decision: Sendable, Hashable { case advance, hold, ease }
 
+    /// The full result of one exercise's evaluation: the next prescription plus the
+    /// classification the P6 journal and structural-confirm gate need. `steppedLoad` is true
+    /// only when the advance took the band-topped load step — deliberately a flag set inside
+    /// that branch, not a weight comparison, because the trailing grid snap can move a legacy
+    /// off-grid load (22.5 → 20) on *any* path, including a plain hold.
+    public struct Evaluation: Sendable, Hashable {
+        public let next: StrengthPrescription
+        public let decision: Decision
+        public let reason: ProgressionReason
+        public let steppedLoad: Bool
+    }
+
     /// Classify the session for one exercise. `perceivedEffort` (session-level, 1–10, nil when
     /// unrated) only ever *holds* an advance — a high rating means near-ceiling even when the
     /// sets looked clean.
@@ -240,7 +252,23 @@ public struct StrengthProgressionPolicy: Sendable {
         endedEarly: Bool,
         perceivedEffort: Int? = nil
     ) -> StrengthPrescription {
+        evaluate(
+            current: current, exercise: exercise, outcome: outcome,
+            endedEarly: endedEarly, perceivedEffort: perceivedEffort
+        ).next
+    }
+
+    /// `nextPrescription` plus the decision, its reason, and whether the advance was the
+    /// structural load step (band topped) — everything the journal and confirm gate consume.
+    public func evaluate(
+        current: StrengthPrescription,
+        exercise: Exercise,
+        outcome: StrengthExerciseOutcome,
+        endedEarly: Bool,
+        perceivedEffort: Int? = nil
+    ) -> Evaluation {
         var next = current
+        var steppedLoad = false
 
         // Establish invariants regardless of hand-edited seeds.
         if let range = exercise.repRange, let reps = next.reps {
@@ -250,7 +278,8 @@ public struct StrengthProgressionPolicy: Sendable {
             next.holdSeconds = min(max(next.holdSeconds!, config.holdFloor), config.holdCap)
         }
 
-        switch decision(for: outcome, endedEarly: endedEarly, perceivedEffort: perceivedEffort) {
+        let decided = decision(for: outcome, endedEarly: endedEarly, perceivedEffort: perceivedEffort)
+        switch decided {
         case .hold:
             break
 
@@ -268,6 +297,7 @@ public struct StrengthProgressionPolicy: Sendable {
                     // multiple of 5 (22.5 → 25, conservatively short of a full step).
                     next.weight = weight.stepped(byPounds: exercise.weightStepPounds)
                     next.reps = range.lowerBound
+                    steppedLoad = true
                 }
                 // Bodyweight at the top of its band: hold. A heavier "step" doesn't exist;
                 // P3's AI can suggest a harder variation (e.g. push-up → decline push-up).
@@ -295,7 +325,50 @@ public struct StrengthProgressionPolicy: Sendable {
             return (snapped.pounds < config.minWeightPounds && hadLoad)
                 ? Weight.lb(config.minWeightPounds) : snapped
         }
-        return next
+        return Evaluation(
+            next: next,
+            decision: decided,
+            reason: reason(for: decided, outcome: outcome, endedEarly: endedEarly,
+                           perceivedEffort: perceivedEffort, steppedLoad: steppedLoad),
+            steppedLoad: steppedLoad
+        )
+    }
+
+    /// The clause behind the decision, mirroring the exact precedence of `decision(for:)` —
+    /// ease causes in `isStruggle`'s order, hold causes by which gate blocked the advance.
+    private func reason(
+        for decision: Decision,
+        outcome o: StrengthExerciseOutcome,
+        endedEarly: Bool,
+        perceivedEffort: Int?,
+        steppedLoad: Bool
+    ) -> ProgressionReason {
+        switch decision {
+        case .advance:
+            return steppedLoad ? .bandTopped : .cleanSession
+        case .ease:
+            if o.weightManuallyLowered { return .loweredWeight }
+            if endedEarly, o.setsPlanned > 0, o.setsCompleted * 2 < o.setsPlanned,
+               !hasShortSetPattern(o) { return .endedEarly }
+            return .shortSets
+        case .hold:
+            if isClean(o, endedEarly: endedEarly), let effort = perceivedEffort,
+               effort >= config.highEffortThreshold { return .highEffort(effort) }
+            if o.unrecoveredRests >= config.suspicionUnrecoveredRests { return .unrecoveredRests }
+            return .mixedSession
+        }
+    }
+
+    private func hasShortSetPattern(_ o: StrengthExerciseOutcome) -> Bool {
+        if let prescribed = o.prescribedReps {
+            let short = o.completedRepsPerSet.filter { $0 <= prescribed - config.shortfallReps }.count
+            if short >= config.struggleShortSets { return true }
+        }
+        if let hold = o.prescribedHoldSeconds {
+            let short = o.completedHoldSecondsPerSet.filter { $0 <= hold - config.holdStep }.count
+            if short >= config.struggleShortSets { return true }
+        }
+        return false
     }
 
     /// A clean session for this exercise: all planned sets done, every set at/above

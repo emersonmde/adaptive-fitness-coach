@@ -15,6 +15,10 @@ public enum WCMessageCodec {
         /// The watch → phone progression channel (a `ProgressionBatch` JSON blob).
         public static let progression = "progression"
         public static let progressionVersion = "progressionVersion"
+        /// The bidirectional quick-log channel (a `QuickLogMessage` JSON blob) — live
+        /// `sendMessage` round trips, with `transferUserInfo` as the offline fallback.
+        public static let quickLog = "quickLog"
+        public static let quickLogVersion = "quickLogVersion"
     }
 
     /// Current payload schema version. Bump when the routine encoding changes incompatibly.
@@ -30,11 +34,18 @@ public enum WCMessageCodec {
     /// so a progression-format change never forces stale peers to reject the (unchanged) routines.
     /// v2: `ProgressionBatch` gained `runUpdates` (run/walk seed progression).
     /// v3: `ProgressionUpdate` gained `holdSeconds` (hold progression).
-    public static let currentProgressionVersion = 3
+    /// v4: updates carry `reason` (journal); batch gained `proposals`/`runProposals`
+    ///     (structural moves awaiting confirm) + `perceivedEffort`/`sessionDate`.
+    public static let currentProgressionVersion = 4
+
+    /// Version for the quick-log channel (P6). One version constant covers every message
+    /// shape — the envelope enum discriminates inside the blob.
+    public static let currentQuickLogVersion = 1
 
     public enum CodecError: Error, Equatable {
         case missingRoutines
         case missingProgression
+        case missingQuickLog
         case unsupportedVersion(Int)
     }
 
@@ -87,5 +98,28 @@ public enum WCMessageCodec {
             throw CodecError.missingProgression
         }
         return try JSONDecoder().decode(ProgressionBatch.self, from: data)
+    }
+
+    // MARK: - Quick-log channel (bidirectional, P6)
+
+    public static func encode(quickLog message: QuickLogMessage) throws -> [String: Any] {
+        let data = try JSONEncoder().encode(message)
+        return [
+            Key.quickLog: data,
+            Key.quickLogVersion: currentQuickLogVersion,
+        ]
+    }
+
+    /// Same exact-version contract as the other channels: a mismatched peer's message is
+    /// rejected (the sender falls back to its honest failure state) rather than mis-decoded.
+    public static func decodeQuickLog(from message: [String: Any]) throws -> QuickLogMessage {
+        let version = message[Key.quickLogVersion] as? Int ?? 0
+        guard version == currentQuickLogVersion else {
+            throw CodecError.unsupportedVersion(version)
+        }
+        guard let data = message[Key.quickLog] as? Data else {
+            throw CodecError.missingQuickLog
+        }
+        return try JSONDecoder().decode(QuickLogMessage.self, from: data)
     }
 }

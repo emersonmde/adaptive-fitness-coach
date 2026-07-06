@@ -64,6 +64,33 @@ final class MealFlowUITests: XCTestCase {
         log.tap()
     }
 
+    // MARK: - P6 watch quick-log pending review
+
+    /// `-seedNeedsReview` parks an offline watch dictation through the real offline path.
+    /// The week screen shows the review card; tapping it runs the NORMAL typed-capture
+    /// confirmation (numbers seen before commit), and committing clears the card.
+    func testWatchQuickLogReviewCardCommitsAndClears() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-simulateMealScan", "-seedNeedsReview"]
+        app.launch()
+
+        let card = app.buttons["quicklog.review.card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["“two tacos from Chipotle”"].exists)
+        card.tap()
+
+        // The standard confirmation sheet over the dictated text (scripted pipeline).
+        XCTAssertTrue(app.staticTexts["Two tacos"].waitForExistence(timeout: 5))
+        tapLogWhenReady(app)
+
+        // Committed → the review card is gone for good.
+        let deadline = Date().addingTimeInterval(5)
+        while card.exists, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        XCTAssertFalse(card.exists)
+    }
+
     /// The barcode fast path: scan → single pre-checked item → Log → total lands.
     func testBarcodeFastPath() throws {
         let app = launchApp()
@@ -329,8 +356,9 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
 
-        // Name the restaurant, then re-run the lookup. The scripted ladder resolves the
-        // edited item through the estimate rung (350–600) — honest range, "estimate" source.
+        // Name the restaurant, then re-run the lookup. P6: the scripted ladder now finds
+        // the item (name-keyed candidates) — and offers the OTHER matches as pickable
+        // alternates. Pick the 20 oz → its number and name preview, Save records them.
         let seller = app.textFields["meal.edit.seller"]
         XCTAssertTrue(seller.waitForExistence(timeout: 5))
         seller.tap()
@@ -338,15 +366,21 @@ final class MealFlowUITests: XCTestCase {
         app.buttons["meal.edit.rescan"].tap()
         let source = app.staticTexts["meal.edit.source"]
         let deadline = Date().addingTimeInterval(8)
-        while Date() < deadline, source.label != "estimate" {
+        while Date() < deadline, source.label != "Open Food Facts" {
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         }
-        XCTAssertEqual(source.label, "estimate")
+        XCTAssertEqual(source.label, "Open Food Facts")
+
+        let alternate = app.buttons["meal.edit.alternate.0"]
+        XCTAssertTrue(alternate.waitForExistence(timeout: 5))
+        XCTAssertTrue(alternate.label.contains("Coca-Cola Classic 20 fl oz"))
+        alternate.tap()
         app.buttons["meal.edit.save"].tap()
 
-        // The day row shows the seller, the honest source, and the fresh range.
-        XCTAssertTrue(app.staticTexts["Salad Works · estimate"].waitForExistence(timeout: 6))
-        XCTAssertTrue(app.staticTexts["350–600 kcal"].exists)
+        // The day row shows the picked variant with its number and source.
+        XCTAssertTrue(app.staticTexts["Coca-Cola Classic 20 fl oz"].waitForExistence(timeout: 6))
+        XCTAssertTrue(app.staticTexts["Salad Works · Open Food Facts"].waitForExistence(timeout: 6))
+        XCTAssertTrue(app.staticTexts["240 kcal"].exists)
     }
 
     /// "Log again" duplicates a past entry as a fresh one now — the total doubles.

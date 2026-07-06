@@ -29,6 +29,8 @@ struct EntryEditSheet: View {
     /// save records these facts + provenance (unless the user re-types the kcal afterwards).
     @State private var rescanResult: ResolvedNutrition?
     @State private var rescanning = false
+    /// P6 refresh: the other defensible matches the re-lookup saw ("not this one?").
+    @State private var alternates: [ResolvedAlternative] = []
     /// Distinguishes the rescan writing the kcal preview from the user typing (only the
     /// latter makes the number "yours").
     @State private var programmaticKcalWrite = false
@@ -122,6 +124,44 @@ struct EntryEditSheet: View {
                         .disabled(rescanning || name.trimmingCharacters(in: .whitespaces).isEmpty)
                         .accessibilityIdentifier("meal.edit.rescan")
 
+                        // P6 refresh/alternates: every row here passed adjudication — never
+                        // raw search noise (N6). Picking one previews it exactly like the
+                        // primary re-lookup; Save records it.
+                        if !alternates.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("NOT THIS? PICK ANOTHER MATCH")
+                                    .font(.caption.weight(.semibold))
+                                    .tracking(1.2)
+                                    .foregroundStyle(Theme.textTertiary)
+                                ForEach(Array(alternates.enumerated()), id: \.offset) { index, alternate in
+                                    Button {
+                                        pick(alternate)
+                                    } label: {
+                                        HStack(alignment: .firstTextBaseline) {
+                                            VStack(alignment: .leading, spacing: 1) {
+                                                Text(alternate.name)
+                                                    .font(.footnote.weight(.medium))
+                                                    .foregroundStyle(Theme.textPrimary)
+                                                    .multilineTextAlignment(.leading)
+                                                Text(alternate.nutrition.provenance.detailLabel)
+                                                    .font(.caption)
+                                                    .foregroundStyle(Theme.textSecondary)
+                                            }
+                                            Spacer()
+                                            Text("\(Int(alternate.nutrition.facts.energy.midpointKcal.rounded())) kcal")
+                                                .font(.footnote.weight(.semibold))
+                                                .foregroundStyle(Theme.textPrimary)
+                                        }
+                                        .padding(10)
+                                        .background(Theme.surface2,
+                                                    in: RoundedRectangle(cornerRadius: Theme.radiusInset, style: .continuous))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("meal.edit.alternate.\(index)")
+                                }
+                            }
+                        }
+
                         WhenRow(mealSlot: $mealSlot, date: $date)
 
                         if let error {
@@ -210,10 +250,22 @@ struct EntryEditSheet: View {
         defer { rescanning = false }
         let item = DraftItem(name: name.trimmingCharacters(in: .whitespaces))
         let seller = trimmedSeller.isEmpty ? nil : Seller(name: trimmedSeller)
-        let (resolved, _) = await resolver.resolve(item: item, seller: seller, capture: nil, answers: [])
+        let (resolved, others, _) = await resolver.resolveWithAlternates(
+            item: item, seller: seller, capture: nil, answers: [])
         rescanResult = resolved
+        alternates = others
         programmaticKcalWrite = true
         kcalText = String(Int(resolved.facts.energy.midpointKcal.rounded()))
+        kcalEdited = false
+    }
+
+    /// Adopt an alternate wholesale: its name, number, and provenance become the preview
+    /// (recorded on Save via the same `rescanResult` path as the primary re-lookup).
+    private func pick(_ alternate: ResolvedAlternative) {
+        name = alternate.name
+        rescanResult = alternate.nutrition
+        programmaticKcalWrite = true
+        kcalText = String(Int(alternate.nutrition.facts.energy.midpointKcal.rounded()))
         kcalEdited = false
     }
 

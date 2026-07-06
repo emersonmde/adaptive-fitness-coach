@@ -40,8 +40,7 @@ struct Adaptive_Fitness_Coach_Watch_AppApp: App {
         WindowGroup {
             SessionContainerView(store: store,
                                  connectivity: connectivity,
-                                 recordProgressions: connectivity.recordProgressions,
-                                 recordRunProgression: connectivity.recordRunProgression)
+                                 recordProgression: connectivity.record)
                 .onOpenURL { url in
                     // Complication / Smart Stack deep link: afcoach://start/<routineId> →
                     // route the session container straight into that routine (build 9).
