@@ -2,7 +2,7 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-05 (P6 underway on the `p6` branch): **P6 Phase 1 (progression journal + structural confirms) is IMPLEMENTED — see its milestone section** (progression channel v4, reasons on the wire, watch proposal lane, phone journal + confirm cards; one TestFlight build ships at the END of P6 as build 17, per the user). The 5 lb weight-grid fix is COMMITTED to main. String Catalogs adopted on both app targets (P6 step 0). Next: Phase 2 "Export to Claude" context packs, then watch quick-log, then entry refresh/alternates._
+_Last updated 2026-07-05 (P6 underway on the `p6` branch): **P6 Phases 1–2 IMPLEMENTED — see their milestone sections** (Phase 1: progression channel v4, reasons on the wire, watch proposal lane, phone journal + confirm cards. Phase 2: ContextPackComposer + ExportPackSheet + one-time health disclosure + return-from-break card). One TestFlight build ships at the END of P6 as build 17, per the user. The 5 lb weight-grid fix is COMMITTED to main. String Catalogs adopted on both app targets (P6 step 0). Next: Phase 3 watch quick-log, then Phase 4 entry refresh/alternates._
 
 _Previous update 2026-07-05 (night): **P0–P5 shipped; TestFlight build 16 = the P5 polish deep dive + the post-15 gesture settlement (chevrons-only day nav + Notification-style SwipeableRow + day snapshot cache).** P5 (see its section): one motion vocabulary + Reduce-Motion gap closed, deliberate phone haptics (`Theme.Haptics`), token compliance both targets (watch gray drift, `info`/`heat`/`metricNumber`/radius scale), honest states (watch "Syncing from iPhone…" first launch, exit-ful wrap-up), accessibility pass (DailyIntakeLine container bug, labels, contrast floor), dark-mode declared to the OS, iPhone-only portrait, AccentColor populated, FoodDayView structural cleanup + SwipeableRow extraction. **NEXT = P6, RESHAPED 2026-07-05 after the user's build-16 verdict (on-device model: meal-NLP only, fails at routine building; the Claude export loop is the invested path — read the P6 Roadmap section):** progression journal + structural-confirm gate, **"Export to Claude" context packs** (fitness snapshot / check-in / meal planning / plateau / constraint rework; scope picker + honest health-export disclosure), watch quick-log, entry refresh/alternates; agentic rung 3 + FoundationModels-coach investment PUSHED pending the PCC grant. **On the tree UNRELEASED: the 5 lb weight-grid fix** (`Weight.stepped`/`snappedToGrid`, curl/lateral-raise seeds+steps on-grid, progression exits through a grid snap — fixes the stuck-22.5; 393 package + watch unit + phone build green, awaiting ship-or-hold). Also the confirm-on-device list (Health deep-link probes, LookupLab, PCC flow). Build 15 was the hybrid gesture split (summary zone swipes days), retired same-day by on-device feel; build 14's full-page pager stole row swipes and animated backwards. Build 14 carried the rest of the repage (pinned add bar, past-day backfill via when-row prefill, relog toast instead of teleport, full action set on tap/long-press). Build 13 carried the typed-meal parsing fixes (mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
 
@@ -143,6 +143,43 @@ The first P6 slice (see the P6 Roadmap section): adaptation made legible and con
   hold declines). All suites green 2026-07-05.
 - **On-device pending:** the real watch→phone v4 round trip + a real band-top session
   producing the card (rides the end-of-P6 build 17).
+
+### P6 Phase 2 — "Export to Claude" context packs ✅ IMPLEMENTED (2026-07-05, on `p6`)
+The invested path made first-class: engine-agnostic packs = prompt + scoped context +
+response-format, clipboard → Claude app today, a future Claude-API `CoachEngine` consumes
+the same packs unchanged.
+- **`ContextPackComposer` (AdaptiveCore/Coach/ContextPack.swift, pure).** Six use cases
+  (`programDesign / checkIn / mealPlanning / plateau / constraintRework / returnFromBreak`),
+  each with a scope preset; `ContextPackScope` = routines (all/subset) · fitness snapshot ·
+  progression-journal window (30/90d) · recent meals; `includesHealthData` drives the
+  disclosure. **Response format forks:** the three import-capable cases end with the
+  exchange vocabulary + schema rules (same contract as `primingPrompt` — replies come back
+  through the validated ImportRoutinesSheet → graft path untouched); check-in/meal-planning/
+  plateau explicitly ask for prose (honest about what the app can ingest). Sections reuse
+  `RoutineExchange.exportJSON` + `CoachContextBuilder.progressionSummary`; the journal
+  section renders Phase 1's reasons + effort ("Goblet Squat 10 → 11 reps — clean session
+  (effort 5)", declined entries say "[held by me]"). `HealthSnapshot`/`NutritionDigest` are
+  plain value types — nil fields render as omitted lines (N6), all composition unit-tested
+  on macOS.
+- **Phone plumbing (thin):** `HealthSnapshotBuilder` (new HK reads — VO2max ml/kg·min per
+  the calibrator, resting HR, respiratory rate, weight + 30d delta, our-bundle workout
+  frequency 90d, `daysSinceLastWorkout(windowDays:)`; deferred-contextual auth, `toShare:
+  []`, every field independent); `NutritionDigestBuilder` (loops `recorder.intake(on:)`,
+  recurring sellers only). Phone Health share-usage string broadened in both pbxproj
+  configs.
+- **UI:** `ExportPackSheet` (use-case cards → scope toggles incl. per-routine checklist →
+  **always-visible includes-line** → pinned Copy/Share bar; builds the pack at export time
+  with a progress state); `HealthExportDisclosureSheet` — one-time, plain-words,
+  Oura/Whoop-register, gates only health-inclusive exports (UserDefaults flag; per-launch
+  under `-uiTesting`). Entry: claudeMenu → "Export to Claude…"; plus a quiet dismissible
+  **return-from-break card** on WeekView when `daysSinceLastWorkout ≥ 10`.
+- **Testing:** 432 package tests (11 new ContextPackTests: every case renders, JSON-ask
+  only on import-capable cases, scope subsetting, nil-field omission, journal window,
+  nutrition section, includes-line honesty); RoutineFlowUITests 7/7 (2 new: disclosure →
+  copy → no-second-disclosure; health-free scope skips disclosure). XCUI gotcha recorded:
+  SwiftUI Menu items surface by LABEL, not accessibilityIdentifier.
+- **On-device pending:** real HK aggregate values in a pack; an actual paste-into-Claude
+  round trip (user judgment on pack quality); the broadened Health prompt.
 
 ### P0 — Adaptive run/walk ✅ DONE
 Shipped, reviewed, redesigned. See snapshot above.

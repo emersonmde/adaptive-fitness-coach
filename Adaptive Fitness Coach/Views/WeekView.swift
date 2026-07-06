@@ -12,6 +12,11 @@ struct WeekView: View {
     let proposals: ProgressionProposalStore
     @State private var showingNewRoutine = false
     @State private var showingJournal = false
+    /// P6 export packs: nil = closed; carries the use case the sheet opens on.
+    @State private var exportLaunch: ExportLaunch?
+    /// Days since the last workout of ours (≥ threshold → the return-from-break suggestion).
+    @State private var workoutGapDays: Int?
+    @State private var gapSuggestionDismissed = false
 
     // P3 coach: a tapped entry point stages an intent; the sheet owns the conversation.
     @State private var coachLaunch: CoachLaunch?
@@ -116,6 +121,9 @@ struct WeekView: View {
             .navigationDestination(isPresented: $showingJournal) {
                 ProgressionJournalView(journal: journal)
             }
+            .sheet(item: $exportLaunch) { launch in
+                ExportPackSheet(store: store, journal: journal, initialUseCase: launch.useCase)
+            }
             .fullScreenCover(isPresented: $showingMealCapture) {
                 MealCaptureView { capture in
                     Task { await mealController.beginCapture(capture, preferredDate: mealCaptureContext) }
@@ -159,6 +167,7 @@ struct WeekView: View {
                 // The App Intent / deep link may have fired before the scene existed.
                 routeCaptureRequest()
                 doneDays = await WorkoutWeekHistory.shared.doneDays()
+                workoutGapDays = await HealthSnapshotBuilder().daysSinceLastWorkout()
                 // Finish any lookups that were mid-flight when the app last quit (C5 queue).
                 await mealController.resumePending()
             }
@@ -244,6 +253,12 @@ struct WeekView: View {
                 .accessibilityIdentifier("coachReviseAll")
             }
             Section("Manual (Claude app)") {
+                Button {
+                    exportLaunch = ExportLaunch(useCase: .programDesign)
+                } label: {
+                    Label("Export to Claude…", systemImage: "square.and.arrow.up.on.square")
+                }
+                .accessibilityIdentifier("exportToClaude")
                 if !store.routines.isEmpty {
                     ShareLink(item: RoutineExchange.primingPrompt(store.routines)) {
                         Label("Share for Claude", systemImage: "square.and.arrow.up")
@@ -305,6 +320,37 @@ struct WeekView: View {
                 ForEach(proposals.proposals) { proposal in
                     PendingProposalCard(proposal: proposal, store: store,
                                         journal: journal, proposals: proposals)
+                }
+
+                // P6 return-from-break: a quiet, dismissible nudge toward the export preset
+                // when a real gap shows in Health. Facts, never shame (design principles).
+                if let gap = workoutGapDays, gap >= 10, !gapSuggestionDismissed {
+                    Card(padding: 12, cornerRadius: Theme.radiusInset) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "figure.walk.arrival")
+                                .foregroundStyle(Theme.textSecondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Been \(gap) days — ease back in?")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(Theme.textPrimary)
+                                Text("Export a return-from-break brief for Claude.")
+                                    .font(.footnote)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            Spacer()
+                            Button {
+                                withAnimation(Theme.Motion.settle) { gapSuggestionDismissed = true }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Theme.textTertiary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Dismiss suggestion")
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { exportLaunch = ExportLaunch(useCase: .returnFromBreak) }
+                    }
                 }
 
                 WeekStrip(store: store, doneDays: doneDays)
