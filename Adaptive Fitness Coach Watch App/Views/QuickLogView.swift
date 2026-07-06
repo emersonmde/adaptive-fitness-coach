@@ -54,7 +54,11 @@ struct QuickLogView: View {
                 queueOffline(QuickLogRequest(text: trimmed))
                 withAnimation(WatchTheme.Motion.settle) { phase = .saved }
             } label: {
-                Label("Log it", systemImage: "arrow.up.circle.fill")
+                // Verbatim echo of the confirmation ("Saved for iPhone") so the tap's
+                // promise matches its result — "Log it" promised more than the park keeps
+                // (nothing is in Health until the phone review). The nav title keeps the
+                // logging framing; the button tells the truth about the mechanics.
+                Label("Save for iPhone", systemImage: "arrow.up.circle.fill")
             }
             .tint(WatchTheme.recover)
             .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
