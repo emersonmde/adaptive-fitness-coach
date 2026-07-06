@@ -69,6 +69,14 @@ public struct IntervalStateMachine: Sendable {
     /// extension unlocked this can far exceed the seed — progression snaps to it, so one
     /// session is enough for a mis-seeded fit runner to land at their real level.
     public private(set) var longestRunInterval: TimeInterval
+    /// Walk intervals completed naturally (the counterpart to `intervalsCompleted`). Skipped
+    /// walks earn no credit (N6), and warmup/cooldown are not walks — same rule as runs.
+    public private(set) var walksCompleted: Int
+    /// Seconds of RUN time spent in the target zone — the "time in optimal zone" the summary
+    /// shows. Run phases only (a walk below zone is desired, counting it would dilute the
+    /// metric) and only ticks with a fresh zone reading accumulate; the caller nils stale
+    /// zones, so sensor gaps add nothing (N6).
+    public private(set) var timeInTargetZone: TimeInterval
 
     /// Peak heart rate observed during the current/most recent run segment. Reset when a new
     /// run begins; carried through the following walk for recovery math.
@@ -113,6 +121,8 @@ public struct IntervalStateMachine: Sendable {
         self.recoveryDrops = []
         self.fastRecoveries = 0
         self.longestRunInterval = 0
+        self.walksCompleted = 0
+        self.timeInTargetZone = 0
     }
 
     /// The phase currently in progress, or nil once the session is complete.
@@ -160,6 +170,9 @@ public struct IntervalStateMachine: Sendable {
         if phase.isRun {
             totalRunDuration += deltaTime
             longestRunInterval = max(longestRunInterval, intervalElapsed)
+            if sample.zone == targetZone {
+                timeInTargetZone += deltaTime
+            }
         } else {
             totalWalkDuration += deltaTime
         }
@@ -305,6 +318,7 @@ public struct IntervalStateMachine: Sendable {
             intervalsCompleted += 1
         }
         if fromPhase == .walk, !skippingSegment {
+            walksCompleted += 1
             // A short walk ends before the 60s HRR mark — record its drop at exit instead.
             if !recoveryRecordedThisWalk { recordRecoveryDrop() }
             if walkHitCapPending { walksHitCap += 1 }

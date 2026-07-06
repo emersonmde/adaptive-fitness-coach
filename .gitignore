@@ -37,3 +37,4 @@ build-archive/
 build-device/
 build-uitest/
 scratch-build.log
+build-watch/

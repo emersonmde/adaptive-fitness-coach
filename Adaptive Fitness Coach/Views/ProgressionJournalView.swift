@@ -112,7 +112,10 @@ private struct JournalRow: View {
     private var detailLine: String {
         var parts: [String] = [entry.routineName]
         if let reason = entry.reason { parts.append(reason) }
-        if let effort = entry.perceivedEffort { parts.append("effort \(effort)") }
+        if let effort = entry.perceivedEffort {
+            // Coarse vocabulary (P6.1) — historical fine-grained ratings bucket to it too.
+            parts.append("felt \(EffortLevel(score: effort)?.label.lowercased() ?? "\(effort)")")
+        }
         return parts.joined(separator: " · ")
     }
 }

@@ -69,12 +69,24 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
     private var finishedWorkout: HKWorkout?
 
     func end() async -> WorkoutTotals {
+        await end(metadata: [:])
+    }
+
+    func end(metadata: [String: String]) async -> WorkoutTotals {
         pedometer?.stopUpdates()
         pedometer = nil
         let endDate = Date()
         session?.end()
         do {
             try await Self.endCollectionSettling(builder, at: endDate)
+            // The run digest (P6.1) rides the workout as custom metadata — attached once the
+            // engine's numbers are final, and BEST-EFFORT: a failed metadata write must never
+            // fail the workout save (the workout is the record; the digest is enrichment).
+            // If on-device testing shows addMetadata rejects post-endCollection, move this
+            // above endCollectionSettling — both orders precede finishWorkout.
+            if !metadata.isEmpty {
+                try? await builder?.addMetadata(metadata)
+            }
             let workout = try await builder?.finishWorkout()
             finishedWorkout = workout
             return readTotals(workout: workout, saved: true)

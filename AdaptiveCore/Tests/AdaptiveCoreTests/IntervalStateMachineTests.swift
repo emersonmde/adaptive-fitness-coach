@@ -360,4 +360,45 @@ struct IntervalStateMachineTests {
         #expect(machine.recoveryDrops.isEmpty)
         #expect(machine.totalWalkDuration == 5)
     }
+
+    // MARK: - Session metrics (P6.1: walksCompleted + timeInTargetZone)
+
+    @Test func walksCompletedCountsRecoveryWalksOnly() {
+        // Warmup and cooldown are walks by phase family but NOT recovery walks — only the
+        // repeating .walk segments count, mirroring how intervalsCompleted treats runs.
+        var machine = IntervalStateMachine(config: config([
+            (.warmupWalk, 2), (.run, 3), (.walk, 3), (.run, 3), (.walk, 3), (.cooldownWalk, 2),
+        ]))
+        _ = drive(&machine, zone: { _ in nil }, maxSeconds: 30)
+        #expect(machine.walksCompleted == 2)
+        #expect(machine.intervalsCompleted == 2)
+    }
+
+    @Test func skippedWalkEarnsNoWalkCredit() {
+        var machine = IntervalStateMachine(config: config([(.run, 3), (.walk, 30), (.run, 3)]))
+        _ = machine.tick(deltaTime: 3, currentZone: nil)     // finish the run
+        #expect(machine.currentPhase == .walk)
+        _ = machine.skipCurrentSegment()                      // user skips the walk
+        _ = machine.tick(deltaTime: 3, currentZone: nil)     // finish the last run
+        #expect(machine.walksCompleted == 0)                  // nothing was demonstrated (N6)
+        #expect(machine.intervalsCompleted == 2)
+    }
+
+    @Test func timeInTargetZoneAccumulatesOnlyInZoneDuringRuns() {
+        // 6s run: 3 ticks in the target zone, 2 above it, 1 with no reading; then a walk
+        // spent entirely "in zone" — which must not count (walks below zone are desired).
+        var machine = IntervalStateMachine(config: config([(.run, 6), (.walk, 4)], targetZone: 2))
+        let zones: [Int?] = [2, 2, 3, 3, 2, nil]
+        for zone in zones { _ = machine.tick(deltaTime: 1, currentZone: zone) }
+        #expect(machine.timeInTargetZone == 3)
+
+        for _ in 0..<4 { _ = machine.tick(deltaTime: 1, currentZone: 2) }
+        #expect(machine.timeInTargetZone == 3)   // walk ticks added nothing
+    }
+
+    @Test func nilZoneTicksNeverAccumulateZoneTime() {
+        var machine = IntervalStateMachine(config: config([(.run, 5)], targetZone: 2))
+        _ = drive(&machine, zone: { _ in nil }, maxSeconds: 10)
+        #expect(machine.timeInTargetZone == 0)
+    }
 }

@@ -1,23 +1,25 @@
 import SwiftUI
+import AdaptiveCore
 
-/// The post-workout perceived-effort rating (build 9) — Apple's Workout "Effort" (1–10),
-/// crown-scrubbed like the strength rep hero (the app's crown-for-truth precedent). Optional:
-/// left at "–" it's a skip. Shown only on the *complete* screen (post-effort), never mid-work
-/// (N5). Its result writes `HKWorkoutEffortScore` to Health and feeds next session's
-/// progression — a high rating holds an advance the objective counters would have pushed.
+/// The post-workout perceived-effort rating — coarse levels (Easy / Moderate / Hard /
+/// All-out) stepped with −/+ buttons (P6.1). Optional: left at "–" it's a skip. Shown only
+/// on the *complete* screen (post-effort), never mid-work (N5). The chosen level's
+/// `EffortLevel.score` (2/5/8/10) writes `HKWorkoutEffortScore` and feeds next session's
+/// progression — Hard and All-out both hold an advance the objective counters would have
+/// pushed (score ≥ the policies' high-effort threshold).
 ///
-/// Crown focus is **opt-in by tap**, never grabbed on appear: this control lives inside the
-/// scrollable summary, where the crown's default job is scrolling. Auto-focusing on appear
-/// meant a scroll gesture silently *set a rating* — and the rating gates progression, so a
-/// stray flick could hold or ease next session's plan. The tiny crown glyph next to the value
-/// is the established "this number is crown-live" affordance (see the strength rep hero);
-/// here it lights up in the tint while focused so the two crown modes are distinguishable.
+/// Deliberately NO crown involvement: this control lives inside the scrollable summary,
+/// and on-device use showed a crown-focused rater captures the crown for the rest of the
+/// screen — with wet post-run fingers unable to touch-scroll, that trapped the whole
+/// summary. Buttons are the honest input here; the crown's one job on this screen is
+/// scrolling. (The strength rep hero keeps its crown — that screen doesn't scroll.)
 struct EffortRatingControl: View {
     @Binding var effort: Int?
     var tint: Color
 
-    @State private var crown: Double = 0
-    @FocusState private var focused: Bool
+    private var level: EffortLevel? {
+        effort.flatMap(EffortLevel.init(score:))
+    }
 
     var body: some View {
         VStack(spacing: 3) {
@@ -25,67 +27,55 @@ struct EffortRatingControl: View {
                 .font(.caption2.weight(.semibold))
                 .tracking(1.5)
                 .foregroundStyle(WatchTheme.textSecondary)
-            HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text(effort.map { "\($0)" } ?? "–")
-                    .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(effort == nil ? .secondary : tint)
-                Image(systemName: "digitalcrown.horizontal.arrow.counterclockwise.fill")
-                    .font(.caption2)
-                    .foregroundStyle(focused ? tint : .secondary.opacity(0.7))
+            HStack(spacing: 10) {
+                stepButton("minus", enabled: effort != nil) {
+                    effort = level?.down?.score   // below Easy collapses to unrated (the skip)
+                }
+                Text(level?.label ?? "–")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundStyle(level == nil ? .secondary : tint)
+                    .frame(minWidth: 88)          // fits "Moderate"; the words never reflow the ±
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                stepButton("plus", enabled: level != .allOut) {
+                    effort = (level?.up ?? .easy).score
+                }
             }
-            .focusable(true)
-            .focused($focused)
-            .digitalCrownRotation(
-                $crown, from: 0, through: 10, by: 1,
-                sensitivity: .low, isContinuous: false, isHapticFeedbackEnabled: true
-            )
-            .onChange(of: crown) { _, value in
-                let rounded = Int(value.rounded())
-                effort = rounded < 1 ? nil : min(10, rounded)
-            }
-            Text(hint)
+            Text(level == nil ? "How did it feel?" : " ")
                 .font(.caption2)
                 .foregroundStyle(WatchTheme.textSecondary)
         }
-        // The whole stack is the tap target — a 30pt digit alone is a stingy thing to have
-        // to hit post-workout with a sweaty finger.
-        .contentShape(Rectangle())
-        .onTapGesture { focused = true }
-        // One element for VoiceOver, adjustable like the rep hero: swipe up/down sets the
-        // rating without needing the crown-focus dance at all. Below 1 collapses back to
-        // "not rated" (the skip), mirroring the crown's 0 detent.
+        // One element for VoiceOver, adjustable: swipe up/down steps the levels.
         .accessibilityElement()
         .accessibilityLabel("Effort rating")
-        .accessibilityValue(effort.map { "\($0) of 10" } ?? "not rated")
+        .accessibilityValue(level?.label ?? "not rated")
         .accessibilityHint("Adjust to rate how hard the workout felt")
         .accessibilityAdjustableAction { direction in
             switch direction {
-            case .increment: effort = min(10, (effort ?? 0) + 1)
-            case .decrement:
-                let lowered = (effort ?? 0) - 1
-                effort = lowered < 1 ? nil : lowered
+            case .increment: effort = (level?.up ?? level ?? .easy).score
+            case .decrement: effort = level?.down?.score
             @unknown default: break
             }
-            // Keep the crown-bound mirror in step (same discipline as the rep hero): without
-            // this, the next crown turn would snap the rating back to the stale detent.
-            crown = Double(effort ?? 0)
         }
     }
 
-    /// The line under the number: the meaning of a set rating, or how to set one. Before the
-    /// control is focused the instruction is "tap" — saying "turn crown" while the crown still
-    /// scrolls the summary would be a lie.
-    private var hint: String {
-        if let effort { return Self.label(effort) }
-        return focused ? "Turn crown to rate" : "Tap to rate"
+    /// A ±44pt round step target — post-workout fingers are wet; stingy targets were the
+    /// whole complaint.
+    private func stepButton(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .background(.quaternary, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
     }
 
+    /// The coarse word for an arbitrary 1–10 score (kept for callers that render historical
+    /// fine-grained ratings).
     static func label(_ effort: Int) -> String {
-        switch effort {
-        case ...3: "Easy"
-        case 4...6: "Moderate"
-        case 7...8: "Hard"
-        default: "All-out"
-        }
+        EffortLevel(score: effort)?.label ?? "\(effort)"
     }
 }

@@ -115,7 +115,8 @@ private struct RunBlockView: View {
                     active.walkSeconds = seeds.walkSeconds
                 }
                 activeCard = active
-                manager.start(config: SessionConfig(plan: IntervalPlan.plan(for: active)), routineName: "Run")
+                manager.start(config: SessionConfig(plan: IntervalPlan.plan(for: active)),
+                              routineName: "Run", routineId: routineId)
             }
         }
     }

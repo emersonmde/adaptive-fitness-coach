@@ -2,19 +2,24 @@ import SwiftUI
 import AdaptiveCore
 
 /// A5 — done. Shown the instant the session ends: everything the engine tracked itself
-/// (time, splits, intervals) is here immediately; distance and average HR fill in when the
-/// OS finishes finalizing the workout in the background. The one status line tracks that
-/// finalize honestly — "Saving…" → "Saved to Health".
+/// (time running, splits, intervals) is here immediately; distance and average HR fill in
+/// when the OS finishes finalizing the workout in the background. The one status line tracks
+/// that finalize honestly — "Saving…" → "Saved to Health".
 ///
-/// Build 9 adds an optional **effort rating** (crown, 1–10, skippable): the app's one
-/// deliberate post-workout question, matching Apple's Workout "Effort". It's post-effort
-/// (never mid-work — N5) and optional, and `notePreview` shows its effect on next session's
-/// plan live as the crown turns — the adaptation Apple's rating can't do. `onDone(effort)`
-/// carries the rating (nil = skipped) out to write Health + gate progression.
+/// P6.1 rework: the screen's hero is **time running** — the quantity the adaptive engine
+/// actually moves, engine-owned so it never flashes a placeholder, and the number the
+/// comparison lines speak to. Under it: the run/walk split sub-line, then a reserved slot
+/// where "vs last run" / "vs 28-day baseline" fill in asynchronously from Health history
+/// (silent when there is no history — never a spinner, never a fabricated zero). The effort
+/// rating is coarse-level buttons (no crown — the crown's one job here is scrolling), and
+/// `notePreview` still shows the rating's effect on next session live.
 struct WorkoutCompleteView: View {
     let summary: SessionSummary
     var saveState: HealthSaveState = .saved
-    /// The "Next run" note for a given effort — recomputed live as the crown turns.
+    /// Comparison lines, filled asynchronously by the container; nil while loading (the slot
+    /// holds its height), empty when there's honestly nothing to compare against.
+    var comparisons: [RunComparison.Line]?
+    /// The "Next run" note for a given effort — recomputed live as the level steps.
     var notePreview: (Int?) -> String?
     let onDone: (Int?) -> Void
 
@@ -33,20 +38,62 @@ struct WorkoutCompleteView: View {
         }
     }
 
+    /// "6 runs · 5 walks · 62% running" — all engine-owned, instant. Percentage only when
+    /// both phases actually happened.
+    private var splitLine: String? {
+        guard summary.intervalsCompleted > 0 else { return nil }
+        var parts = ["\(summary.intervalsCompleted) run\(summary.intervalsCompleted == 1 ? "" : "s")"]
+        if summary.walksCompleted > 0 {
+            parts.append("\(summary.walksCompleted) walk\(summary.walksCompleted == 1 ? "" : "s")")
+        }
+        let moving = summary.totalRunDuration + summary.totalWalkDuration
+        if moving > 0, summary.totalWalkDuration > 0 {
+            parts.append("\(Int((summary.totalRunDuration / moving * 100).rounded()))% running")
+        }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 40))
-                    .foregroundStyle(WatchTheme.run)
-                    .symbolEffect(.bounce, options: .nonRepeating)
-
-                Text("Done")
-                    .font(.title3.bold())
+                // Identity moment, compressed — the hero below owns the screen now.
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(WatchTheme.run)
+                        .symbolEffect(.bounce, options: .nonRepeating)
+                    Text("Done")
+                        .font(.title3.bold())
+                }
                 Text(saveLine.text)
                     .font(.caption2)
                     .foregroundStyle(saveLine.color)
                     .animation(WatchTheme.Motion.settle, value: saveState)
+
+                // HERO: time running — glyph-anchored so the number identifies itself (N5).
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Image(systemName: "figure.run")
+                        .font(.body)
+                        .foregroundStyle(WatchTheme.run)
+                    Text(summary.totalRunDuration.clockString)
+                        .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                    Text("running")
+                        .font(.caption)
+                        .foregroundStyle(WatchTheme.textSecondary)
+                }
+                .padding(.top, 2)
+                .accessibilityElement(children: .combine)
+
+                if let splitLine {
+                    Text(splitLine)
+                        .font(.caption2)
+                        .foregroundStyle(WatchTheme.textSecondary)
+                }
+
+                // Reserved comparison slot: fixed height whether loading, empty, or filled —
+                // the layout never jumps when Health answers (or doesn't).
+                comparisonSlot
+                    .frame(minHeight: 28)
 
                 VStack(spacing: 6) {
                     stat("Time", summary.totalDuration.clockString)
@@ -54,12 +101,18 @@ struct WorkoutCompleteView: View {
                     // holds the slot so the layout never jumps.
                     stat("Distance", distanceText ?? "—")
                     stat("Avg HR", summary.averageHeartRate.map { "\(Int($0)) bpm" } ?? "—")
-                    stat("Intervals", "\(summary.intervalsCompleted)")
+                    stat("Longest run", RunComparison.clock(summary.longestRunSeconds))
+                    if summary.timeInTargetZone > 0 {
+                        stat("In zone", summary.timeInTargetZone.clockString)
+                    }
+                    if let drop = summary.meanRecoveryDrop {
+                        stat("Recovery drop", "\(Int(drop.rounded())) bpm")
+                    }
                     if summary.adaptationsApplied > 0 {
                         stat("Adaptations", "\(summary.adaptationsApplied)")
                     }
                 }
-                .padding(.top, 4)
+                .padding(.top, 2)
 
                 EffortRatingControl(effort: $effort, tint: WatchTheme.run)
                     .padding(.top, 6)
@@ -78,6 +131,30 @@ struct WorkoutCompleteView: View {
                     .padding(.top, 4)
             }
             .padding(.horizontal, 6)
+        }
+    }
+
+    /// The comparison lines: facts, never grades. An upward move tints run-green (more
+    /// running is the hue's own quantity); a downward one stays neutral secondary — no red,
+    /// no shame. Silent while loading and when history is honestly absent.
+    @ViewBuilder private var comparisonSlot: some View {
+        if let comparisons, !comparisons.isEmpty {
+            VStack(spacing: 2) {
+                ForEach(comparisons, id: \.self) { line in
+                    HStack(spacing: 4) {
+                        Text(line.delta)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(line.improved == true ? WatchTheme.run : Color.primary)
+                        Text(line.label)
+                            .foregroundStyle(WatchTheme.textSecondary)
+                    }
+                    .font(.caption2)
+                }
+            }
+            .transition(.opacity)
+            .animation(WatchTheme.Motion.settle, value: comparisons)
+        } else {
+            Color.clear
         }
     }
 

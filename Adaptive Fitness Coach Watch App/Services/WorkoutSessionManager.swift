@@ -56,6 +56,8 @@ final class WorkoutSessionManager {
     private(set) var summary: SessionSummary?
     private(set) var healthSaveState: HealthSaveState = .saving
     private(set) var routineName: String = "Adaptive Run"
+    /// The routine this session runs, for digest attribution (P6.1). nil = ad-hoc/demo.
+    private(set) var routineId: UUID?
 
     private let injectedBackend: WorkoutBackend?
     private let autoTick: Bool
@@ -132,17 +134,23 @@ final class WorkoutSessionManager {
     // MARK: - Start
 
     /// Production entry: kick off the workout and the adaptive loop asynchronously.
-    func start(config: SessionConfig, routineName: String, adaptationConfig: AdaptationConfig = AdaptationConfig()) {
+    /// `routineId` attributes the saved workout's run digest to its routine (P6.1); nil for
+    /// ad-hoc/demo runs — the digest still writes, just unattributed.
+    func start(config: SessionConfig, routineName: String, routineId: UUID? = nil,
+               adaptationConfig: AdaptationConfig = AdaptationConfig()) {
         guard sessionState == .idle else { return }
-        Task { await begin(config: config, routineName: routineName, adaptationConfig: adaptationConfig) }
+        Task { await begin(config: config, routineName: routineName, routineId: routineId,
+                           adaptationConfig: adaptationConfig) }
     }
 
     /// Set up the backend and engine and go active. Awaitable so tests can drive ticks after.
-    func begin(config: SessionConfig, routineName: String, adaptationConfig: AdaptationConfig = AdaptationConfig()) async {
+    func begin(config: SessionConfig, routineName: String, routineId: UUID? = nil,
+               adaptationConfig: AdaptationConfig = AdaptationConfig()) async {
         guard sessionState == .idle, !isBeginning else { return }
         isBeginning = true
         defer { isBeginning = false }
         self.routineName = routineName
+        self.routineId = routineId
 
         let backend = injectedBackend ?? HealthKitWorkoutBackend()
         self.backend = backend
@@ -368,6 +376,8 @@ final class WorkoutSessionManager {
             walksHitCap: machine?.walksHitCap ?? 0,
             walksDefied: walksDefied,
             fastRecoveries: machine?.fastRecoveries ?? 0,
+            walksCompleted: machine?.walksCompleted ?? 0,
+            timeInTargetZone: machine?.timeInTargetZone ?? 0,
             longestRunSeconds: machine?.longestRunInterval ?? 0,
             meanRecoveryDrop: machine?.meanRecoveryDrop,
             endedEarly: endedEarly
@@ -384,8 +394,11 @@ final class WorkoutSessionManager {
         let generation = sessionGeneration
         backend = nil
         finishedBackend = finishingBackend   // survives for the effort rating
+        // The digest snapshots the summary just built above — Health carries it as workout
+        // metadata (P6.1), making it the self-maintaining history behind comparisons/trends.
+        let digestMetadata = summary.map { RunDigest(summary: $0, routineId: routineId).metadata() } ?? [:]
         finalizeTask = Task { [weak self] in
-            let totals = await finishingBackend?.end() ?? WorkoutTotals()
+            let totals = await finishingBackend?.end(metadata: digestMetadata) ?? WorkoutTotals()
             guard let self, self.sessionGeneration == generation, self.sessionState == .complete else { return }
             if var filled = self.summary {
                 filled.totalDistance = totals.distanceMeters
@@ -413,6 +426,7 @@ final class WorkoutSessionManager {
         backend = nil
         finishedBackend = nil
         machine = nil
+        routineId = nil
         latestZone = nil
         latestHeartRate = nil
         secondsSinceLastSample = 0

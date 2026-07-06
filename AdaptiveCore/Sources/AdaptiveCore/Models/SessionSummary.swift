@@ -26,6 +26,11 @@ public struct SessionSummary: Sendable, Hashable {
     /// Walks that ended at the floor (recovery confirmed as early as allowed) — the
     /// "fitter than the seeds" evidence for multi-notch progression.
     public var fastRecoveries: Int
+    /// Walk intervals completed naturally (recovery walks only — warmup/cooldown and skipped
+    /// walks don't count, mirroring `intervalsCompleted`'s rules).
+    public var walksCompleted: Int
+    /// Seconds of run time spent in the target zone (fresh zone readings only, N6).
+    public var timeInTargetZone: TimeInterval
     /// Longest single run interval sustained this session, seconds.
     public var longestRunSeconds: TimeInterval
     /// Mean heart-rate recovery drop (bpm) across the session's walks, nil if unmeasurable.
@@ -49,6 +54,8 @@ public struct SessionSummary: Sendable, Hashable {
         walksHitCap: Int = 0,
         walksDefied: Int = 0,
         fastRecoveries: Int = 0,
+        walksCompleted: Int = 0,
+        timeInTargetZone: TimeInterval = 0,
         longestRunSeconds: TimeInterval = 0,
         meanRecoveryDrop: Double? = nil,
         endedEarly: Bool = false,
@@ -66,6 +73,8 @@ public struct SessionSummary: Sendable, Hashable {
         self.walksHitCap = walksHitCap
         self.walksDefied = walksDefied
         self.fastRecoveries = fastRecoveries
+        self.walksCompleted = walksCompleted
+        self.timeInTargetZone = timeInTargetZone
         self.longestRunSeconds = longestRunSeconds
         self.meanRecoveryDrop = meanRecoveryDrop
         self.endedEarly = endedEarly

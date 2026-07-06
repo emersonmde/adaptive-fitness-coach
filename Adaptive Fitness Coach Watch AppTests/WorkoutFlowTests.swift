@@ -23,6 +23,24 @@ private final class FailingBackend: WorkoutBackend {
     func end() async -> WorkoutTotals { WorkoutTotals() }
 }
 
+/// Captures the metadata dict handed to `end(metadata:)` — pins that the run digest reaches
+/// the Health-persistence seam (P6.1) with the session's real numbers.
+@MainActor
+private final class MetadataSpyBackend: WorkoutBackend {
+    var onHeartRate: ((Double) -> Void)?
+    var onZoneChange: ((Int?) -> Void)?
+    var onCadence: ((Double) -> Void)?
+    var onFailure: (() -> Void)?
+    private(set) var capturedMetadata: [String: String]?
+
+    func start() async throws {}
+    func end() async -> WorkoutTotals { WorkoutTotals() }
+    func end(metadata: [String: String]) async -> WorkoutTotals {
+        capturedMetadata = metadata
+        return WorkoutTotals()
+    }
+}
+
 /// A backend whose `end()` never returns — stands in for a slow HealthKit finalize, to prove
 /// the summary no longer waits on it.
 @MainActor
@@ -135,6 +153,30 @@ struct WorkoutFlowTests {
         #expect(manager.summary?.averageHeartRate == 138)
         #expect((manager.summary?.intervalsCompleted ?? 0) >= 2)
         _ = summary
+    }
+
+    @Test func finishedSessionHandsTheRunDigestToTheBackend() async throws {
+        // P6.1: the saved workout carries the run digest as metadata — the self-maintaining
+        // history behind "vs last run" and the phone trends. Pin that end(metadata:) receives
+        // a decodable digest with the session's numbers and its routine attribution.
+        let backend = MetadataSpyBackend()
+        let manager = WorkoutSessionManager(backend: backend, autoTick: false)
+        let routineId = UUID()
+        await manager.begin(config: SessionConfig(plan: shortPlan()),
+                            routineName: "Test", routineId: routineId)
+        manager.receiveZone(2)   // in the target zone → zone dwell accrues during runs
+        tick(manager, seconds: 40)
+        await waitUntilComplete(manager)
+        await manager.finalizeTask?.value
+
+        let metadata = try #require(backend.capturedMetadata)
+        let digest = try #require(RunDigest(metadata: metadata))
+        #expect(digest.routineId == routineId)
+        #expect(digest.runIntervals >= 2)
+        #expect(digest.walkIntervals >= 1)
+        #expect(digest.runSeconds > 0)
+        #expect(digest.timeInTargetZoneSeconds > 0)
+        #expect(abs(digest.runSeconds - (manager.summary?.totalRunDuration ?? -1)) < 1)
     }
 
     // MARK: - Interval countdown (the glance timer shows remaining, not elapsed)
