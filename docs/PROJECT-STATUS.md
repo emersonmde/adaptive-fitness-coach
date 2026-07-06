@@ -2,7 +2,7 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-05 (P6 underway on the `p6` branch): **P6 Phases 1–2 IMPLEMENTED — see their milestone sections** (Phase 1: progression channel v4, reasons on the wire, watch proposal lane, phone journal + confirm cards. Phase 2: ContextPackComposer + ExportPackSheet + one-time health disclosure + return-from-break card). One TestFlight build ships at the END of P6 as build 17, per the user. The 5 lb weight-grid fix is COMMITTED to main. String Catalogs adopted on both app targets (P6 step 0). Next: Phase 3 watch quick-log, then Phase 4 entry refresh/alternates._
+_Last updated 2026-07-05 (P6 underway on the `p6` branch): **P6 Phases 1–3 IMPLEMENTED — see their milestone sections** (Phase 1: progression channel v4, reasons on the wire, watch proposal lane, phone journal + confirm cards. Phase 2: ContextPackComposer + ExportPackSheet + one-time health disclosure + return-from-break card. Phase 3: watch quick-log — first live WC channel, QuickLogService, pending-REVIEW flow + one notification, `-simulateQuickLog`). One TestFlight build ships at the END of P6 as build 17, per the user. The 5 lb weight-grid fix is COMMITTED to main. String Catalogs adopted on both app targets (P6 step 0). Next: Phase 4 entry refresh/alternates._
 
 _Previous update 2026-07-05 (night): **P0–P5 shipped; TestFlight build 16 = the P5 polish deep dive + the post-15 gesture settlement (chevrons-only day nav + Notification-style SwipeableRow + day snapshot cache).** P5 (see its section): one motion vocabulary + Reduce-Motion gap closed, deliberate phone haptics (`Theme.Haptics`), token compliance both targets (watch gray drift, `info`/`heat`/`metricNumber`/radius scale), honest states (watch "Syncing from iPhone…" first launch, exit-ful wrap-up), accessibility pass (DailyIntakeLine container bug, labels, contrast floor), dark-mode declared to the OS, iPhone-only portrait, AccentColor populated, FoodDayView structural cleanup + SwipeableRow extraction. **NEXT = P6, RESHAPED 2026-07-05 after the user's build-16 verdict (on-device model: meal-NLP only, fails at routine building; the Claude export loop is the invested path — read the P6 Roadmap section):** progression journal + structural-confirm gate, **"Export to Claude" context packs** (fitness snapshot / check-in / meal planning / plateau / constraint rework; scope picker + honest health-export disclosure), watch quick-log, entry refresh/alternates; agentic rung 3 + FoundationModels-coach investment PUSHED pending the PCC grant. **On the tree UNRELEASED: the 5 lb weight-grid fix** (`Weight.stepped`/`snappedToGrid`, curl/lateral-raise seeds+steps on-grid, progression exits through a grid snap — fixes the stuck-22.5; 393 package + watch unit + phone build green, awaiting ship-or-hold). Also the confirm-on-device list (Health deep-link probes, LookupLab, PCC flow). Build 15 was the hybrid gesture split (summary zone swipes days), retired same-day by on-device feel; build 14's full-page pager stole row swipes and animated backwards. Build 14 carried the rest of the repage (pinned add bar, past-day backfill via when-row prefill, relog toast instead of teleport, full action set on tap/long-press). Build 13 carried the typed-meal parsing fixes (mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
 
@@ -180,6 +180,48 @@ the same packs unchanged.
   SwiftUI Menu items surface by LABEL, not accessibilityIdentifier.
 - **On-device pending:** real HK aggregate values in a pack; an actual paste-into-Claude
   round trip (user judgment on pack quality); the broadened Health prompt.
+
+### P6 Phase 3 — Watch quick-log ✅ IMPLEMENTED (2026-07-05, on `p6`)
+Meal logging reaches the wrist. The phone stays the brain (the model never runs on watch —
+the existing split); the watch gets dictation in, one glanceable confirm out.
+- **First live WC channel.** `WCMessageCodec` quick-log channel v1 (`Key.quickLog`, one
+  version constant, `QuickLogMessage` envelope discriminated inside the blob:
+  request/draft/confirm/outcome — `Connectivity/QuickLog.swift`). Reachable path =
+  `sendMessage` round trips (watch `sendQuickLog`/`confirmQuickLog`, `isReachable`-guarded,
+  error → nil); phone implements `didReceiveMessage:replyHandler:` (empty reply = "couldn't
+  draft", the watch's honest fallback trigger). Offline = `transferUserInfo` of the raw
+  request (same pre-activation buffering as progression); `didReceiveUserInfo` now demuxes
+  quick-log vs progression by payload key.
+- **`QuickLogService` (package, headless).** identify → resolve via the standard pipeline
+  seams; holds what it drafted so confirm records EXACTLY the numbers the wrist showed;
+  commit mirrors `MealLogController.commit`'s durability contract (enqueue-all → record →
+  remove; `saved` true only when every write confirmed). Deliberately not the controller —
+  its phases present phone UI, and a watch log must never pop a phone sheet.
+  `MealPipelineProvider.sharedQueue` is now ONE queue per launch (controller + coordinator
+  + review UI; two instances over one file would hold stale copies).
+- **Pending-REVIEW, never auto-commit.** `PendingMealQueue.PendingItem` gained
+  `needsReview`/`sourceText` (tolerant decode; pre-P6 rows = retry rows);
+  `resumePending()` skips review rows. Phone `QuickLogCoordinator` (@Observable) surfaces
+  them as **WeekView cards** ("From your watch — needs review" — deliberately the hub, not
+  buried in FoodDayView; also rendered on the empty state for meal-only use); tap → the
+  NORMAL typed-capture confirmation via `beginCapture(typedText:, preferredDate:)`; commit
+  clears the row (cancel keeps it). **First UNUserNotificationCenter use:** one
+  non-repeating nudge ~4h after arrival ("Meal waiting for review"), deferred-contextual
+  auth at first arrival, denial degrades to the card alone, cleared when nothing waits.
+- **Watch UI.** `QuickLogView` behind a `QuickLogTransport` seam (live | scripted):
+  TextField (dictation/scribble) → "Looking up…" → draft (name · **kcal hero** ·
+  provenance line · ✓/✗) → "Logged" only after the phone confirmed the write; unreachable
+  → "Save for iPhone" (queue) → honest "finish it there" state. Entry: a quiet
+  `fork.knife` toolbar door on the routine launch picker. **`-simulateQuickLog`** forces
+  the flow on a canned transport — the only way to see it without hardware.
+- **Testing:** 444 package tests (12 new: codec round-trip/version-reject/demux,
+  QuickLogService draft/commit/decline/failed-write/replay-safety/offline-park,
+  resumePending-skips-review, pre-P6 row decode); MealFlowUITests 16/16 (new:
+  `-seedNeedsReview` → review card → standard sheet → commit clears); watch unit suite
+  green; both targets build.
+- **On-device pending (the heavy phase — plan the hardware session around it):** real
+  `sendMessage` reachability/latency/timeout feel, dictation input, store-and-forward with
+  the phone locked/away, notification delivery, end-to-end Health write from the wrist.
 
 ### P0 — Adaptive run/walk ✅ DONE
 Shipped, reviewed, redesigned. See snapshot above.

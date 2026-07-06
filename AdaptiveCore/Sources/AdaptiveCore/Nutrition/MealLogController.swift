@@ -388,7 +388,9 @@ public final class MealLogController {
     public func resumePending() async {
         guard let queue else { return }
         let token = generation
-        for pending in queue.pending {
+        // Review rows (watch quick-log offline) wait for the USER, not for a retry — the
+        // drain must never write a number nobody saw.
+        for pending in queue.pending where !pending.needsReview {
             guard token == generation else { return }
             let item = pending.item.draftItem
             let (resolved, _) = await resolver.resolve(

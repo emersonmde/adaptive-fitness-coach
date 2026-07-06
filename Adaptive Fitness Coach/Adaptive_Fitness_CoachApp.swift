@@ -16,6 +16,8 @@ struct Adaptive_Fitness_CoachApp: App {
     /// structural-confirm proposals, both fed by inbound watch batches.
     @State private var journal: ProgressionJournal
     @State private var proposals: ProgressionProposalStore
+    /// P6 watch quick-log: live drafts + the offline pending-review flow.
+    @State private var quickLog: QuickLogCoordinator
 
     init() {
         // Activate the watch link first so the store's onChange has somewhere to send.
@@ -40,9 +42,15 @@ struct Adaptive_Fitness_CoachApp: App {
         connectivity.store = store
         connectivity.journal = journal
         connectivity.proposals = proposals
+        let quickLog = QuickLogCoordinator()
+        connectivity.quickLog = quickLog
         // UI tests: seed a structural proposal + journal history through the real intake path.
         if ProcessInfo.processInfo.arguments.contains("-seedProposal") {
             Self.seedProposalDemo(store: store, journal: journal, proposals: proposals)
+        }
+        // UI tests: an offline watch quick-log waiting for review, via the real offline path.
+        if ProcessInfo.processInfo.arguments.contains("-seedNeedsReview") {
+            quickLog.handleOffline(.request(QuickLogRequest(text: "two tacos from Chipotle")))
         }
         // Dev/QA only: populate a throwaway store with demo routines for screenshots.
         if ProcessInfo.processInfo.arguments.contains("-seedDemo"), store.routines.isEmpty {
@@ -60,6 +68,7 @@ struct Adaptive_Fitness_CoachApp: App {
         _store = State(initialValue: store)
         _journal = State(initialValue: journal)
         _proposals = State(initialValue: proposals)
+        _quickLog = State(initialValue: quickLog)
     }
 
     /// `-seedProposal` (UI tests): a strength routine whose squat topped its band, arriving
@@ -99,7 +108,7 @@ struct Adaptive_Fitness_CoachApp: App {
     }
 
     private var mainContent: some View {
-        WeekView(store: store, journal: journal, proposals: proposals)
+        WeekView(store: store, journal: journal, proposals: proposals, quickLog: quickLog)
             .preferredColorScheme(.dark) // dark/neon brand: force dark regardless of system
             .tint(Theme.accent)
             .task {

@@ -11,20 +11,33 @@ enum MealPipelineProvider {
         ProcessInfo.processInfo.arguments.contains("-simulateMealScan")
     }
 
+    /// ONE pending queue per launch, shared by the controller, the watch quick-log
+    /// coordinator, and the review UI (P6) — two instances over the same file would hold
+    /// stale in-memory copies of each other's rows. Ephemeral under `-uiTesting`.
+    static let sharedQueue: PendingMealQueue = {
+        let ephemeral = ProcessInfo.processInfo.arguments.contains("-uiTesting")
+        let queueURL = ephemeral
+            ? FileManager.default.temporaryDirectory
+                .appendingPathComponent("ephemeral-pending-\(UUID().uuidString).json")
+            : nil
+        return PendingMealQueue(fileURL: queueURL)
+    }()
+
+    /// The typed/scanned identify pipeline — shared by the controller and the quick-log
+    /// coordinator (same scripted-vs-production split everywhere).
+    static func makePipeline() -> any MealPipeline {
+        isSimulated ? ScriptedMealPipeline.demo(delays: true) : FoundationModelsMealPipeline()
+    }
+
     /// The app-level controller (one per launch; the capture flow resets it per session).
     static func makeController() -> MealLogController {
         if isSimulated {
             let pipeline = ScriptedMealPipeline.demo(delays: true)
-            let ephemeral = ProcessInfo.processInfo.arguments.contains("-uiTesting")
-            let queueURL = ephemeral
-                ? FileManager.default.temporaryDirectory
-                    .appendingPathComponent("ephemeral-pending-\(UUID().uuidString).json")
-                : nil
             return MealLogController(
                 pipeline: pipeline,
                 resolver: pipeline.scriptedResolver(),
                 recorder: sharedRecorder,
-                queue: PendingMealQueue(fileURL: queueURL)
+                queue: sharedQueue
             )
         }
         let pipeline = FoundationModelsMealPipeline()
@@ -41,7 +54,7 @@ enum MealPipelineProvider {
             pipeline: pipeline,
             resolver: resolver,
             recorder: sharedRecorder,
-            queue: PendingMealQueue()
+            queue: sharedQueue
         )
     }
 

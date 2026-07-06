@@ -22,6 +22,10 @@ struct SessionContainerView: View {
     private let simulateRun: Bool
     private let simulateStrength: Bool
     private let simulateMixed: Bool
+    private let simulateQuickLog: Bool
+
+    /// Quick-log sheet (P6) — reachable from the routine picker's toolbar.
+    @State private var showingQuickLog = false
 
     /// The routine the user picked to run (via the crown launch picker). `nil` = still picking.
     @State private var chosen: Routine?
@@ -41,10 +45,15 @@ struct SessionContainerView: View {
         self.simulateRun = args.contains("-simulateWorkout")
         self.simulateStrength = args.contains("-simulateStrength")
         self.simulateMixed = args.contains("-simulateMixed")
+        self.simulateQuickLog = args.contains("-simulateQuickLog")
     }
 
     var body: some View {
-        if simulateMixed {
+        if simulateQuickLog {
+            // The only way to see the quick-log flow without hardware (paired-sim WC is
+            // unreliable) — a canned transport drafts a fixed salad.
+            NavigationStack { QuickLogView(transport: .scripted) }
+        } else if simulateMixed {
             WorkoutSequenceView(routineName: "Mixed Demo", blocks: Self.demoMixedBlocks, simulate: true)
         } else if simulateStrength {
             StrengthSessionContainerView(store: store, simulate: true)
@@ -69,12 +78,31 @@ struct SessionContainerView: View {
                 RunSessionContainerView(store: store, simulate: false)
             }
         } else {
-            RoutineLaunchPicker(routines: orderedRoutines, initialIndex: initialIndex) { chosen = $0 }
-                .task { routeLaunchRequest() }
-                .onReceive(launchRequest.$pendingRoutineId) { _ in routeLaunchRequest() }
-                // The complication can fire before the phone's routine context has synced —
-                // re-run the match when routines arrive so the request lands instead of dying.
-                .onChange(of: store.routines) { _, _ in routeLaunchRequest() }
+            NavigationStack {
+                RoutineLaunchPicker(routines: orderedRoutines, initialIndex: initialIndex) { chosen = $0 }
+                    .toolbar {
+                        // Quick-log (P6): the one non-workout action on the wrist. Quiet
+                        // toolbar door — the picker's Start stays the dominant element.
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showingQuickLog = true
+                            } label: {
+                                Image(systemName: "fork.knife")
+                            }
+                            .accessibilityLabel("Log a meal")
+                        }
+                    }
+                    .sheet(isPresented: $showingQuickLog) {
+                        if let connectivity {
+                            QuickLogView(transport: .live(connectivity)) { showingQuickLog = false }
+                        }
+                    }
+            }
+            .task { routeLaunchRequest() }
+            .onReceive(launchRequest.$pendingRoutineId) { _ in routeLaunchRequest() }
+            // The complication can fire before the phone's routine context has synced —
+            // re-run the match when routines arrive so the request lands instead of dying.
+            .onChange(of: store.routines) { _, _ in routeLaunchRequest() }
         }
     }
 

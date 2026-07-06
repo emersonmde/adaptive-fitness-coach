@@ -64,6 +64,33 @@ final class MealFlowUITests: XCTestCase {
         log.tap()
     }
 
+    // MARK: - P6 watch quick-log pending review
+
+    /// `-seedNeedsReview` parks an offline watch dictation through the real offline path.
+    /// The week screen shows the review card; tapping it runs the NORMAL typed-capture
+    /// confirmation (numbers seen before commit), and committing clears the card.
+    func testWatchQuickLogReviewCardCommitsAndClears() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-simulateMealScan", "-seedNeedsReview"]
+        app.launch()
+
+        let card = app.buttons["quicklog.review.card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["“two tacos from Chipotle”"].exists)
+        card.tap()
+
+        // The standard confirmation sheet over the dictated text (scripted pipeline).
+        XCTAssertTrue(app.staticTexts["Two tacos"].waitForExistence(timeout: 5))
+        tapLogWhenReady(app)
+
+        // Committed → the review card is gone for good.
+        let deadline = Date().addingTimeInterval(5)
+        while card.exists, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        XCTAssertFalse(card.exists)
+    }
+
     /// The barcode fast path: scan → single pre-checked item → Log → total lands.
     func testBarcodeFastPath() throws {
         let app = launchApp()

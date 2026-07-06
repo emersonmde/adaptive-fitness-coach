@@ -57,6 +57,57 @@ final class WatchConnectivityManager: NSObject {
         }
     }
 
+    // MARK: - Quick-log (P6): live round trips, offline fallback
+
+    /// Send the dictated text for a live draft. nil = unreachable / timed out / the phone
+    /// couldn't produce one — the caller falls back to the offline queue, never a number.
+    func sendQuickLog(_ request: QuickLogRequest) async -> QuickLogDraft? {
+        guard WCSession.isSupported(), WCSession.default.isReachable,
+              let payload = try? WCMessageCodec.encode(quickLog: .request(request)) else { return nil }
+        return await withCheckedContinuation { continuation in
+            WCSession.default.sendMessage(payload, replyHandler: { reply in
+                if case .draft(let draft)? = try? WCMessageCodec.decodeQuickLog(from: reply) {
+                    continuation.resume(returning: draft)
+                } else {
+                    continuation.resume(returning: nil)
+                }
+            }, errorHandler: { _ in
+                continuation.resume(returning: nil)
+            })
+        }
+    }
+
+    /// Confirm (or cancel) a live draft. Returns true only when the phone confirmed every
+    /// Health write — "Logged" on the wrist is never a hope (N6).
+    func confirmQuickLog(_ confirm: QuickLogConfirm) async -> Bool {
+        guard WCSession.isSupported(), WCSession.default.isReachable,
+              let payload = try? WCMessageCodec.encode(quickLog: .confirm(confirm)) else { return false }
+        return await withCheckedContinuation { continuation in
+            WCSession.default.sendMessage(payload, replyHandler: { reply in
+                if case .outcome(let outcome)? = try? WCMessageCodec.decodeQuickLog(from: reply) {
+                    continuation.resume(returning: outcome.saved)
+                } else {
+                    continuation.resume(returning: false)
+                }
+            }, errorHandler: { _ in
+                continuation.resume(returning: false)
+            })
+        }
+    }
+
+    /// Offline fallback: park the raw text in the guaranteed-delivery queue. It lands in the
+    /// phone's pending-REVIEW flow — surfaced with a card, committed only after the user sees
+    /// it there (same buffering discipline as `sendProgression`).
+    func queueQuickLogOffline(_ request: QuickLogRequest) {
+        guard WCSession.isSupported(),
+              let message = try? WCMessageCodec.encode(quickLog: .request(request)) else { return }
+        if isActivated, WCSession.default.activationState == .activated {
+            WCSession.default.transferUserInfo(message)
+        } else {
+            pendingTransfers.append(message)
+        }
+    }
+
     /// Activation completed: hand the OS everything that queued up while it wasn't ready.
     private func flushPendingTransfers() {
         isActivated = true
