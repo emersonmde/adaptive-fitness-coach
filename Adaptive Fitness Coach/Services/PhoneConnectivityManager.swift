@@ -68,6 +68,20 @@ extension PhoneConnectivityManager: WCSessionDelegate {
         }
     }
 
+    /// The watch app was (re)installed, or the paired watch changed. A reinstall drops the
+    /// OS-held application context, and the only other pushes are routine edits and this
+    /// process's one activation — so without this, a fresh watch install stares at
+    /// "Syncing from iPhone…" until it times out into a false empty state while the phone
+    /// holds routines (hit on real hardware installing build 18).
+    nonisolated func sessionWatchStateDidChange(_ session: WCSession) {
+        guard session.isPaired, session.isWatchAppInstalled else { return }
+        Task { @MainActor in
+            if let routines = self.store?.routines, !routines.isEmpty {
+                self.sync(routines: routines)
+            }
+        }
+    }
+
     // Required on iOS so the session can re-activate after switching watches.
     nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
 
