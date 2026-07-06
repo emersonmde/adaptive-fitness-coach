@@ -36,3 +36,4 @@ build-archive/
 .env
 build-device/
 build-uitest/
+scratch-build.log
