@@ -173,5 +173,47 @@ final class RoutineFlowUITests: XCTestCase {
 
         // The schedule screen shows the Add to Calendar toggle.
         XCTAssertTrue(app.switches["Add to Calendar"].waitForExistence(timeout: 5))
+        // No run history (plain -uiTesting) → the insights section is silently absent.
+        XCTAssertFalse(app.otherElements["routineLastWorkout"].exists)
+    }
+
+    // MARK: - P6.1 per-routine insights
+
+    /// `-uiTestInsights` swaps in a canned five-session history: the routine detail grows a
+    /// LAST WORKOUT section, and Trends pushes the chart screen with baseline-suffixed stats.
+    func testRunRoutineShowsLastWorkoutAndTrends() throws {
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTesting", "-uiTestInsights"]
+        app.launch()
+
+        startNewRoutine(app, name: "Morning Run", day: "Monday")
+        addCard(app, "Adaptive Run")
+        app.buttons["Save"].firstMatch.tap()
+
+        let row = app.staticTexts["Morning Run"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        row.tap()
+
+        let section = app.otherElements["routineLastWorkout"]
+        XCTAssertTrue(section.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Time running"].exists)
+
+        app.buttons["routineTrends"].tap()
+        // A bare identifier on the screen's ZStack doesn't register as otherElements (the
+        // build-15 container lesson) — anchor on the section header instead, and query the
+        // chart type-agnostically.
+        XCTAssertTrue(app.staticTexts["TIME RUNNING · LAST 28 DAYS"].waitForExistence(timeout: 5))
+        // Five gate-passing sessions → the chart renders and a baseline suffix appears.
+        XCTAssertTrue(app.descendants(matching: .any)["insights.chart"].firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS 'vs 28-day average'")
+        ).firstMatch.exists)
+
+        // Keep a screenshot of the chart screen in the result bundle — the visual record
+        // for design review (charts aren't otherwise pinned by pixels).
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "RoutineInsights"
+        shot.lifetime = .keepAlways
+        add(shot)
     }
 }

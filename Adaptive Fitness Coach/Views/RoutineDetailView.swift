@@ -17,6 +17,11 @@ struct RoutineDetailView: View {
     @State private var confirmingDelete = false
     @State private var editingCards = false
     @State private var coachLaunch: CoachLaunch?
+    /// P6.1 insights: this routine's run history from Health (digest-bearing workouts).
+    /// nil while loading; the LAST WORKOUT section renders only when history exists —
+    /// absence is silent (no "0 workouts" guilt).
+    @State private var runTrend: RunTrend?
+    private let runHistory = RunHistoryProvider.make()
     /// Name edits buffer in the draft while the field has focus and commit once, on blur or
     /// Return — not per keystroke, which would hammer the store (each `update` persists,
     /// broadcasts to the watch, and re-syncs the Calendar event).
@@ -37,6 +42,11 @@ struct RoutineDetailView: View {
         // re-appearance the way `onAppear` would; it only (re)loads when the id actually changes.
         .task(id: routineID) {
             draft = store.routines.first { $0.id == routineID }
+            // Insights load for run-bearing routines only; empty history keeps the section out.
+            if store.routines.first(where: { $0.id == routineID })?.hasRun == true {
+                let history = await runHistory.history(for: routineID)
+                runTrend = history.isEmpty ? nil : RunTrend.make(history: history)
+            }
         }
         .navigationDestination(isPresented: $editingCards) {
             RoutineBuilderView(initialCards: draft?.cards ?? [], initialRounds: draft?.rounds ?? 1) { cards, rounds in
@@ -54,6 +64,44 @@ struct RoutineDetailView: View {
                 draft = store.routines.first { $0.id == routineID }
             }
         }
+    }
+
+    /// The LAST WORKOUT section body: a relative date, up to three quiet stat lines from the
+    /// latest run's digest, and the push into Trends.
+    private func lastWorkout(for routine: Routine, trend: RunTrend, latest: DatedRunDigest) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(RelativeWhen.string(for: latest.date))
+                .font(.caption)
+                .foregroundStyle(Theme.textSecondary)
+            ForEach(trend.stats.prefix(3), id: \.self) { stat in
+                HStack {
+                    Text(stat.label).foregroundStyle(Theme.textSecondary)
+                    Spacer()
+                    Text(stat.value)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Theme.textPrimary)
+                }
+                .font(.subheadline)
+            }
+            NavigationLink {
+                RoutineInsightsView(routine: routine, trend: trend)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chart.bar")
+                    Text("Trends")
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Theme.accent)
+            }
+            .padding(.top, 2)
+            .accessibilityIdentifier("routineTrends")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("routineLastWorkout")
     }
 
     /// A read-only summary of the card stack with an Edit button into the builder.
@@ -177,6 +225,14 @@ struct RoutineDetailView: View {
 
                 FieldSection(title: "WORKOUT") {
                     cardSummary(for: routine)
+                }
+
+                // P6.1: last run + trends, straight from Health's digest-bearing workouts.
+                // Rendered only when history exists — a routine never run says nothing.
+                if let trend = runTrend, let latest = trend.latest {
+                    FieldSection(title: "LAST WORKOUT") {
+                        lastWorkout(for: routine, trend: trend, latest: latest)
+                    }
                 }
 
                 FieldSection(title: "SCHEDULE") {
