@@ -368,6 +368,8 @@ final class WorkoutSessionManager {
             walksHitCap: machine?.walksHitCap ?? 0,
             walksDefied: walksDefied,
             fastRecoveries: machine?.fastRecoveries ?? 0,
+            walksCompleted: machine?.walksCompleted ?? 0,
+            timeInTargetZone: machine?.timeInTargetZone ?? 0,
             longestRunSeconds: machine?.longestRunInterval ?? 0,
             meanRecoveryDrop: machine?.meanRecoveryDrop,
             endedEarly: endedEarly
