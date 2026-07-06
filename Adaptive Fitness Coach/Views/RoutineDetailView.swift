@@ -18,8 +18,9 @@ struct RoutineDetailView: View {
     @State private var editingCards = false
     @State private var coachLaunch: CoachLaunch?
     /// P6.1 insights: this routine's run history from Health (digest-bearing workouts).
-    /// nil while loading; the LAST WORKOUT section renders only when history exists —
-    /// absence is silent (no "0 workouts" guilt).
+    /// nil while loading or when no history exists yet — the INSIGHTS section then shows
+    /// its waiting state (the slot stays visible so the feature is discoverable before the
+    /// first digest-bearing run).
     @State private var runTrend: RunTrend?
     private let runHistory = RunHistoryProvider.make()
     /// Name edits buffer in the draft while the field has focus and commit once, on blur or
@@ -66,8 +67,24 @@ struct RoutineDetailView: View {
         }
     }
 
-    /// The LAST WORKOUT section body: a relative date, up to three quiet stat lines from the
-    /// latest run's digest, and the push into Trends.
+    /// The INSIGHTS section's waiting state: what will appear and when — honest about the
+    /// prerequisite (digests are written by runs from this version on, so a pre-existing
+    /// runner's history genuinely starts at their NEXT run, not their first ever).
+    private var insightsWaiting: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "chart.bar")
+                .font(.subheadline)
+                .foregroundStyle(Theme.textTertiary)
+                .accessibilityHidden(true)
+            Text("Time, splits, and 28-day trends build from your runs — they'll appear here after your next one.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.textSecondary)
+        }
+        .accessibilityIdentifier("routineInsightsWaiting")
+    }
+
+    /// The INSIGHTS section body with history: a relative date, up to three quiet stat lines
+    /// from the latest run's digest, and the push into Trends.
     private func lastWorkout(for routine: Routine, trend: RunTrend, latest: DatedRunDigest) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(RelativeWhen.string(for: latest.date))
@@ -228,10 +245,17 @@ struct RoutineDetailView: View {
                 }
 
                 // P6.1: last run + trends, straight from Health's digest-bearing workouts.
-                // Rendered only when history exists — a routine never run says nothing.
-                if let trend = runTrend, let latest = trend.latest {
-                    FieldSection(title: "LAST WORKOUT") {
-                        lastWorkout(for: routine, trend: trend, latest: latest)
+                // The section is a RESERVED SLOT for every run routine (principle 7): before
+                // the first digest-bearing run it says what's coming instead of hiding — an
+                // invisible feature reads as a missing one, and nobody re-visits a screen
+                // that showed nothing (user feedback, build 18).
+                if routine.hasRun {
+                    FieldSection(title: "INSIGHTS") {
+                        if let trend = runTrend, let latest = trend.latest {
+                            lastWorkout(for: routine, trend: trend, latest: latest)
+                        } else {
+                            insightsWaiting
+                        }
                     }
                 }
 

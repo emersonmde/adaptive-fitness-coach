@@ -173,7 +173,12 @@ final class RoutineFlowUITests: XCTestCase {
 
         // The schedule screen shows the Add to Calendar toggle.
         XCTAssertTrue(app.switches["Add to Calendar"].waitForExistence(timeout: 5))
-        // No run history (plain -uiTesting) → the insights section is silently absent.
+        // No run history (plain -uiTesting) → the INSIGHTS slot stays visible with its
+        // waiting state (discoverability), not the populated stats.
+        XCTAssertTrue(app.otherElements["routineInsightsWaiting"].exists ||
+                      app.staticTexts["routineInsightsWaiting"].exists ||
+                      app.descendants(matching: .any)["routineInsightsWaiting"].firstMatch.exists,
+                      "the insights waiting state should be visible before any run history")
         XCTAssertFalse(app.otherElements["routineLastWorkout"].exists)
     }
 
