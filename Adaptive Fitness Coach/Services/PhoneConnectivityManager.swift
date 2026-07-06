@@ -23,8 +23,9 @@ final class PhoneConnectivityManager: NSObject {
     /// journaled and structural proposals wait for the user's confirm.
     weak var journal: ProgressionJournal?
     weak var proposals: ProgressionProposalStore?
-    /// The watch quick-log handler (P6), set at app launch. Live `sendMessage` round trips
-    /// and offline `transferUserInfo` deliveries both land here; the manager stays transport.
+    /// The watch quick-log handler (P6), set at app launch. `transferUserInfo` deliveries
+    /// (the always-pending path) and legacy live `sendMessage` round trips (build-≤17
+    /// watches) both land here; the manager stays transport.
     weak var quickLog: (any QuickLogHandling)?
 
     func activate() {
@@ -79,9 +80,10 @@ extension PhoneConnectivityManager: WCSessionDelegate {
     /// re-broadcast so the corrected routine flows back to the watch. The apply is idempotent
     /// latest-value and short-circuits once converged, so this round trip reaches a fixed point and
     /// cannot ping-pong. A malformed/unrelated transfer is ignored (N6).
-    /// Live quick-log round trip (P6): the watch is waiting on the reply handler, so a
-    /// failure to produce a draft replies an EMPTY dictionary — the watch treats that as
-    /// "couldn't look it up" and offers its offline fallback (never a fabricated number).
+    /// LEGACY live quick-log round trip (build-≤17 watches; new watches are always-pending
+    /// and never send this): the watch is waiting on the reply handler, so a failure to
+    /// produce a draft replies an EMPTY dictionary — the old watch treats that as "couldn't
+    /// look it up" and offers its offline fallback (never a fabricated number).
     nonisolated func session(
         _ session: WCSession,
         didReceiveMessage message: [String: Any],

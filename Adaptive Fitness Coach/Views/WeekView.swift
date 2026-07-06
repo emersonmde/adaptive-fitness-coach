@@ -261,6 +261,11 @@ struct WeekView: View {
                                 .font(.footnote)
                                 .foregroundStyle(Theme.textSecondary)
                                 .lineLimit(2)
+                            // Items can pool for days (the phone was in a pocket — that's
+                            // the point); anchor each to when it was dictated.
+                            Text(item.date, format: .relative(presentation: .named))
+                                .font(.caption)
+                                .foregroundStyle(Theme.textTertiary)
                         }
                         Spacer()
                         Image(systemName: "chevron.right")
@@ -268,9 +273,27 @@ struct WeekView: View {
                             .foregroundStyle(Theme.textTertiary)
                     }
                 }
+                // The quiet card chrome reads passive next to the Food row — this stroke
+                // (SwipeableRow's action-tint treatment) marks "waiting on you".
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.radiusInset, style: .continuous)
+                        .strokeBorder(Theme.info.opacity(0.35), lineWidth: 1)
+                )
             }
             .buttonStyle(.plain)
+            // One element for VoiceOver: title, quoted text, and age in a single read —
+            // not "applewatch, image" first.
+            .accessibilityElement(children: .combine)
             .accessibilityIdentifier("quicklog.review.card")
+            .contextMenu {
+                // The wrist no longer previews the draft, so a junk dictation lands here —
+                // this is its only exit that doesn't commit to Health (principle 13).
+                Button(role: .destructive) {
+                    quickLog.completeReview(id: item.id)
+                } label: {
+                    Label("Dismiss — don't save", systemImage: "trash")
+                }
+            }
         }
     }
 

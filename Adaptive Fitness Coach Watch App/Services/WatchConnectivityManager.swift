@@ -31,12 +31,52 @@ final class WatchConnectivityManager: NSObject {
     /// unactivated session is silently dropped by the OS — and progressions ride the
     /// "guaranteed delivery" channel precisely because losing one loses a workout's learned
     /// seeds — so pre-activation sends buffer here and flush on `activationDidCompleteWith`.
-    private var pendingTransfers: [[String: Any]] = []
+    ///
+    /// PERSISTED to disk on every mutation: the buffer holds the only copy of a quick-log or
+    /// progression until WCSession accepts it, and the watch UI has already confirmed the
+    /// save ("Saved for iPhone") — an app termination before activation completes must not
+    /// silently discard it (N6). Once handed to `transferUserInfo` the OS owns delivery
+    /// (its queue survives relaunches), so rows are dropped from here only at that point.
+    private var pendingTransfers: [[String: Any]] = [] {
+        didSet { Self.persistPendingTransfers(pendingTransfers, to: transfersURL) }
+    }
     private var isActivated = false
+    @ObservationIgnored private let transfersURL: URL
 
-    init(store: RoutineStore) {
+    /// Internal (not private) so the persistence round trip is unit-testable without a
+    /// live `WCSession` (same pattern as `hasReceivedInitialContext`).
+    var pendingTransferCount: Int { pendingTransfers.count }
+
+    private static let defaultTransfersURL: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("pending-transfers.plist")
+    }()
+
+    private static func persistPendingTransfers(_ transfers: [[String: Any]], to url: URL) {
+        guard !transfers.isEmpty else {
+            try? FileManager.default.removeItem(at: url)
+            return
+        }
+        // Payloads are codec dictionaries (String keys, Data/Int values) — plist-safe.
+        if let data = try? PropertyListSerialization.data(fromPropertyList: transfers, format: .binary, options: 0) {
+            try? data.write(to: url, options: .atomic)
+        }
+    }
+
+    private static func loadPendingTransfers(from url: URL) -> [[String: Any]] {
+        guard let data = try? Data(contentsOf: url),
+              let list = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+        else { return [] }
+        return list as? [[String: Any]] ?? []
+    }
+
+    init(store: RoutineStore, transfersURL: URL = WatchConnectivityManager.defaultTransfersURL) {
         self.store = store
+        self.transfersURL = transfersURL
         super.init()
+        // Anything buffered when the app last quit still needs the phone.
+        pendingTransfers = Self.loadPendingTransfers(from: transfersURL)
     }
 
     func activate() {
@@ -57,47 +97,14 @@ final class WatchConnectivityManager: NSObject {
         }
     }
 
-    // MARK: - Quick-log (P6): live round trips, offline fallback
+    // MARK: - Quick-log (P6): always-pending
 
-    /// Send the dictated text for a live draft. nil = unreachable / timed out / the phone
-    /// couldn't produce one — the caller falls back to the offline queue, never a number.
-    func sendQuickLog(_ request: QuickLogRequest) async -> QuickLogDraft? {
-        guard WCSession.isSupported(), WCSession.default.isReachable,
-              let payload = try? WCMessageCodec.encode(quickLog: .request(request)) else { return nil }
-        return await withCheckedContinuation { continuation in
-            WCSession.default.sendMessage(payload, replyHandler: { reply in
-                if case .draft(let draft)? = try? WCMessageCodec.decodeQuickLog(from: reply) {
-                    continuation.resume(returning: draft)
-                } else {
-                    continuation.resume(returning: nil)
-                }
-            }, errorHandler: { _ in
-                continuation.resume(returning: nil)
-            })
-        }
-    }
-
-    /// Confirm (or cancel) a live draft. Returns true only when the phone confirmed every
-    /// Health write — "Logged" on the wrist is never a hope (N6).
-    func confirmQuickLog(_ confirm: QuickLogConfirm) async -> Bool {
-        guard WCSession.isSupported(), WCSession.default.isReachable,
-              let payload = try? WCMessageCodec.encode(quickLog: .confirm(confirm)) else { return false }
-        return await withCheckedContinuation { continuation in
-            WCSession.default.sendMessage(payload, replyHandler: { reply in
-                if case .outcome(let outcome)? = try? WCMessageCodec.decodeQuickLog(from: reply) {
-                    continuation.resume(returning: outcome.saved)
-                } else {
-                    continuation.resume(returning: false)
-                }
-            }, errorHandler: { _ in
-                continuation.resume(returning: false)
-            })
-        }
-    }
-
-    /// Offline fallback: park the raw text in the guaranteed-delivery queue. It lands in the
-    /// phone's pending-REVIEW flow — surfaced with a card, committed only after the user sees
-    /// it there (same buffering discipline as `sendProgression`).
+    /// Park the dictated text in the guaranteed-delivery queue. It lands in the phone's
+    /// pending-REVIEW flow — surfaced with a card, committed only after the user sees it
+    /// there (same buffering discipline as `sendProgression`). This is the quick-log's ONLY
+    /// channel: the live `sendMessage` draft/confirm round trips were removed because a
+    /// locked, backgrounded phone can't run the lookup ladder inside WCSession's reply
+    /// deadline — the wrist would wait minutes and then fail anyway.
     func queueQuickLogOffline(_ request: QuickLogRequest) {
         guard WCSession.isSupported(),
               let message = try? WCMessageCodec.encode(quickLog: .request(request)) else { return }
@@ -109,13 +116,15 @@ final class WatchConnectivityManager: NSObject {
     }
 
     /// Activation completed: hand the OS everything that queued up while it wasn't ready.
+    /// Hand-over precedes the clear so a death mid-flush re-sends next launch instead of
+    /// losing rows — at-least-once by design (progression applies are idempotent; a rare
+    /// duplicate review card beats a lost meal).
     private func flushPendingTransfers() {
         isActivated = true
-        let queued = pendingTransfers
-        pendingTransfers = []
-        for message in queued {
+        for message in pendingTransfers {
             WCSession.default.transferUserInfo(message)
         }
+        pendingTransfers = []
     }
 
     /// Record a finished session's progression batch: apply the **micro lanes only** to the

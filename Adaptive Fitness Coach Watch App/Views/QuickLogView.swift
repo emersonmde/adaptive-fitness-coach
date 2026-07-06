@@ -1,87 +1,43 @@
 import SwiftUI
 import AdaptiveCore
 
-/// The transport seam behind the quick-log screen — live WatchConnectivity in production, a
-/// canned script under `-simulateQuickLog` (paired-sim WC is unreliable; the sim path is the
-/// only way to see this flow without hardware).
-struct QuickLogTransport {
-    var send: (QuickLogRequest) async -> QuickLogDraft?
-    var confirm: (QuickLogConfirm) async -> Bool
-    var queueOffline: (QuickLogRequest) -> Void
-
-    @MainActor
-    static func live(_ connectivity: WatchConnectivityManager) -> QuickLogTransport {
-        QuickLogTransport(
-            send: { await connectivity.sendQuickLog($0) },
-            confirm: { await connectivity.confirmQuickLog($0) },
-            queueOffline: { connectivity.queueQuickLogOffline($0) }
-        )
-    }
-
-    /// Canned draft for the Simulator/demo: every request drafts to a fixed salad.
-    static var scripted: QuickLogTransport {
-        QuickLogTransport(
-            send: { request in
-                try? await Task.sleep(for: .milliseconds(600))
-                return QuickLogDraft(requestId: request.id,
-                                     name: "Chicken Caesar Salad", itemCount: 1,
-                                     totalKcal: 460, isEstimate: false,
-                                     sourceLabel: "Open Food Facts")
-            },
-            confirm: { _ in
-                try? await Task.sleep(for: .milliseconds(300))
-                return true
-            },
-            queueOffline: { _ in }
-        )
-    }
-}
-
-/// P6 watch quick-log (B-series sibling): dictate → the phone drafts → one glanceable
-/// confirm — kcal is the hero, provenance the quiet line. Offline is honest: the text is
-/// queued and reviewed on the iPhone; the wrist never invents a number (N6), and "Logged"
-/// renders only after the phone confirmed the Health write.
+/// P6 watch quick-log (B-series sibling): dictate → durably parked for the iPhone → one
+/// glanceable confirmation. Always-pending by design: the live draft round trip was removed
+/// after real-world use showed the phone (locked, backgrounded) can't run the lookup ladder
+/// inside WCSession's reply deadline — the wrist now never waits on a lookup, never invents
+/// a number (N6), and `transferUserInfo` guarantees the text reaches the phone's review queue.
 struct QuickLogView: View {
-    let transport: QuickLogTransport
+    /// Parks the request in the guaranteed-delivery queue — production binds
+    /// `WatchConnectivityManager.queueQuickLogOffline`; the `-simulateQuickLog` demo passes
+    /// a no-op (paired-sim WC is unreliable; the sim path is the only hardware-free look).
+    let queueOffline: (QuickLogRequest) -> Void
     var onDone: (() -> Void)?
 
     private enum Phase: Equatable {
         case input
-        case sending(QuickLogRequest)
-        case draft(QuickLogDraft)
-        case committing(QuickLogDraft)
-        case logged
-        case queuedOffline
-        case unreachable(QuickLogRequest)
-        case failed
+        case saved
     }
 
-    @State private var text = ""
+    @State private var text: String
     @State private var phase: Phase = .input
+
+    /// `initialText` pre-fills the field for the `-simulateQuickLog` demo — watchOS exposes
+    /// no automatable path into the dictation/scribble sheet, so typing is the one step a
+    /// test can't synthesize. Production passes nothing.
+    init(queueOffline: @escaping (QuickLogRequest) -> Void,
+         initialText: String = "",
+         onDone: (() -> Void)? = nil) {
+        self.queueOffline = queueOffline
+        self.onDone = onDone
+        _text = State(initialValue: initialText)
+    }
 
     var body: some View {
         switch phase {
         case .input:
             inputScreen
-        case .sending:
-            statusScreen(spinner: true, title: "Looking up…", subtitle: nil)
-        case .draft(let draft), .committing(let draft):
-            draftScreen(draft, committing: {
-                if case .committing = phase { return true } else { return false }
-            }())
-        case .logged:
-            confirmationScreen(symbol: "checkmark.circle.fill", tint: WatchTheme.run,
-                               title: "Logged", subtitle: "Saved to Health")
-        case .queuedOffline:
-            confirmationScreen(symbol: "clock.badge.checkmark", tint: WatchTheme.recover,
-                               title: "Saved for iPhone",
-                               subtitle: "It'll be looked up when your iPhone is nearby — finish it there.")
-        case .unreachable(let request):
-            unreachableScreen(request)
-        case .failed:
-            confirmationScreen(symbol: "exclamationmark.triangle", tint: WatchTheme.heat,
-                               title: "Couldn't log it",
-                               subtitle: "Nothing was saved. Try again on your iPhone.")
+        case .saved:
+            savedScreen
         }
     }
 
@@ -95,15 +51,8 @@ struct QuickLogView: View {
             Button {
                 let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return }
-                let request = QuickLogRequest(text: trimmed)
-                phase = .sending(request)
-                Task {
-                    if let draft = await transport.send(request) {
-                        withAnimation(WatchTheme.Motion.settle) { phase = .draft(draft) }
-                    } else {
-                        withAnimation(WatchTheme.Motion.settle) { phase = .unreachable(request) }
-                    }
-                }
+                queueOffline(QuickLogRequest(text: trimmed))
+                withAnimation(WatchTheme.Motion.settle) { phase = .saved }
             } label: {
                 Label("Log it", systemImage: "arrow.up.circle.fill")
             }
@@ -114,98 +63,29 @@ struct QuickLogView: View {
         .navigationTitle("Log a meal")
     }
 
-    private func draftScreen(_ draft: QuickLogDraft, committing: Bool) -> some View {
-        VStack(spacing: 6) {
-            Text(draft.name)
-                .font(.headline)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-            Text("\(draft.isEstimate ? "≈ " : "")\(draft.totalKcal) kcal")
-                .font(.system(size: 34, weight: .semibold, design: .rounded))
-                .foregroundStyle(.white)
-            Text(draft.sourceLabel)
-                .font(.footnote)
-                .foregroundStyle(WatchTheme.textSecondary)
-            HStack(spacing: 8) {
-                Button(role: .cancel) {
-                    Task {
-                        _ = await transport.confirm(QuickLogConfirm(requestId: draft.requestId, accept: false))
-                    }
-                    phase = .input
-                } label: {
-                    Image(systemName: "xmark")
-                }
-                .accessibilityIdentifier("quicklog.cancel")
-
-                Button {
-                    phase = .committing(draft)
-                    Task {
-                        let saved = await transport.confirm(
-                            QuickLogConfirm(requestId: draft.requestId, accept: true))
-                        withAnimation(WatchTheme.Motion.settle) {
-                            phase = saved ? .logged : .failed
-                        }
-                    }
-                } label: {
-                    if committing {
-                        ProgressView()
-                    } else {
-                        Image(systemName: "checkmark")
-                    }
-                }
-                .tint(WatchTheme.run)
-                .disabled(committing)
-                .accessibilityIdentifier("quicklog.confirm")
-            }
-            .padding(.top, 2)
-        }
-    }
-
-    /// The phone couldn't draft (unreachable / timed out / lookup failed): offer the honest
-    /// offline park, never a made-up number.
-    private func unreachableScreen(_ request: QuickLogRequest) -> some View {
+    private var savedScreen: some View {
         VStack(spacing: 8) {
-            Text("iPhone not reachable")
-                .font(.headline)
-            Text("Save it to finish on your iPhone later?")
-                .font(.footnote)
-                .foregroundStyle(WatchTheme.textSecondary)
-                .multilineTextAlignment(.center)
-            Button("Save for iPhone") {
-                transport.queueOffline(request)
-                withAnimation(WatchTheme.Motion.settle) { phase = .queuedOffline }
-            }
-            .tint(WatchTheme.recover)
-            .accessibilityIdentifier("quicklog.queue")
-            Button("Cancel") { phase = .input }
-        }
-    }
-
-    private func statusScreen(spinner: Bool, title: String, subtitle: String?) -> some View {
-        VStack(spacing: 8) {
-            if spinner { ProgressView().tint(WatchTheme.recover) }
-            Text(title).font(.headline)
-            if let subtitle {
-                Text(subtitle)
-                    .font(.footnote)
-                    .foregroundStyle(WatchTheme.textSecondary)
-                    .multilineTextAlignment(.center)
-            }
-        }
-    }
-
-    private func confirmationScreen(symbol: String, tint: Color, title: String, subtitle: String) -> some View {
-        VStack(spacing: 8) {
-            Image(systemName: symbol)
+            Image(systemName: "clock.badge.checkmark")
                 .font(.system(size: 30))
-                .foregroundStyle(tint)
-            Text(title).font(.headline)
-            Text(subtitle)
+                .foregroundStyle(WatchTheme.recover)
+            Text("Saved for iPhone")
+                .font(.headline)
+            // The user is the actor — nothing lands in Health until THEY review it there
+            // (passive "it'll be looked up" over-promised automation).
+            Text("Review it on your iPhone to finish logging.")
                 .font(.footnote)
                 .foregroundStyle(WatchTheme.textSecondary)
                 .multilineTextAlignment(.center)
-            Button("Done") { onDone?() }
-                .accessibilityIdentifier("quicklog.done")
+            Button("Done") {
+                if let onDone {
+                    onDone()   // sheet context: dismiss
+                } else {
+                    // Standalone (`-simulateQuickLog` demo): reset so the flow can repeat.
+                    text = ""
+                    phase = .input
+                }
+            }
+            .accessibilityIdentifier("quicklog.done")
         }
     }
 }

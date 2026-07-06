@@ -7,10 +7,12 @@ import AdaptiveCore
 /// stays a dumb transport (mirrors its `weak var store` shape).
 @MainActor
 protocol QuickLogHandling: AnyObject {
-    /// A live `sendMessage` round trip: request → draft, confirm → outcome. nil = no reply
-    /// (the watch times out into its honest failure state).
+    /// LEGACY (build-≤17 watches only — the live channel was deleted from the watch in the
+    /// always-pending rework): a `sendMessage` round trip, request → draft, confirm →
+    /// outcome. nil = no reply (the old watch times out into its honest failure state).
+    /// Delete with `handleLive`'s implementation once always-pending watches are the floor.
     func handleLive(_ message: QuickLogMessage) async -> QuickLogMessage?
-    /// An offline `transferUserInfo` delivery — park for review, never auto-commit.
+    /// A `transferUserInfo` delivery — THE quick-log path: park for review, never auto-commit.
     func handleOffline(_ message: QuickLogMessage)
 }
 
@@ -38,6 +40,11 @@ final class QuickLogCoordinator: QuickLogHandling {
         refreshReviewItems()
     }
 
+    /// OLD-WATCH COMPATIBILITY ONLY: watches from build ≤17 still send live draft/confirm
+    /// round trips. Newer watches are always-pending (`handleOffline` is their sole path) —
+    /// the live channel proved unusable with the phone locked/backgrounded (the lookup ladder
+    /// can't finish inside WCSession's reply deadline). Delete this once builds with the
+    /// always-pending watch are the installed floor.
     func handleLive(_ message: QuickLogMessage) async -> QuickLogMessage? {
         switch message {
         case .request(let request):

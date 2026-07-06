@@ -24,6 +24,12 @@ enum WatchTheme {
     /// wheel from `run` (green↔amber is the axis that fails first under sunlight, motion blur,
     /// and red-green color deficiency — a real-run glance misread amber WALK as RUN). Warm =
     /// effort, cool = recover; cyan-leaning so it never reads as `strength`'s royal blue.
+    ///
+    /// OUTSIDE workout screens (deliberate exception, decided with the quick-log rework):
+    /// this same blue is the *informational* accent — quick-log's CTA and "Saved for iPhone"
+    /// badge — matching the phone's `Theme.info` (same hex). The workout-state meaning is
+    /// only load-bearing mid-session, where these screens never appear. Don't add a third
+    /// meaning.
     static let recover = Color(hex: 0x3EC5FF)
     /// Heat amber. Not a phase color — it serves *gradient* jobs only: the zone ladder's
     /// threshold step and the strength rest ring. (Named `heat`, not `walk`, so nobody

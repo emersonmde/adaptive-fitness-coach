@@ -9,6 +9,12 @@ import XCTest
 /// summary), so it's a true launch→session→summary E2E below. Strength card-by-card progression —
 /// advance, rest, hold, summary, weight-across-rounds — is covered headlessly by the manager-level
 /// `StrengthFlowTests`, which drive the same code without the TabView in the way.
+///
+/// 2026-07-06, watchOS 27 sim: the limitation is broader than the TabView — synthesized taps
+/// (element AND coordinate) also fail to fire a plain `Button` inside a `NavigationStack`
+/// (tried for the quick-log flow: AX tree healthy, button enabled/hittable, action never ran).
+/// Treat watch UI tests as tap-free on this toolchain; tap-driven flows verify manually via
+/// the `-simulate*` launch args.
 final class WatchSessionUITests: XCTestCase {
 
     override func setUpWithError() throws {

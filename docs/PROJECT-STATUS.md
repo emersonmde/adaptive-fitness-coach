@@ -2,7 +2,9 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-06: **P6.1 (run summary & insights) MERGED to `main` — see its milestone section** (coarse effort + crown-scroll fix, engine metrics, run digest as HKWorkout metadata with Health as the store, watch comparisons on the evidence-backed 28-day ACWR window, phone per-routine Trends with the first Swift Charts use). **TestFlight build 18 is HELD: the user hit a bug logging food on the watch (the P6 quick-log flow) on build 17 — details not yet captured; the NEXT SESSION plans and fixes it, then build 18 ships P6.1 + the fix together.** Quick-log code map for that session: watch `Views/QuickLogView.swift` + `WatchConnectivityManager.sendQuickLog/confirmQuickLog/queueQuickLogOffline`; phone `PhoneConnectivityManager.didReceiveMessage` → `QuickLogCoordinator` → package `Nutrition/QuickLogService.swift`; offline = pending-REVIEW rows in `PendingMealQueue` (needsReview) + WeekView review cards; codec = quickLog channel v1 in `WCMessageCodec`; sim = `-simulateQuickLog` (canned transport — real WC only on hardware, likely where the bug lives). Previous: P6 shipped as build 17 (IN_BETA_TESTING) — the P6 on-device validation lists still stand._
+_Last updated 2026-07-06 (later): **the build-17 watch quick-log bug is ROOT-CAUSED and FIXED on `quicklog-always-pending` — see "P6 Phase 3 rework" below.** The live draft/confirm round trips ran the whole lookup ladder synchronously inside the WC reply handler; a locked, backgrounded phone can't finish inside WCSession's reply deadline → minutes of spinner, then the honest fallback. Fix (user-decided): the watch is now **always-pending** — every quick-log goes straight to the guaranteed-delivery review queue; the live channel is deleted from the watch (phone handler kept for build-≤17 compatibility). Background prewarm-on-delivery was designed and deliberately deferred. **NEXT: ship build 18 = P6.1 run insights + this fix.**_
+
+_Previous update 2026-07-06: **P6.1 (run summary & insights) MERGED to `main` — see its milestone section** (coarse effort + crown-scroll fix, engine metrics, run digest as HKWorkout metadata with Health as the store, watch comparisons on the evidence-backed 28-day ACWR window, phone per-routine Trends with the first Swift Charts use). TestFlight build 18 was HELD for the quick-log bug (now fixed, above). Previous: P6 shipped as build 17 (IN_BETA_TESTING) — the P6 on-device validation lists still stand, EXCEPT Phase 3's (superseded by the always-pending rework's own checklist)._
 
 _Previous update 2026-07-05 (late): **P6 SHIPPED — TestFlight build 17 uploaded, processed VALID, `internalBuildState: IN_BETA_TESTING` (compliance auto-cleared). NEXT = the on-device validation lists in each P6 milestone section (Phase 3 quick-log is the hardware-heavy one).** ALL FOUR P6 PHASES merged to `main` — see their milestone sections (Phase 1: progression channel v4, reasons on the wire, watch proposal lane, phone journal + confirm cards. Phase 2: ContextPackComposer + ExportPackSheet + one-time health disclosure + return-from-break card. Phase 3: watch quick-log — first live WC channel, QuickLogService, pending-REVIEW flow + one notification, `-simulateQuickLog`. Phase 4: multi-candidate adjudication + edit-sheet alternates). 449 package tests; all phone suites + watch unit green. **Next: merge `p6` → `main` and ship ONE TestFlight build (17) — confirm with the user first**; then the on-device validation list (each phase's section). The 5 lb weight-grid fix is COMMITTED to main. String Catalogs adopted on both app targets (P6 step 0)._
 
@@ -266,9 +268,55 @@ the existing split); the watch gets dictation in, one glanceable confirm out.
   resumePending-skips-review, pre-P6 row decode); MealFlowUITests 16/16 (new:
   `-seedNeedsReview` → review card → standard sheet → commit clears); watch unit suite
   green; both targets build.
-- **On-device pending (the heavy phase — plan the hardware session around it):** real
-  `sendMessage` reachability/latency/timeout feel, dictation input, store-and-forward with
-  the phone locked/away, notification delivery, end-to-end Health write from the wrist.
+- **On-device pending — SUPERSEDED by the always-pending rework (next section).** The
+  original list (live `sendMessage` feel, draft/confirm on the wrist) validates a deleted
+  flow; the current hardware checklist lives in the "Phase 3 rework" section below.
+
+### P6 Phase 3 rework — quick-log goes always-pending ✅ FIXED (2026-07-06, on `quicklog-always-pending`)
+Build-17 field report: spinner comes and goes for minutes (watchOS wrist-down suspension made
+it flicker), then the lookup "fails" and offers the phone fallback — with the phone paired,
+locked, in a pocket. **Root cause:** the live path ran the entire lookup ladder
+(FoundationModels identify + Parallel Search w/ 30s URLSession timeout + adjudicator)
+*synchronously inside the phone's `didReceiveMessage` reply handler*; a locked, backgrounded
+phone is throttled far past the foreground <10s, WCSession's opaque reply deadline expires
+first, and the watch reads `errorHandler` as "unreachable". The watch itself runs no model —
+that hypothesis was checked and excluded.
+- **Fix (user-decided):** the pocket case IS the primary watch-logging scenario, so the live
+  round trips were removed rather than budgeted. `QuickLogView` is now `.input → .saved`
+  ("Saved for iPhone" in under a second, no spinner, no failure branches);
+  `QuickLogTransport` shrank to `queueOffline` only; `sendQuickLog`/`confirmQuickLog` are
+  deleted from `WatchConnectivityManager`. Every log rides `transferUserInfo` into the
+  existing pending-REVIEW flow (card + notification + normal confirmation sheet on tap).
+- **Compatibility:** wire format untouched (quickLog codec stays v1 — the park is exactly the
+  old offline path). The phone's `handleLive` is KEPT and commented as build-≤17 watch
+  compatibility; delete once always-pending watches are the installed floor.
+  `QuickLogService.draft`/`commit` + their package tests stay (that path's brain).
+- **Considered and deferred:** (a) park-first + live upgrade with a bounded resolver budget —
+  unverifiable benefit in the pocket case; (b) background prewarm on userInfo delivery
+  (same identify/resolve calls started at arrival, review sheet seeded with finished
+  results, estimate-grade ones re-resolved in foreground) — clean isolated follow-up, no
+  wire changes needed, deferred by user choice. Lookup happens on card tap, foreground speed.
+- **Review hardening (same day, code + UI/UX review passes):** (1) the pre-activation
+  `pendingTransfers` buffer (now the quick-log's ONLY channel, also carries progressions)
+  **persists to disk** (`pending-transfers.plist`, injectable URL, load-at-init,
+  hand-to-WCSession-before-clear = at-least-once) — an app death can no longer discard a
+  meal the wrist already confirmed (N6); covered by new `WatchPendingTransferTests`.
+  (2) Review cards gained their only non-committing exit: long-press → "Dismiss — don't
+  save" (the wrist no longer previews drafts, so junk dictations land on the phone;
+  context-menu precedent from the food rows) — covered by
+  `testWatchQuickLogReviewCardDismisses`. (3) Card polish: relative dictation-time line
+  (items pool for days by design), `Theme.info` stroke so "waiting on you" reads against
+  the passive Food row, VoiceOver reads the card as one element. (4) Watch subtitle made
+  the user the actor ("Review it on your iPhone to finish logging" — passive "it'll be
+  looked up" over-promised automation). (5) `QuickLogTransport` (one closure post-rework)
+  dissolved into a plain `queueOffline:` param. (6) Blue-outside-workout documented as the
+  deliberate info-accent exception on `WatchTheme.recover`. Stale live-path docs fixed
+  (`QuickLogHandling`, codec key, `QuickLog.swift` header, this file's Phase 3 list).
+- **On-device validation (replaces the Phase 3 list):** dictation input feel; phone locked
+  in pocket → "Saved for iPhone" within ~1s; review card (with timestamp) appears exactly
+  once, tap → lookup at foreground speed → commit → Health write, card + notification
+  clear; long-press dismiss; cold-launch quick-log before activation completes still
+  reaches the phone (the persistence fix); 4h notification fires while something waits.
 
 ### P6 Phase 4 — Entry refresh / alternates ✅ IMPLEMENTED (2026-07-05, on `p6`)
 The "wrong item / wrong size" fix: the edit sheet's "Look up again" now also surfaces the
