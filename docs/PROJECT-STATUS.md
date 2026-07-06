@@ -2,7 +2,9 @@
 
 The single entry point for picking up this project. Read this, then `docs/adaptive-fitness-coach-spec.md` (PRD) and the design handoffs in `docs/design/`.
 
-_Last updated 2026-07-05 (late): **P6 SHIPPED — TestFlight build 17 uploaded, processed VALID, `internalBuildState: IN_BETA_TESTING` (compliance auto-cleared). NEXT = the on-device validation lists in each P6 milestone section (Phase 3 quick-log is the hardware-heavy one).** ALL FOUR P6 PHASES merged to `main` — see their milestone sections (Phase 1: progression channel v4, reasons on the wire, watch proposal lane, phone journal + confirm cards. Phase 2: ContextPackComposer + ExportPackSheet + one-time health disclosure + return-from-break card. Phase 3: watch quick-log — first live WC channel, QuickLogService, pending-REVIEW flow + one notification, `-simulateQuickLog`. Phase 4: multi-candidate adjudication + edit-sheet alternates). 449 package tests; all phone suites + watch unit green. **Next: merge `p6` → `main` and ship ONE TestFlight build (17) — confirm with the user first**; then the on-device validation list (each phase's section). The 5 lb weight-grid fix is COMMITTED to main. String Catalogs adopted on both app targets (P6 step 0)._
+_Last updated 2026-07-06: **P6.1 (run summary & insights) IMPLEMENTED on `run-insights` — see its milestone section** (coarse effort + crown-scroll fix, engine metrics, run digest as HKWorkout metadata with Health as the store, watch comparisons on the evidence-backed 28-day ACWR window, phone per-routine Trends with the first Swift Charts use). Awaiting merge + TestFlight build 18 (confirm first). Previous: P6 shipped as build 17 (IN_BETA_TESTING) — the P6 on-device validation list still stands._
+
+_Previous update 2026-07-05 (late): **P6 SHIPPED — TestFlight build 17 uploaded, processed VALID, `internalBuildState: IN_BETA_TESTING` (compliance auto-cleared). NEXT = the on-device validation lists in each P6 milestone section (Phase 3 quick-log is the hardware-heavy one).** ALL FOUR P6 PHASES merged to `main` — see their milestone sections (Phase 1: progression channel v4, reasons on the wire, watch proposal lane, phone journal + confirm cards. Phase 2: ContextPackComposer + ExportPackSheet + one-time health disclosure + return-from-break card. Phase 3: watch quick-log — first live WC channel, QuickLogService, pending-REVIEW flow + one notification, `-simulateQuickLog`. Phase 4: multi-candidate adjudication + edit-sheet alternates). 449 package tests; all phone suites + watch unit green. **Next: merge `p6` → `main` and ship ONE TestFlight build (17) — confirm with the user first**; then the on-device validation list (each phase's section). The 5 lb weight-grid fix is COMMITTED to main. String Catalogs adopted on both app targets (P6 step 0)._
 
 _Previous update 2026-07-05 (night): **P0–P5 shipped; TestFlight build 16 = the P5 polish deep dive + the post-15 gesture settlement (chevrons-only day nav + Notification-style SwipeableRow + day snapshot cache).** P5 (see its section): one motion vocabulary + Reduce-Motion gap closed, deliberate phone haptics (`Theme.Haptics`), token compliance both targets (watch gray drift, `info`/`heat`/`metricNumber`/radius scale), honest states (watch "Syncing from iPhone…" first launch, exit-ful wrap-up), accessibility pass (DailyIntakeLine container bug, labels, contrast floor), dark-mode declared to the OS, iPhone-only portrait, AccentColor populated, FoodDayView structural cleanup + SwipeableRow extraction. **NEXT = P6, RESHAPED 2026-07-05 after the user's build-16 verdict (on-device model: meal-NLP only, fails at routine building; the Claude export loop is the invested path — read the P6 Roadmap section):** progression journal + structural-confirm gate, **"Export to Claude" context packs** (fitness snapshot / check-in / meal planning / plateau / constraint rework; scope picker + honest health-export disclosure), watch quick-log, entry refresh/alternates; agentic rung 3 + FoundationModels-coach investment PUSHED pending the PCC grant. **On the tree UNRELEASED: the 5 lb weight-grid fix** (`Weight.stepped`/`snappedToGrid`, curl/lateral-raise seeds+steps on-grid, progression exits through a grid snap — fixes the stuck-22.5; 393 package + watch unit + phone build green, awaiting ship-or-hold). Also the confirm-on-device list (Health deep-link probes, LookupLab, PCC flow). Build 15 was the hybrid gesture split (summary zone swipes days), retired same-day by on-device feel; build 14's full-page pager stole row swipes and animated backwards. Build 14 carried the rest of the repage (pinned add bar, past-day backfill via when-row prefill, relog toast instead of teleport, full action set on tap/long-press). Build 13 carried the typed-meal parsing fixes (mid-sentence seller extraction — model-primary, parser as hint; clarification answers rendered as text in lookup prompts; inert question chips hidden after a stated override). Build 12 carried build 11 (meal-flow rework: pre-Log numbers/provenance/override, first-Log HealthKit crash fix, four-area hardening) plus the build-12 design sweep (see that section: watch crown/rest/countdown fixes, pinned meal commit bar, week-strip done-marks from Health, routine rename/search/discard-guard, import-sheet parity, contrast + VoiceOver pass) and the typed-seller pipeline (deterministic "from X" parse + model hint, graded seller→generic adjudication fallback, seller on entries end-to-end, edit-sheet rescan). Working tree clean. **Pending on-device validation (rides build 13, the user's job):** typed meal entry (mid-sentence seller → seller-first lookup, "How many eggs?"-style answers moving the estimate), meal flow end-to-end (edit-sheet rescan, pinned Log bar), watch summary crown behavior + rest-exit swipe + countdown on a real run/lift, week-strip done-marks after granting the updated Health read, Siri warm-start, P2 thresholds, P3 coach real-model. **Deferred:** Live Activities (build-9 section). **On grant:** Small Business Program → PCC = one-line switch to Apple's 32K server model._
 
@@ -103,6 +105,51 @@ Watch in-workout screen is pure glance: HR · progress · clock / verb + timer /
 ---
 
 ## Milestones
+
+### P6.1 — Run summary & insights ✅ IMPLEMENTED (2026-07-06, on `run-insights`)
+Driven by the user's first real run on build 17 (crown trapped by the effort rater; 1–10
+scale unloved; summary too thin; wants improvement made visible). Five phases:
+- **Engine metrics:** `IntervalStateMachine` gained `walksCompleted` (natural recovery-walk
+  transitions only — skips and warmup/cooldown excluded, mirroring `intervalsCompleted`)
+  and `timeInTargetZone` (run-phase dwell, fresh zone readings only — stale/nil adds
+  nothing, N6); both on `SessionSummary` with defaulted params.
+- **Coarse effort + crown fix:** `EffortRatingControl` DROPPED `digitalCrownRotation`
+  entirely (the tap-to-focus rater never released the crown, trapping scrolling for wet
+  fingers — with no focusable child the crown scrolls both complete screens again). Input
+  is −/+ buttons over the new `EffortLevel` (Easy 2 / Moderate 5 / Hard 8 / All-out 10 on
+  the unchanged 1–10 internal scale; **Hard AND All-out hold progression** — user decision,
+  pinned by a test against both policies' `highEffortThreshold`). Journal shows "felt hard".
+- **Run digest → Health metadata (the storage decision):** `RunDigest` (pure all-string
+  codec, `AFC*` keys + `AFCDigestVersion`) rides the saved `HKWorkout` as custom metadata —
+  **Health itself is the history store**: self-maintaining, no TTL, deleting the workout
+  deletes the digest (N2 by the book). `WorkoutBackend.end(metadata:)` (pass-through
+  default; only the HK backend overrides — best-effort `try? addMetadata` between
+  `endCollection` and `finishWorkout`, never failing the workout save). `routineId` threads
+  from both run launch paths for attribution.
+- **Watch summary rework + comparisons:** hero = **time running** (engine-owned, instant)
+  + "6 runs · 5 walks · 62% running" sub-line + a reserved async slot for "vs last run" /
+  "vs 28-day baseline" + new stat rows (longest run, in-zone, recovery drop — only when
+  real). `RunComparison` (package): the 28-day window is the evidence-backed choice (7:28
+  ACWR, Gabbett et al.; Apple Training Load uses the same and hides until 28d — we mirror
+  the honesty gate: ≥4 runs spread ≥21d, else silence); deltas are facts (up = run-green
+  tint, down = neutral, ±15s = "even", no red ever). `HealthRunDigestReader` (watch
+  plumbing, calibrator query shape) excludes the just-finished workout; slot loads via
+  `awaitBestEffort(3s)`. `-simulateWorkout` shows canned lines; `-simulateNoHistory` demos
+  the empty slot. Summary visually verified in the sim.
+- **Phone per-routine insights:** `RunTrend` (package) reuses `RunComparison`'s gates so
+  both surfaces tell one truth; `RoutineRunHistory` behind a `RunHistoryProviding` seam
+  (`-uiTestInsights` = canned five-session history); `RoutineDetailView` grows a LAST
+  WORKOUT section (run routines with history only — absence is silent, no "0 workouts"
+  guilt) pushing `RoutineInsightsView`: the project's **first Swift Charts use** — one hero
+  bar chart (time running/session, 28d, single accent hue, hairline grid, no legend,
+  dataviz-validated) over quiet baseline-suffixed stat lines; 1 session = honest no-chart
+  state. Chart screen screenshot kept in the test bundle.
+- **Testing:** 478 package tests (29 new across
+  EffortLevel/RunDigest/RunComparison/RunTrend/IntervalStateMachine), watch unit green
+  (metadata-spy pin), RoutineFlowUITests 8/8. **On-device pending:** crown scrolls the
+  real complete screens; `addMetadata` post-`endCollection` on hardware (fallback order
+  documented in the backend); digest → phone Health sync lag; comparison lines appear from
+  the SECOND real run (post-feature runs only — say so in release notes).
 
 ### P6 Phase 1 — Progression journal + structural confirms ✅ IMPLEMENTED (2026-07-05, on `p6`)
 The first P6 slice (see the P6 Roadmap section): adaptation made legible and consented.
