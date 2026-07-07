@@ -48,7 +48,7 @@ struct StartRoutineIntent: AppIntent {
 /// lookup on the watch (always-pending).
 struct LogMealIntent: AppIntent {
     static let title: LocalizedStringResource = "Log a Meal"
-    static let description = IntentDescription("Dictate a meal — it's saved to review on your iPhone.")
+    static let description = IntentDescription("Dictate a meal — it's saved for review on your phone.")
     static let openAppWhenRun = true
 
     @MainActor
