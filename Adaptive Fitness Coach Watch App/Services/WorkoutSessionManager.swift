@@ -302,6 +302,14 @@ final class WorkoutSessionManager {
             }
             gaitMismatch = false
             currentWalkDefied = false
+            // A cue is phase-bounded: a *later* transition dismisses a still-lingering one so
+            // "EASING" never survives into the following run. When this same tick carries the
+            // adaptation (a cut-short run transitions immediately), the cue must live on into
+            // the walk — that's exactly the moment it explains.
+            if result.adaptation == nil, adaptationEvent != nil {
+                adaptationClearTask?.cancel()
+                adaptationEvent = nil
+            }
         }
         if let adaptation = result.adaptation {
             showAdaptation(adaptation)
@@ -320,6 +328,9 @@ final class WorkoutSessionManager {
             if assessment.accepted, !currentWalkDefied {
                 currentWalkDefied = true
                 walksDefied += 1
+                // Tell the engine too: a defied walk's cap-ride must not converge future
+                // walk targets upward (the choice is excused everywhere, incl. in-session).
+                self.machine?.markCurrentWalkDefied()
             }
         } else if gaitMismatch {
             gaitMismatch = false
@@ -329,9 +340,21 @@ final class WorkoutSessionManager {
     private func showAdaptation(_ event: AdaptationEvent) {
         adaptationEvent = event
         adaptationClearTask?.cancel()
+        let duration = Self.cueDuration(for: event.action)
         adaptationClearTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(duration))
             self?.adaptationEvent = nil
+        }
+    }
+
+    /// How long an adaptation cue stays on screen. The easing cues that just *changed the
+    /// timer under the user* (a cut-short run, a stretched walk) linger long enough to answer
+    /// "why did that end early?"; the pushing cues keep the original brief flash — the
+    /// transition haptic and the field color already explain those.
+    static func cueDuration(for action: AdaptationAction) -> TimeInterval {
+        switch action {
+        case .shortenedRun, .lengthenedWalk: return 10
+        case .extendedRun, .shortenedWalk: return 4
         }
     }
 
@@ -347,9 +370,12 @@ final class WorkoutSessionManager {
 
     /// End early (user-initiated). Routed through the same guarded `finish()`.
     /// Stopping mid-*extended*-run is finishing a long run the plan didn't dare schedule,
-    /// not bailing — don't let it read as a struggle to progression.
+    /// not bailing — don't let it read as a struggle to progression. Same for any cooldown
+    /// (authored or backfilled): every planned run is behind the user by then, only easy
+    /// walking remains — ending there is finishing, not bailing.
     func endManually() {
-        if let machine, !machine.isComplete, !machine.currentRunIsExtended {
+        if let machine, !machine.isComplete, !machine.currentRunIsExtended,
+           machine.currentPhase != .cooldownWalk {
             endedEarly = true
         }
         finish()
@@ -378,6 +404,10 @@ final class WorkoutSessionManager {
             fastRecoveries: machine?.fastRecoveries ?? 0,
             walksCompleted: machine?.walksCompleted ?? 0,
             timeInTargetZone: machine?.timeInTargetZone ?? 0,
+            timeAboveTargetZone: machine?.timeAboveTargetZone ?? 0,
+            convergedRunSeconds: machine?.convergedRunSeconds.map { Int($0) },
+            convergedWalkSeconds: machine?.convergedWalkSeconds.map { Int($0) },
+            backfilledCooldownSeconds: machine?.deliveredCooldownBackfill ?? 0,
             longestRunSeconds: machine?.longestRunInterval ?? 0,
             meanRecoveryDrop: machine?.meanRecoveryDrop,
             endedEarly: endedEarly

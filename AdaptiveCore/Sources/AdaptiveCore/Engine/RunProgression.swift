@@ -21,6 +21,11 @@ public struct RunSessionOutcome: Sendable, Hashable {
     public var longestRunSeconds: TimeInterval
     /// Mean heart-rate recovery drop (bpm) across walks, nil when HR was unavailable.
     public var meanRecoveryDrop: Double?
+    /// The run duration in-session convergence settled on, nil when convergence never fired.
+    /// The engine's demonstrated value — the converged path's only honest input (N6).
+    public var convergedRunSeconds: Int?
+    /// The walk duration in-session convergence settled on, nil when never fired.
+    public var convergedWalkSeconds: Int?
     /// True when the user ended the workout before the plan finished.
     public var endedEarly: Bool
     /// The user's post-run perceived effort, 1 (easy) – 10 (all-out); nil when unrated
@@ -38,6 +43,8 @@ public struct RunSessionOutcome: Sendable, Hashable {
         fastRecoveries: Int = 0,
         longestRunSeconds: TimeInterval = 0,
         meanRecoveryDrop: Double? = nil,
+        convergedRunSeconds: Int? = nil,
+        convergedWalkSeconds: Int? = nil,
         endedEarly: Bool = false,
         perceivedEffort: Int? = nil
     ) {
@@ -49,8 +56,21 @@ public struct RunSessionOutcome: Sendable, Hashable {
         self.fastRecoveries = fastRecoveries
         self.longestRunSeconds = longestRunSeconds
         self.meanRecoveryDrop = meanRecoveryDrop
+        self.convergedRunSeconds = convergedRunSeconds
+        self.convergedWalkSeconds = convergedWalkSeconds
         self.endedEarly = endedEarly
         self.perceivedEffort = perceivedEffort
+    }
+
+    /// Cap-hit walks net of the ones the user chose to run through — the shared definition
+    /// every consumer (clean/struggle classification, effort suggestion) must use.
+    public var netWalksHitCap: Int {
+        max(0, walksHitCap - walksDefied)
+    }
+
+    /// Quit with under half the planned runs done — the bail everyone means by "ended early".
+    public var bailedEarly: Bool {
+        endedEarly && plannedRunIntervals > 0 && completedRunIntervals * 2 < plannedRunIntervals
     }
 
     public init(summary: SessionSummary) {
@@ -63,6 +83,8 @@ public struct RunSessionOutcome: Sendable, Hashable {
             fastRecoveries: summary.fastRecoveries,
             longestRunSeconds: summary.longestRunSeconds,
             meanRecoveryDrop: summary.meanRecoveryDrop,
+            convergedRunSeconds: summary.convergedRunSeconds,
+            convergedWalkSeconds: summary.convergedWalkSeconds,
             endedEarly: summary.endedEarly,
             perceivedEffort: summary.perceivedEffort
         )
@@ -135,6 +157,10 @@ public struct RunProgressionPolicy: Sendable {
     /// The walk seed a snapped (long-run) plan is capped at — long runs pair with short
     /// recoveries.
     public var snapWalkCeiling: Int
+    /// Mean HRR drop (bpm) that counts as positive recovery evidence for the converged path's
+    /// overload probe. Matches `AdaptationConfig.recoveryDropBPM`'s recovered threshold — the
+    /// same construct, evaluated on the session mean instead of per-walk.
+    public var healthyRecoveryDropBPM: Double
     /// A perceived-effort rating at/above this (1–10) blocks advancing an otherwise-clean
     /// session and suppresses the demonstrated-capacity snap — a run that *felt* all-out
     /// isn't sustainable capacity to build on, regardless of what the objective counters say.
@@ -152,6 +178,7 @@ public struct RunProgressionPolicy: Sendable {
         regressBackOffCount: Int = 2,
         snapRatio: Double = 1.5,
         snapWalkCeiling: Int = 90,
+        healthyRecoveryDropBPM: Double = 20,
         highEffortThreshold: Int = 8
     ) {
         self.maxAdvanceStep = maxAdvanceStep
@@ -164,12 +191,19 @@ public struct RunProgressionPolicy: Sendable {
         self.regressBackOffCount = regressBackOffCount
         self.snapRatio = snapRatio
         self.snapWalkCeiling = snapWalkCeiling
+        self.healthyRecoveryDropBPM = healthyRecoveryDropBPM
         self.highEffortThreshold = highEffortThreshold
     }
 
     /// Whether the user rated this session at or above the high-effort threshold.
     private func isHighEffort(_ outcome: RunSessionOutcome) -> Bool {
         (outcome.perceivedEffort ?? 0) >= highEffortThreshold
+    }
+
+    /// One advance notch: a quarter of the run seed, at least 15s, at most `maxAdvanceStep` —
+    /// the single step size shared by the clean advance and the converged path's probe.
+    private func advanceNotch(from runSeconds: Int) -> Int {
+        min(maxAdvanceStep, max(15, runSeconds / 4))
     }
 
     /// The full result of one session's evaluation: next seeds plus the classification the
@@ -203,7 +237,35 @@ public struct RunProgressionPolicy: Sendable {
             // A struggle only ever *eases*: lengthen the walk toward the cap, but never pull
             // an already-longer walk seed down (that would raise effort on a struggle signal).
             seeds.walkSeconds = max(current.walkSeconds, min(maxWalkSeconds, current.walkSeconds + regressStep))
-            reason = outcome.runBackOffCount >= regressBackOffCount ? .repeatedBackOffs : .endedEarly
+            // "Recoveries weren't coming back" only when that's demonstrably what happened;
+            // a bail with healthy (or unmeasured) recoveries is honestly just "ended early".
+            reason = outcome.runBackOffCount >= regressBackOffCount && hasDegradedRecovery(outcome)
+                ? .recoveryNotReturning : .endedEarly
+        } else if !outcome.endedEarly, outcome.runBackOffCount >= 1,
+                  let converged = outcome.convergedRunSeconds {
+            // The converged path: back-offs happened but recovery stayed healthy — the live
+            // loop was *calibrating* a too-long seed, not fighting a struggling runner. Next
+            // session starts from what the body demonstrated (the engine's converged value —
+            // never derived from averages, N6). A back-off session can ease or hold the run
+            // seed, never raise it, so everything is capped at the seed the user ran with.
+            seeds.runSeconds = min(current.runSeconds, max(minRunSeconds, converged))
+            if let convergedWalk = outcome.convergedWalkSeconds {
+                // Walks converge in both directions automatically (user decision): downward is
+                // evidence-matched — the walks already end on recovery live, the seed mostly
+                // sets the displayed timer — and upward is easing.
+                seeds.walkSeconds = min(maxWalkSeconds, max(minWalkSeconds, convergedWalk))
+            }
+            // The overload probe: adaptation requires a stimulus just beyond the accustomed
+            // load, so with *positive* recovery evidence (never mere absence of trouble, N6),
+            // no recovery degradation anywhere in the session (an early fast recovery must not
+            // outvote a later cap-ridden walk), and no all-out rating, seed one notch past the
+            // demonstrated length — still never above what was asked this session.
+            if hasHealthyRecovery(outcome), !hasDegradedRecovery(outcome), !isHighEffort(outcome) {
+                seeds.runSeconds = min(current.runSeconds, seeds.runSeconds + advanceNotch(from: seeds.runSeconds))
+                reason = .convergedWithProbe
+            } else {
+                reason = .converged
+            }
         } else if isClean(outcome) && !isHighEffort(outcome) {
             // Advance only when the session was clean AND didn't feel all-out. A clean session
             // rated high effort falls through to hold — the runner is near their ceiling even
@@ -215,8 +277,7 @@ public struct RunProgressionPolicy: Sendable {
             let strong = isStrong(outcome)
             let notches = strong ? 2 : 1
             for _ in 0..<notches {
-                let step = min(maxAdvanceStep, max(15, seeds.runSeconds / 4))
-                seeds.runSeconds += step
+                seeds.runSeconds += advanceNotch(from: seeds.runSeconds)
                 if seeds.runSeconds >= walkShrinkThreshold {
                     seeds.walkSeconds = max(minWalkSeconds, seeds.walkSeconds - walkShrinkStep)
                 }
@@ -234,8 +295,10 @@ public struct RunProgressionPolicy: Sendable {
         // gate compares against the seed the user *ran with* (not the post-advance one) —
         // demonstrated capacity is relative to what was asked of them.
         // Also suppress the snap when the session felt all-out: a long run that was maximal
-        // isn't repeatable capacity to start from next time.
-        if !isStruggle(outcome) && !isHighEffort(outcome) {
+        // isn't repeatable capacity to start from next time. And only when NO run was cut
+        // short — a back-off session's longest run isn't sustainable capacity, and its seed
+        // is owned by the converged path above (a snap and a back-off can't honestly coexist).
+        if outcome.runBackOffCount == 0 && !isStruggle(outcome) && !isHighEffort(outcome) {
             let demonstrated = Int(outcome.longestRunSeconds / 15) * 15
             if Double(demonstrated) >= Double(current.runSeconds) * snapRatio {
                 if demonstrated > seeds.runSeconds { snapped = true }
@@ -250,9 +313,13 @@ public struct RunProgressionPolicy: Sendable {
 
         // Advance-direction shape changes only: a shrunk walk, or the run seed crossing the
         // block length (the plan factory then emits a single continuous run). Easing lengthens
-        // the walk but is never structural — backing off stays automatic.
+        // the walk but is never structural — backing off stays automatic. The converged path
+        // is exempt even when it shrinks the walk: matching the seed to a demonstrated
+        // recovery is evidence, not a probe (user decision — auto-apply), and its run seed is
+        // capped at the current one so it can never cross into continuous.
+        let convergedPath = reason == .converged || reason == .convergedWithProbe
         let becameContinuous = seeds.runSeconds >= blockSeconds && current.runSeconds < blockSeconds
-        let isStructural = seeds.walkSeconds < current.walkSeconds || becameContinuous
+        let isStructural = (!convergedPath && seeds.walkSeconds < current.walkSeconds) || becameContinuous
 
         return Evaluation(seeds: seeds, reason: reason, isStructural: isStructural)
     }
@@ -268,7 +335,7 @@ public struct RunProgressionPolicy: Sendable {
             && outcome.plannedRunIntervals > 0
             && outcome.completedRunIntervals >= outcome.plannedRunIntervals
             && outcome.runBackOffCount == 0
-            && max(0, outcome.walksHitCap - outcome.walksDefied) == 0
+            && outcome.netWalksHitCap == 0
     }
 
     /// A strong session: clean, and every planned walk ended at the recovery floor.
@@ -277,13 +344,28 @@ public struct RunProgressionPolicy: Sendable {
         outcome.fastRecoveries >= outcome.plannedRunIntervals && outcome.plannedRunIntervals > 0
     }
 
-    /// A struggle: repeated back-offs, or bailing out with under half the runs done.
+    /// A struggle: repeated back-offs *with degraded recovery*, or bailing out with under half
+    /// the runs done. Back-offs alone are the live loop calibrating a too-long seed — with
+    /// healthy (or merely unmeasured) recoveries they route to the converged path, never a
+    /// regress. Regression is reserved for the runner whose recoveries stopped coming back.
     private func isStruggle(_ outcome: RunSessionOutcome) -> Bool {
-        if outcome.runBackOffCount >= regressBackOffCount { return true }
-        if outcome.endedEarly, outcome.plannedRunIntervals > 0,
-           outcome.completedRunIntervals * 2 < outcome.plannedRunIntervals {
-            return true
-        }
+        if outcome.runBackOffCount >= regressBackOffCount, hasDegradedRecovery(outcome) { return true }
+        return outcome.bailedEarly
+    }
+
+    /// Positive recovery evidence: a wall-clock-confirmed fast recovery, or a measured mean
+    /// HRR drop at/above the recovered threshold. Absence of data is NOT health (N6) — it
+    /// just isn't degradation either; the probe requires this, mere lack of trouble is not
+    /// grounds to raise effort.
+    private func hasHealthyRecovery(_ outcome: RunSessionOutcome) -> Bool {
+        if outcome.fastRecoveries >= 1 { return true }
+        if let drop = outcome.meanRecoveryDrop, drop >= healthyRecoveryDropBPM { return true }
         return false
+    }
+
+    /// Degraded recovery: at least one walk rode to the cap still unrecovered, net of walks
+    /// the user chose to run through (their dragged-out recovery is a choice, not a signal).
+    private func hasDegradedRecovery(_ outcome: RunSessionOutcome) -> Bool {
+        outcome.netWalksHitCap >= 1
     }
 }

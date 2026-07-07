@@ -77,6 +77,18 @@ public struct IntervalStateMachine: Sendable {
     /// metric) and only ticks with a fresh zone reading accumulate; the caller nils stale
     /// zones, so sensor gaps add nothing (N6).
     public private(set) var timeInTargetZone: TimeInterval
+    /// Seconds of RUN time spent above the target zone (same fresh-reading rule as
+    /// `timeInTargetZone`). Feeds the effort suggestion — a session mostly over zone felt hard.
+    public private(set) var timeAboveTargetZone: TimeInterval
+    /// The run duration future segments have converged to (nil until convergence first fires).
+    /// This is the session's *demonstrated* run length — the only honest source for the
+    /// cross-session converged path; the policy must never derive one from averages (N6).
+    public private(set) var convergedRunSeconds: TimeInterval?
+    /// The walk duration future segments have converged to (nil until convergence fires).
+    public private(set) var convergedWalkSeconds: TimeInterval?
+    /// Seconds added to the cooldown to backfill adaptation-driven session shrink, so a
+    /// planned 30-minute session still delivers ~30 minutes of low-intensity volume.
+    public private(set) var backfilledCooldownSeconds: TimeInterval
 
     /// Peak heart rate observed during the current/most recent run segment. Reset when a new
     /// run begins; carried through the following walk for recovery math.
@@ -92,9 +104,17 @@ public struct IntervalStateMachine: Sendable {
     /// Set while the current walk sits at `maxWalkDuration` unrecovered; folded into
     /// `walksHitCap` when the segment advances.
     private var walkHitCapPending = false
+    /// Set by the caller when the compliance monitor accepted the user running through the
+    /// current walk. A defied walk's dragged-out recovery is a choice, not a signal — it must
+    /// never converge future walks upward (the caller already excludes it from struggle math).
+    private var currentWalkDefied = false
     /// True while the current segment is being force-ended by `skipCurrentSegment` — skipped
     /// segments don't earn interval credit or record recovery (nothing was demonstrated).
     private var skippingSegment = false
+    /// The session length the user signed up for, minus any time they *chose* to skip.
+    /// Cooldown backfill restores adaptation-driven shrink up to this total; a skip is the
+    /// user's choice and is never backfilled (same philosophy as `walksDefied`).
+    private var effectivePlannedTotal: TimeInterval
 
     /// Non-transition adaptations (extend/lengthen) already surfaced for the current segment,
     /// used to show each banner at most once per segment.
@@ -123,6 +143,11 @@ public struct IntervalStateMachine: Sendable {
         self.longestRunInterval = 0
         self.walksCompleted = 0
         self.timeInTargetZone = 0
+        self.timeAboveTargetZone = 0
+        self.convergedRunSeconds = nil
+        self.convergedWalkSeconds = nil
+        self.backfilledCooldownSeconds = 0
+        self.effectivePlannedTotal = config.plan.plannedDuration
     }
 
     /// The phase currently in progress, or nil once the session is complete.
@@ -138,6 +163,16 @@ public struct IntervalStateMachine: Sendable {
     /// Mean heart-rate recovery drop across the session's walks, or nil if never measurable.
     public var meanRecoveryDrop: Double? {
         recoveryDrops.isEmpty ? nil : recoveryDrops.reduce(0, +) / Double(recoveryDrops.count)
+    }
+
+    /// Backfill seconds actually *walked*, not merely planned. `backfilledCooldownSeconds` is
+    /// recorded at cooldown entry; a user who ends mid-cooldown never walked the rest, and the
+    /// summary must describe the session as lived, not the plan (N6).
+    public var deliveredCooldownBackfill: TimeInterval {
+        guard backfilledCooldownSeconds > 0 else { return 0 }
+        guard !isComplete, currentPhase == .cooldownWalk else { return backfilledCooldownSeconds }
+        let authored = segments[currentIndex].targetDuration - backfilledCooldownSeconds
+        return min(backfilledCooldownSeconds, max(0, intervalElapsed - authored))
     }
 
     /// True while the current segment is a run that has been extended past its seed. Ending
@@ -170,8 +205,12 @@ public struct IntervalStateMachine: Sendable {
         if phase.isRun {
             totalRunDuration += deltaTime
             longestRunInterval = max(longestRunInterval, intervalElapsed)
-            if sample.zone == targetZone {
-                timeInTargetZone += deltaTime
+            if let zone = sample.zone {
+                if zone == targetZone {
+                    timeInTargetZone += deltaTime
+                } else if zone > targetZone {
+                    timeAboveTargetZone += deltaTime
+                }
             }
         } else {
             totalWalkDuration += deltaTime
@@ -189,11 +228,28 @@ public struct IntervalStateMachine: Sendable {
 
         // Natural transition: the (possibly adapted) target duration has elapsed.
         if intervalElapsed >= segments[currentIndex].targetDuration {
+            // Upward convergence fires only on a NATURALLY completed demonstration (never on
+            // a skip, never mid-segment): an extended run that ran to its stretched end raises
+            // future runs — slew-limited, spikes are the injury risk; a walk that rode to the
+            // cap unrecovered raises future walks (longer walks are the safe direction).
+            if phase == .run, announcedThisSegment.contains(.extendedRun) {
+                convergeFutureRuns(toward: roundedDown(intervalElapsed), upward: true)
+            } else if phase == .walk, walkHitCapPending, !currentWalkDefied {
+                convergeFutureWalks(toward: roundedUp(intervalElapsed), upward: true)
+            }
             let transition = advance()
             return TickResult(transition: transition, isComplete: isComplete)
         }
 
         return TickResult()
+    }
+
+    /// Mark the current walk as run-through-by-choice (compliance monitor accepted). Its
+    /// recovery numbers are an artifact of the choice: the walk still ends on its cap/timer,
+    /// but it never converges future walks upward (the loop never fights the human).
+    public mutating func markCurrentWalkDefied() {
+        guard !isComplete, !segments.isEmpty, segments[currentIndex].phase == .walk else { return }
+        currentWalkDefied = true
     }
 
     /// End the current segment now and move to the next, exactly as a natural transition would
@@ -207,6 +263,9 @@ public struct IntervalStateMachine: Sendable {
         }
         skippingSegment = true
         defer { skippingSegment = false }
+        // The skipped remainder was the user's choice — take it out of the backfill budget
+        // so the cooldown never re-adds time the user deliberately cut.
+        effectivePlannedTotal -= max(0, segments[currentIndex].targetDuration - intervalElapsed)
         let transition = advance()
         return TickResult(transition: transition, isComplete: isComplete)
     }
@@ -253,6 +312,11 @@ public struct IntervalStateMachine: Sendable {
                 let event = AdaptationEvent(action: .shortenedRun, atSessionTime: sessionElapsed, zone: zone)
                 adaptationsApplied += 1
                 runBackOffCount += 1
+                // Downward convergence, one jump: the back-off point IS the demonstrated run
+                // length (already a sustained-confirmed signal), so future runs retarget to it
+                // and the countdown turns truthful from the next interval on.
+                convergeFutureRuns(toward: max(policy.config.minRunDuration, roundedDown(intervalElapsed)),
+                                   upward: false)
                 let transition = advance()
                 return TickResult(transition: transition, adaptation: event, isComplete: isComplete)
             case .extend:
@@ -280,6 +344,10 @@ public struct IntervalStateMachine: Sendable {
                 if intervalElapsed <= policy.config.minWalkDuration + policy.config.recoverWindow {
                     fastRecoveries += 1
                 }
+                // Recovery demonstrated: future walks converge down to what the body needed
+                // (rounded UP — a slightly longer walk is the safe direction).
+                convergeFutureWalks(toward: max(policy.config.minWalkDuration, roundedUp(intervalElapsed)),
+                                    upward: false)
                 let transition = advance()
                 return TickResult(transition: transition, adaptation: event, isComplete: isComplete)
             case .lengthen:
@@ -326,6 +394,7 @@ public struct IntervalStateMachine: Sendable {
         heartRateSeenThisWalk = false
         recoveryRecordedThisWalk = false
         walkHitCapPending = false
+        currentWalkDefied = false
 
         let nextIndex = currentIndex + 1
         guard nextIndex < segments.count else {
@@ -337,10 +406,99 @@ public struct IntervalStateMachine: Sendable {
         if segments[currentIndex].phase == .run {
             // New run: peak tracking starts fresh (the previous walk's recovery math is done).
             peakRunHeartRate = nil
+        } else if segments[currentIndex].phase == .cooldownWalk {
+            backfillCooldown()
         }
         intervalElapsed = 0
         policy.resetAccumulators()
         announcedThisSegment.removeAll()
         return TransitionEvent(from: fromPhase, to: segments[currentIndex].phase)
+    }
+
+    /// Extend the cooldown we just entered so total session time reaches the planned total —
+    /// adaptation-shortened intervals become extra low-intensity walking (session volume is an
+    /// adaptation driver; filling with easy walking is safe, filling with more running is not).
+    /// Capped so the cooldown never exceeds min(authored + 10 min, authored × 2); the ×2 bound
+    /// keeps compressed simulator cooldowns proportionate. Only ever extends: a session that ran
+    /// long (extension) leaves the cooldown authored.
+    private mutating func backfillCooldown() {
+        let authored = segments[currentIndex].targetDuration
+        let shortfall = effectivePlannedTotal - (sessionElapsed + authored)
+        guard shortfall > 0 else { return }
+        let cap = min(authored + 600, authored * 2)
+        let newTarget = min(authored + shortfall, cap)
+        guard newTarget > authored else { return }
+        segments[currentIndex].targetDuration = newTarget
+        backfilledCooldownSeconds = newTarget - authored
+    }
+
+    /// Round a demonstrated duration down to the convergence grid (runs — never credit
+    /// undemonstrated seconds).
+    private func roundedDown(_ value: TimeInterval) -> TimeInterval {
+        let grid = policy.config.convergenceRounding
+        guard grid > 0 else { return value }
+        return (value / grid).rounded(.down) * grid
+    }
+
+    /// Round a demonstrated duration up to the convergence grid (walks — longer is safer).
+    private func roundedUp(_ value: TimeInterval) -> TimeInterval {
+        let grid = policy.config.convergenceRounding
+        guard grid > 0 else { return value }
+        return (value / grid).rounded(.up) * grid
+    }
+
+    /// Retarget future run segments toward a demonstrated duration. Downward converges in one
+    /// jump (the safe direction); upward is slew-limited to min(+25%, `maxUpwardConvergenceStep`)
+    /// per event. Both are silent — the current-segment events already announced the felt
+    /// change; this only makes the upcoming countdowns truthful. Down-after-up always wins
+    /// (min rules), expressing the back-off bias in-session.
+    private mutating func convergeFutureRuns(toward demonstrated: TimeInterval, upward: Bool) {
+        guard demonstrated > 0 else { return }
+        var converged: TimeInterval?
+        for index in segments.indices where index > currentIndex && segments[index].phase == .run {
+            let existing = segments[index].targetDuration
+            let newTarget: TimeInterval
+            if upward {
+                // Quantize the slew step to the convergence grid (at least one grid step, so a
+                // small relative step can't round to zero) — every retarget stays on-grid.
+                let rawStep = min(existing * 0.25, policy.config.maxUpwardConvergenceStep)
+                let step = max(policy.config.convergenceRounding, roundedDown(rawStep))
+                newTarget = min(demonstrated, existing + step)
+            } else {
+                newTarget = min(existing, demonstrated)
+            }
+            segments[index].targetDuration = newTarget
+            converged = newTarget
+        }
+        if let converged {
+            convergedRunSeconds = converged
+        } else if !upward {
+            // A back-off on the FINAL run still records its demonstration (the cross-session
+            // converged path's honest input). An upward demonstration with no future segment
+            // records nothing — recording the raw length would bypass the slew limit, and the
+            // long run is already captured by `longestRunInterval` for the snap path.
+            convergedRunSeconds = min(convergedRunSeconds ?? demonstrated, demonstrated)
+        }
+    }
+
+    /// Retarget future walk segments toward a demonstrated duration. Same rules as runs except
+    /// upward is a one-jump (walking longer is the safe direction), bounded by `maxWalkDuration`.
+    private mutating func convergeFutureWalks(toward demonstrated: TimeInterval, upward: Bool) {
+        guard demonstrated > 0 else { return }
+        let bounded = min(demonstrated, policy.config.maxWalkDuration)
+        var converged: TimeInterval?
+        for index in segments.indices where index > currentIndex && segments[index].phase == .walk {
+            let existing = segments[index].targetDuration
+            let newTarget = upward ? max(existing, bounded) : min(existing, bounded)
+            segments[index].targetDuration = newTarget
+            converged = newTarget
+        }
+        if let converged {
+            convergedWalkSeconds = converged
+        } else if !upward {
+            // Same rule as runs: a final-walk recovery still records; a final-walk cap-ride
+            // records nothing (its struggle is already `walksHitCap`).
+            convergedWalkSeconds = min(convergedWalkSeconds ?? bounded, bounded)
+        }
     }
 }

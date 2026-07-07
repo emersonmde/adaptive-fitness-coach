@@ -21,9 +21,26 @@ struct WorkoutCompleteView: View {
     var comparisons: [RunComparison.Line]?
     /// The "Next run" note for a given effort — recomputed live as the level steps.
     var notePreview: (Int?) -> String?
-    let onDone: (Int?) -> Void
+    /// Done with the rating and whether the user actually adjusted/confirmed it by touch.
+    /// An untouched suggestion still records to Health (user decision) but must NOT gate
+    /// progression: the suggestion is derived from the same objective signals the policy
+    /// already consumes, so feeding it back would double-count them — an auto-suggested
+    /// "Hard" would suppress the very probe a back-off session was designed to earn.
+    let onDone: (Int?, _ userAdjusted: Bool) -> Void
 
     @State private var effort: Int?
+    /// True once the user has interacted with the rating — until then the pre-selected level
+    /// renders as a suggestion. The suggested value still counts at Done (user decision: the
+    /// visible pre-selection is the confirmation surface).
+    @State private var effortTouched = false
+
+    /// The rating binding, wrapped so any interaction drops the "suggested" affordance.
+    private var effortBinding: Binding<Int?> {
+        Binding(
+            get: { effort },
+            set: { effort = $0; effortTouched = true }
+        )
+    }
 
     private var distanceText: String? {
         guard let meters = summary.totalDistance, meters > 0 else { return nil }
@@ -111,13 +128,28 @@ struct WorkoutCompleteView: View {
                     if summary.adaptationsApplied > 0 {
                         stat("Adaptations", "\(summary.adaptationsApplied)")
                     }
+                    // Quietly explain a cooldown that ran visibly long: adaptation-shortened
+                    // intervals were backfilled as easy walking to honor the planned length.
+                    if summary.backfilledCooldownSeconds > 60 {
+                        stat("Cooldown extended", "+\(summary.backfilledCooldownSeconds.clockString)")
+                    }
                 }
                 .padding(.top, 2)
 
-                EffortRatingControl(effort: $effort, tint: WatchTheme.run)
+                EffortRatingControl(effort: effortBinding, tint: WatchTheme.run,
+                                    isSuggested: effort != nil && !effortTouched)
                     .padding(.top, 6)
+                    .onAppear {
+                        // Pre-select the HR-derived suggestion (session-RPE is predictable
+                        // from the objective signals); nil when the session was signal-blind —
+                        // never suggest from nothing (N6).
+                        guard effort == nil, !effortTouched else { return }
+                        effort = EffortPredictor.suggestedLevel(from: summary)?.score
+                    }
 
-                if let note = notePreview(effort) {
+                // The note previews what progression will actually see: an untouched
+                // suggestion doesn't gate the policy, so it doesn't move the preview either.
+                if let note = notePreview(effortTouched ? effort : nil) {
                     Text(note)
                         .font(.caption2)
                         .foregroundStyle(WatchTheme.run)
@@ -126,7 +158,7 @@ struct WorkoutCompleteView: View {
                         .animation(WatchTheme.Motion.settle, value: note)
                 }
 
-                Button("Done") { onDone(effort) }
+                Button("Done") { onDone(effort, effortTouched) }
                     .tint(WatchTheme.run)
                     .padding(.top, 4)
             }

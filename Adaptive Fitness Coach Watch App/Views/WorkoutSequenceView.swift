@@ -106,7 +106,8 @@ private struct RunBlockView: View {
                 // A short scripted run so a sequence plays through quickly.
                 let plan = IntervalPlan.beginnerRunWalk(warmup: 2, runDuration: 4, walkDuration: 3, cycles: 1, cooldown: 2)
                 manager.start(config: SessionConfig(plan: plan), routineName: "Run",
-                              adaptationConfig: AdaptationConfig(backOffWindow: 3, minRunDuration: 2))
+                              adaptationConfig: AdaptationConfig(backOffWindow: 3, minRunDuration: 2,
+                                                                 convergenceRounding: 2, maxUpwardConvergenceStep: 4))
             } else {
                 // One-time zero-config calibration, same as the standalone run flow (N6).
                 var active = card

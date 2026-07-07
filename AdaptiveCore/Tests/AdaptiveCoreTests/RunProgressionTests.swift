@@ -47,10 +47,19 @@ struct RunProgressionPolicyTests {
         #expect(next.walkSeconds == 60)
     }
 
-    @Test func repeatedBackOffsRegress() {
-        let next = policy.nextSeeds(current: seeds, outcome: outcome(backOffs: 2))
+    @Test func backOffsWithDegradedRecoveryRegress() {
+        // The true struggle: runs kept getting cut short AND a walk rode to the cap
+        // unrecovered. Back-offs alone route to the converged path, never here.
+        let next = policy.nextSeeds(current: seeds, outcome: outcome(backOffs: 2, capped: 1))
         #expect(next.runSeconds == 75)   // −15
         #expect(next.walkSeconds == 135) // +15
+    }
+
+    @Test func backOffsAloneWithoutConvergedDataHold() {
+        // Back-offs with healthy recoveries and no converged value (old summary / signal-blind
+        // session): hold — never regress, never fabricate a demonstrated length (N6).
+        let next = policy.nextSeeds(current: seeds, outcome: outcome(backOffs: 2))
+        #expect(next == seeds)
     }
 
     @Test func bailingOutEarlyRegresses() {
@@ -86,7 +95,7 @@ struct RunProgressionPolicyTests {
 
     @Test func runSeedNeverRegressesBelowItsFloor() {
         let current = RunSeeds(runSeconds: 30, walkSeconds: 180)
-        let next = policy.nextSeeds(current: current, outcome: outcome(backOffs: 5))
+        let next = policy.nextSeeds(current: current, outcome: outcome(backOffs: 5, capped: 2))
         #expect(next.runSeconds == 30)   // floor
         #expect(next.walkSeconds == 180) // cap
     }
@@ -126,13 +135,15 @@ struct RunProgressionPolicyTests {
         #expect(next.walkSeconds <= 90) // long runs come with short recoveries
     }
 
-    @Test func longRunEndingInStruggleDoesNotSnap() {
-        // A long run that ended in repeated back-offs is overreach, not capacity.
+    @Test func longRunEndingInBackOffsDoesNotSnap() {
+        // A long run in a session with back-offs is overreach, not capacity — the snap is
+        // gated on zero back-offs (a snap and a back-off can't honestly coexist). With no
+        // converged value and healthy recoveries this session holds.
         let out = RunSessionOutcome(plannedRunIntervals: 6, completedRunIntervals: 3,
                                     runBackOffCount: 3, walksHitCap: 0,
                                     longestRunSeconds: 600)
         let next = policy.nextSeeds(current: seeds, outcome: out)
-        #expect(next.runSeconds == 75) // regressed, no snap
+        #expect(next == seeds) // held, and definitely no snap to 600
     }
 
     @Test func normalCompletedRunDoesNotSnap() {
@@ -498,5 +509,159 @@ struct RunningCadenceDetectorTests {
         _ = detector.update(cadence: 150, at: 10)
         let second = detector.update(cadence: 150, at: 15)
         #expect(second)
+    }
+}
+
+// MARK: - The converged path (back-offs with healthy recovery)
+
+struct RunConvergedPathTests {
+
+    private let policy = RunProgressionPolicy()
+    private let seeds = RunSeeds(runSeconds: 90, walkSeconds: 120)
+
+    private func converged(
+        backOffs: Int = 2, run: Int? = 60, walk: Int? = nil,
+        fastRecoveries: Int = 0, meanDrop: Double? = nil, capped: Int = 0,
+        effort: Int? = nil
+    ) -> RunSessionOutcome {
+        RunSessionOutcome(
+            plannedRunIntervals: 6, completedRunIntervals: 6,
+            runBackOffCount: backOffs, walksHitCap: capped,
+            fastRecoveries: fastRecoveries, meanRecoveryDrop: meanDrop,
+            convergedRunSeconds: run, convergedWalkSeconds: walk,
+            perceivedEffort: effort
+        )
+    }
+
+    @Test func convergedSessionMatchesTheDemonstratedRun() {
+        let eval = policy.evaluate(current: seeds, outcome: converged(run: 60), blockSeconds: 1200)
+        #expect(eval.seeds.runSeconds == 60)
+        #expect(eval.seeds.walkSeconds == 120) // nil converged walk → walk untouched
+        #expect(eval.reason == .converged)
+        #expect(!eval.isStructural)
+    }
+
+    @Test func positiveRecoveryEvidenceAddsTheOverloadProbe() {
+        let eval = policy.evaluate(current: seeds,
+                                   outcome: converged(run: 60, fastRecoveries: 2),
+                                   blockSeconds: 1200)
+        #expect(eval.seeds.runSeconds == 75) // 60 + notch(15)
+        #expect(eval.reason == .convergedWithProbe)
+    }
+
+    @Test func meanRecoveryDropAlsoCountsAsPositiveEvidence() {
+        let eval = policy.evaluate(current: seeds,
+                                   outcome: converged(run: 60, meanDrop: 25),
+                                   blockSeconds: 1200)
+        #expect(eval.reason == .convergedWithProbe)
+    }
+
+    @Test func absenceOfTroubleIsNotEvidenceForTheProbe() {
+        // No fast recoveries, no measured drop: converge exactly, never probe (N6).
+        let eval = policy.evaluate(current: seeds, outcome: converged(run: 60), blockSeconds: 1200)
+        #expect(eval.reason == .converged)
+        #expect(eval.seeds.runSeconds == 60)
+    }
+
+    @Test func probeNeverExceedsTheSeedTheUserRanWith() {
+        let eval = policy.evaluate(current: seeds,
+                                   outcome: converged(run: 85, fastRecoveries: 1),
+                                   blockSeconds: 1200)
+        #expect(eval.seeds.runSeconds == 90) // 85 + 21 capped at the current seed
+    }
+
+    @Test func highEffortSuppressesTheProbe() {
+        let eval = policy.evaluate(current: seeds,
+                                   outcome: converged(run: 60, fastRecoveries: 2, effort: 8),
+                                   blockSeconds: 1200)
+        #expect(eval.seeds.runSeconds == 60)
+        #expect(eval.reason == .converged)
+    }
+
+    @Test func convergedWalkAppliesBothDirectionsClamped() {
+        let shorter = policy.evaluate(current: seeds,
+                                      outcome: converged(run: 60, walk: 75),
+                                      blockSeconds: 1200)
+        #expect(shorter.seeds.walkSeconds == 75)
+        #expect(!shorter.isStructural) // converged walk shrink auto-applies (user decision)
+
+        let floored = policy.evaluate(current: seeds,
+                                      outcome: converged(run: 60, walk: 30),
+                                      blockSeconds: 1200)
+        #expect(floored.seeds.walkSeconds == 60) // minWalkSeconds floor
+
+        let longer = policy.evaluate(current: seeds,
+                                     outcome: converged(run: 60, walk: 200),
+                                     blockSeconds: 1200)
+        #expect(longer.seeds.walkSeconds == 180) // maxWalkSeconds cap
+    }
+
+    @Test func endedEarlySessionNeverGetsTheConvergedPath() {
+        // Quitting is a negative signal: even at exactly half the runs done (not a bail),
+        // an ended-early session holds instead of converging/probing — the old conservative
+        // behavior for abandoned sessions survives.
+        var out = converged(run: 60, fastRecoveries: 2)
+        out.endedEarly = true
+        out.completedRunIntervals = 3 // of 6 — exactly half, so the bail clause doesn't fire
+        let next = policy.nextSeeds(current: seeds, outcome: out)
+        #expect(next == seeds)
+    }
+
+    @Test func degradedRecoveryBlocksTheProbeBelowTheRegressThreshold() {
+        // One back-off (below regressBackOffCount) + one cap-ridden walk: converge to the
+        // demonstrated length, but an early fast recovery must not outvote the later
+        // degradation — no probe.
+        let eval = policy.evaluate(current: seeds,
+                                   outcome: converged(backOffs: 1, run: 60,
+                                                      fastRecoveries: 1, capped: 1),
+                                   blockSeconds: 1200)
+        #expect(eval.seeds.runSeconds == 60)
+        #expect(eval.reason == .converged)
+    }
+
+    @Test func bailingWithHealthyRecoveriesReadsAsEndedEarlyNotRecovery() {
+        // A bail with ≥2 back-offs but zero net cap-hits must never journal "recoveries
+        // weren't coming back" — that would fabricate a recovery claim (N6).
+        let out = RunSessionOutcome(plannedRunIntervals: 6, completedRunIntervals: 2,
+                                    runBackOffCount: 2, walksHitCap: 0, endedEarly: true)
+        let eval = policy.evaluate(current: seeds, outcome: out, blockSeconds: 1200)
+        #expect(eval.reason == .endedEarly)
+    }
+
+    @Test func degradedRecoveryStillRegressesNotConverges() {
+        let eval = policy.evaluate(current: seeds,
+                                   outcome: converged(run: 60, capped: 1),
+                                   blockSeconds: 1200)
+        #expect(eval.seeds.runSeconds == 75) // regressStep, not the converged 60
+        #expect(eval.reason == .recoveryNotReturning)
+        #expect(!eval.isStructural)
+    }
+
+    @Test func convergedRunNeverRisesAboveTheCurrentSeed() {
+        // An extended-run session that also backed off: converged may exceed the seed the
+        // user ran with; the converged path still never raises the run seed.
+        let eval = policy.evaluate(current: seeds,
+                                   outcome: converged(run: 150, fastRecoveries: 1),
+                                   blockSeconds: 1200)
+        #expect(eval.seeds.runSeconds <= 90)
+    }
+
+    @Test func convergedSeedsStayInBandForAllOutcomes() {
+        // Property sweep over the converged dimensions: run seed never rises, walk stays in
+        // band, and the floor holds.
+        for run in [nil, 15, 45, 60, 90, 300] as [Int?] {
+            for walk in [nil, 15, 60, 90, 200] as [Int?] {
+                for fast in [0, 2] {
+                    for capped in [0, 1] {
+                        let out = converged(run: run, walk: walk, fastRecoveries: fast, capped: capped)
+                        let eval = policy.evaluate(current: seeds, outcome: out, blockSeconds: 1200)
+                        #expect(eval.seeds.runSeconds <= seeds.runSeconds)
+                        #expect(eval.seeds.runSeconds >= policy.minRunSeconds)
+                        #expect(eval.seeds.walkSeconds >= policy.minWalkSeconds)
+                        #expect(eval.seeds.walkSeconds <= max(policy.maxWalkSeconds, seeds.walkSeconds))
+                    }
+                }
+            }
+        }
     }
 }

@@ -25,11 +25,23 @@ public enum ProgressionReason: Sendable, Hashable {
     /// Nothing decisive either way.
     case mixedSession
 
+    // Converge evidence (run) — back-offs with healthy recovery: the live loop calibrated a
+    // too-long seed; next session starts from the demonstrated length. Neutral by design —
+    // these are the system matching the runner, not the runner failing the system.
+    /// Seeds matched to the in-session converged (demonstrated) durations.
+    case converged
+    /// Matched to demonstrated, plus one overload notch (positive recovery evidence).
+    case convergedWithProbe
+
     // Ease evidence.
     case shortSets
     case loweredWeight
     case endedEarly
+    /// Retired emission (pre-convergence sessions journaled this); kept so historical journal
+    /// strings still bucket. The run regress now emits `.recoveryNotReturning`.
     case repeatedBackOffs
+    /// Repeated back-offs AND walks riding to the cap unrecovered — the true struggle regress.
+    case recoveryNotReturning
 
     /// The one quiet clause the journal shows after the change ("— clean session").
     public var summary: String {
@@ -45,6 +57,9 @@ public enum ProgressionReason: Sendable, Hashable {
         case .loweredWeight: return "weight lowered mid-session"
         case .endedEarly: return "ended early"
         case .repeatedBackOffs: return "repeated back-offs"
+        case .converged: return "matched to what you ran"
+        case .convergedWithProbe: return "matched to what you ran, plus a step"
+        case .recoveryNotReturning: return "recoveries weren't coming back"
         }
     }
 }
