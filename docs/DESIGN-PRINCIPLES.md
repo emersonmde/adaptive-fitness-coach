@@ -70,12 +70,5 @@ falling heart rate is the hero. Without HR (or on a fixed rest card), the classi
 ring **drains** with time as the hero. A blue-over-amber dual arc was considered and rejected:
 two arcs on one ring is two variables in one channel.
 
-## Applying to P2 (strength redesign checklist)
-
-- Rep count / hold ring stays the single hero; deep-blue field stays the identity.
-- Move rest/hold countdowns out of view `@State` into the manager (tick-driven like the run
-  engine) so P2 can adapt rest lengths — and so timers are testable.
-- The reserved bottom slot on the strength glance is where the P2 fatigue/effort signal
-  lands (principle 7 — the slot already exists, keep it).
-- Rest ring keeps heat-amber (gradient language), never the phase blue.
-- Strength summary uses the same instant-end + save-state pattern (already shared).
+*(The original P2 strength-redesign checklist that closed this doc shipped in full and
+was removed; the rest-ring worked example above remains as its record.)*

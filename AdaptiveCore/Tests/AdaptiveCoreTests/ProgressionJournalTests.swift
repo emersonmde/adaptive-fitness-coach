@@ -153,7 +153,7 @@ struct RunEvaluationTests {
         )
         #expect(eval.seeds.walkSeconds > 90)
         #expect(!eval.isStructural)
-        #expect(eval.reason == .repeatedBackOffs)
+        #expect(eval.reason == .recoveryNotReturning)
     }
 
     @Test func strongSessionAndSnapReasons() {

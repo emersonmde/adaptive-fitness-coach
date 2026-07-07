@@ -44,6 +44,16 @@ public struct AdaptationConfig: Sendable, Hashable {
     public var walkLengthenIncrement: TimeInterval
     /// A walk is never lengthened beyond this total, to avoid an unbounded walk if HR never recovers.
     public var maxWalkDuration: TimeInterval
+    /// Granularity future-segment convergence rounds to (runs round down — never credit
+    /// undemonstrated seconds; walks round up — longer walks are the safe direction).
+    public var convergenceRounding: TimeInterval
+    /// Hard cap on how far one upward convergence event may raise a future run's target.
+    /// A relative +25% bound applies alongside; the smaller wins. Single-session load spikes
+    /// are the injury driver (sessions ≥10% beyond the recent longest raise risk), so upward
+    /// convergence is slew-limited while downward converges in one jump (N7 bias).
+    /// Source: 5,200-runner cohort — session-specific overdistance, not weekly progression,
+    /// predicted overuse injury (Br J Sports Med 2025; PMC12421110).
+    public var maxUpwardConvergenceStep: TimeInterval
 
     public init(
         backOffWindow: TimeInterval = 20,
@@ -58,7 +68,9 @@ public struct AdaptationConfig: Sendable, Hashable {
         minWalkDuration: TimeInterval = 60,
         runExtendIncrement: TimeInterval = 30,
         walkLengthenIncrement: TimeInterval = 15,
-        maxWalkDuration: TimeInterval = 300
+        maxWalkDuration: TimeInterval = 300,
+        convergenceRounding: TimeInterval = 15,
+        maxUpwardConvergenceStep: TimeInterval = 30
     ) {
         self.backOffWindow = backOffWindow
         self.hardBackOffWindow = hardBackOffWindow
@@ -73,6 +85,8 @@ public struct AdaptationConfig: Sendable, Hashable {
         self.runExtendIncrement = runExtendIncrement
         self.walkLengthenIncrement = walkLengthenIncrement
         self.maxWalkDuration = maxWalkDuration
+        self.convergenceRounding = convergenceRounding
+        self.maxUpwardConvergenceStep = maxUpwardConvergenceStep
     }
 }
 

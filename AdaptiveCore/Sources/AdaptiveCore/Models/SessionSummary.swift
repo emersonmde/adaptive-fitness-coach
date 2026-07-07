@@ -31,6 +31,17 @@ public struct SessionSummary: Sendable, Hashable {
     public var walksCompleted: Int
     /// Seconds of run time spent in the target zone (fresh zone readings only, N6).
     public var timeInTargetZone: TimeInterval
+    /// Seconds of run time spent above the target zone (same fresh-reading rule). Feeds the
+    /// effort suggestion on the complete screen.
+    public var timeAboveTargetZone: TimeInterval
+    /// The run duration in-session convergence settled on (seconds), nil when convergence
+    /// never fired. The engine's demonstrated value — the only honest source for the
+    /// cross-session converged path (never derived from averages, N6).
+    public var convergedRunSeconds: Int?
+    /// The walk duration in-session convergence settled on (seconds), nil when never fired.
+    public var convergedWalkSeconds: Int?
+    /// Seconds the cooldown was extended to backfill adaptation-driven session shrink.
+    public var backfilledCooldownSeconds: TimeInterval
     /// Longest single run interval sustained this session, seconds.
     public var longestRunSeconds: TimeInterval
     /// Mean heart-rate recovery drop (bpm) across the session's walks, nil if unmeasurable.
@@ -56,6 +67,10 @@ public struct SessionSummary: Sendable, Hashable {
         fastRecoveries: Int = 0,
         walksCompleted: Int = 0,
         timeInTargetZone: TimeInterval = 0,
+        timeAboveTargetZone: TimeInterval = 0,
+        convergedRunSeconds: Int? = nil,
+        convergedWalkSeconds: Int? = nil,
+        backfilledCooldownSeconds: TimeInterval = 0,
         longestRunSeconds: TimeInterval = 0,
         meanRecoveryDrop: Double? = nil,
         endedEarly: Bool = false,
@@ -75,6 +90,10 @@ public struct SessionSummary: Sendable, Hashable {
         self.fastRecoveries = fastRecoveries
         self.walksCompleted = walksCompleted
         self.timeInTargetZone = timeInTargetZone
+        self.timeAboveTargetZone = timeAboveTargetZone
+        self.convergedRunSeconds = convergedRunSeconds
+        self.convergedWalkSeconds = convergedWalkSeconds
+        self.backfilledCooldownSeconds = backfilledCooldownSeconds
         self.longestRunSeconds = longestRunSeconds
         self.meanRecoveryDrop = meanRecoveryDrop
         self.endedEarly = endedEarly

@@ -328,6 +328,62 @@ struct WorkoutFlowTests {
         #expect(manager.summary?.endedEarly == true)
     }
 
+    @Test func endingDuringTheCooldownIsNotABail() async {
+        // Every planned run is behind the user once the cooldown starts (authored or
+        // backfilled) — cutting it short is finishing, not bailing.
+        let manager = makeManager()
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        tick(manager, seconds: 22)                 // warmup 2 + 2×(5+5) → into the cooldown
+        #expect(manager.currentPhase == .cooldownWalk)
+        manager.endManually()
+        await waitUntilComplete(manager)
+        #expect(manager.summary?.endedEarly == false)
+    }
+
+    @Test func summaryCarriesConvergedDurationsAndBackfill() async {
+        // A back-off converges future runs; the shrunk session backfills the cooldown; both
+        // reach the summary so progression and the complete screen see the demonstrated truth.
+        let manager = makeManager()
+        let plan = IntervalPlan.beginnerRunWalk(warmup: 2, runDuration: 120, walkDuration: 10,
+                                                cycles: 2, cooldown: 60)
+        let adaptation = AdaptationConfig(backOffWindow: 3, recoverWindow: 999,
+                                          minRunDuration: 2, convergenceRounding: 15)
+        await manager.begin(config: SessionConfig(plan: plan), routineName: "Test",
+                            adaptationConfig: adaptation)
+        tick(manager, seconds: 2)                  // warmup → run
+        manager.receiveZone(2)
+        tick(manager, seconds: 27)                 // comfortable through 27s
+        manager.receiveZone(4)
+        tick(manager, seconds: 4)                  // sustained hot → back-off at 30s
+        #expect(manager.currentPhase == .walk)
+        manager.receiveZone(nil)                   // no signal for the rest — fixed intervals
+        tick(manager, seconds: 400)                // ride the rest of the session out
+        await waitUntilComplete(manager)
+
+        #expect(manager.summary?.convergedRunSeconds == 30)
+        // Runs shrank 240 → 60 planned seconds; the cooldown backfilled up to its ×2 cap
+        // (60 authored + 60), not the full 180s shortfall.
+        #expect(manager.summary?.backfilledCooldownSeconds == 60)
+    }
+
+    @Test func easingCueClearsOnTheNextTransition() async {
+        // The 10s easing cue is phase-bounded: it survives into the walk it explains, but a
+        // later transition (walk → next run) dismisses it — "EASING" never lingers into a run.
+        let manager = makeManager()
+        let adaptation = AdaptationConfig(backOffWindow: 3, recoverWindow: 999, minRunDuration: 2)
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test",
+                            adaptationConfig: adaptation)
+        tick(manager, seconds: 2)                  // warmup → run
+        manager.receiveZone(4)
+        tick(manager, seconds: 3)                  // back-off → walk, cue showing
+        #expect(manager.currentPhase == .walk)
+        #expect(manager.adaptationEvent != nil)
+        manager.receiveZone(nil)
+        tick(manager, seconds: 5)                  // walk runs out → transition into run 2
+        #expect(manager.currentPhase == .run)
+        #expect(manager.adaptationEvent == nil)    // cleared by the transition, not a timer
+    }
+
     @Test func summaryAppearsInstantlyEvenIfHealthKitFinalizeStalls() async {
         // The end-of-workout freeze fix: the summary must come from the engine immediately,
         // not wait on the OS finalize. The stalling backend never returns from end().

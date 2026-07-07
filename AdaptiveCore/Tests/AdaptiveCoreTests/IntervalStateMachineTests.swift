@@ -401,4 +401,255 @@ struct IntervalStateMachineTests {
         _ = drive(&machine, zone: { _ in nil }, maxSeconds: 10)
         #expect(machine.timeInTargetZone == 0)
     }
+
+    // MARK: - In-session convergence (future segments retarget to demonstrated durations)
+
+    @Test func backOffConvergesFutureRunsDownwardInOneJump() {
+        let adapt = AdaptationConfig(backOffWindow: 10, recoverWindow: 999, minRunDuration: 10)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 90), (.walk, 60), (.run, 90), (.walk, 60), (.run, 90),
+        ]), adaptationConfig: adapt)
+
+        // Comfortable for 55s, then sustained hot → back-off at 65s, rounded DOWN to 60.
+        var adaptations: [AdaptationEvent] = []
+        while machine.currentPhase == .run {
+            let zone = machine.intervalElapsed < 55 ? 2 : 3
+            let result = machine.tick(deltaTime: 1, currentZone: zone)
+            if let a = result.adaptation { adaptations.append(a) }
+            if result.transition != nil { break }
+        }
+
+        // Convergence itself is silent — the only event is the back-off's own cue.
+        #expect(adaptations.map(\.action) == [.shortenedRun])
+        #expect(machine.convergedRunSeconds == 60)
+        #expect(machine.segments[2].targetDuration == 60) // future runs, one jump
+        #expect(machine.segments[4].targetDuration == 60)
+        #expect(machine.segments[1].targetDuration == 60) // walks untouched by run convergence
+        #expect(machine.segments[3].targetDuration == 60)
+    }
+
+    @Test func recoveredWalkConvergesFutureWalksDownwardRoundedUp() {
+        let adapt = AdaptationConfig(recoverWindow: 10, recoveryDropBPM: 20, minWalkDuration: 60)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 10), (.walk, 120), (.run, 10), (.walk, 120),
+        ]), adaptationConfig: adapt)
+
+        // Run to build a peak of 160.
+        while machine.currentPhase == .run {
+            _ = machine.tick(deltaTime: 1, sample: WorkoutSample(zone: 2, heartRate: 160))
+        }
+        // Walk: recovery signal appears at 53s, sustains 10s → shorten at 63s, rounded UP to 75.
+        while machine.currentPhase == .walk {
+            let hr: Double = machine.intervalElapsed < 53 ? 155 : 130
+            _ = machine.tick(deltaTime: 1, sample: WorkoutSample(zone: 2, heartRate: hr))
+        }
+
+        #expect(machine.convergedWalkSeconds == 75)
+        #expect(machine.segments[3].targetDuration == 75)
+        #expect(machine.segments[2].targetDuration == 10) // runs untouched by walk convergence
+    }
+
+    @Test func extendedRunCompletionRaisesFutureRunsSlewLimited() {
+        let adapt = AdaptationConfig(allowRunExtension: true, extendWindow: 5,
+                                     recoverWindow: 999, runExtendIncrement: 30)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 60), (.walk, 30), (.run, 60),
+        ]), adaptationConfig: adapt)
+
+        // Comfortable through the planned end → extends 60 → 90; then the zone drops out and
+        // the stretched run completes naturally at 90 (a completed demonstration).
+        while machine.currentPhase == .run {
+            let zone: Int? = machine.intervalElapsed < 89 ? 2 : nil
+            _ = machine.tick(deltaTime: 1, currentZone: zone)
+            if machine.currentPhase != .run { break }
+        }
+
+        // Future run rises by min(25% of 60 = 15, cap 30) = 15 — never straight to 90.
+        #expect(machine.segments[2].targetDuration == 75)
+        #expect(machine.convergedRunSeconds == 75)
+    }
+
+    @Test func cappedWalkRaisesFutureWalks() {
+        let adapt = AdaptationConfig(recoveryDropBPM: 20, walkLengthenIncrement: 15, maxWalkDuration: 90)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 10), (.walk, 60), (.run, 10), (.walk, 60),
+        ]), adaptationConfig: adapt)
+
+        while machine.currentPhase == .run {
+            _ = machine.tick(deltaTime: 1, sample: WorkoutSample(zone: 2, heartRate: 160))
+        }
+        // Never recovers: drop of 5 bpm, zone at target → lengthens 60→75→90, rides to the cap.
+        while machine.currentPhase == .walk {
+            _ = machine.tick(deltaTime: 1, sample: WorkoutSample(zone: 2, heartRate: 155))
+        }
+
+        #expect(machine.walksHitCap == 1)
+        #expect(machine.segments[3].targetDuration == 90) // future walk raised to the demonstrated cap
+        #expect(machine.convergedWalkSeconds == 90)
+    }
+
+    @Test func downwardConvergenceAfterUpwardWins() {
+        let adapt = AdaptationConfig(backOffWindow: 10, allowRunExtension: true, extendWindow: 5,
+                                     recoverWindow: 999, minRunDuration: 10, runExtendIncrement: 30)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 60), (.walk, 30), (.run, 60), (.walk, 30), (.run, 60),
+        ]), adaptationConfig: adapt)
+
+        // Run 1 extends to 90 and completes → future runs raised to 75.
+        while machine.currentPhase == .run, machine.currentIndex == 0 {
+            let zone: Int? = machine.intervalElapsed < 89 ? 2 : nil
+            _ = machine.tick(deltaTime: 1, currentZone: zone)
+        }
+        while machine.currentPhase == .walk { _ = machine.tick(deltaTime: 1, currentZone: nil) }
+        #expect(machine.segments[2].targetDuration == 75)
+
+        // Run 2 goes hot early → back-off at ~30s → everything converges back DOWN to 30.
+        while machine.currentPhase == .run, machine.currentIndex == 2 {
+            let zone = machine.intervalElapsed < 20 ? 2 : 3
+            _ = machine.tick(deltaTime: 1, currentZone: zone)
+        }
+        #expect(machine.segments[4].targetDuration == 30)
+        #expect(machine.convergedRunSeconds == 30)
+    }
+
+    @Test func defiedWalkNeverConvergesFutureWalksUpward() {
+        // The user ran through the walk (compliance monitor accepted); its cap-ride is a
+        // choice, not recovery evidence — future walks and the converged record stay put.
+        let adapt = AdaptationConfig(recoveryDropBPM: 20, walkLengthenIncrement: 15, maxWalkDuration: 90)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 10), (.walk, 60), (.run, 10), (.walk, 60),
+        ]), adaptationConfig: adapt)
+
+        while machine.currentPhase == .run {
+            _ = machine.tick(deltaTime: 1, sample: WorkoutSample(zone: 2, heartRate: 160))
+        }
+        machine.markCurrentWalkDefied()
+        while machine.currentPhase == .walk {
+            _ = machine.tick(deltaTime: 1, sample: WorkoutSample(zone: 2, heartRate: 155))
+        }
+
+        #expect(machine.walksHitCap == 1)                  // the cap still counts (netted later)
+        #expect(machine.segments[3].targetDuration == 60)  // future walk NOT stretched
+        #expect(machine.convergedWalkSeconds == nil)       // nothing recorded for progression
+    }
+
+    @Test func upwardConvergenceStepStaysOnTheGrid() {
+        // 45s future run + a completed 75s extension: the raw 25% step (11.25s) quantizes to
+        // one full grid step (15s) — targets never land off the 15s grid.
+        let adapt = AdaptationConfig(allowRunExtension: true, extendWindow: 5,
+                                     recoverWindow: 999, runExtendIncrement: 30)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 45), (.walk, 30), (.run, 45),
+        ]), adaptationConfig: adapt)
+
+        while machine.currentPhase == .run {
+            let zone: Int? = machine.intervalElapsed < 74 ? 2 : nil
+            _ = machine.tick(deltaTime: 1, currentZone: zone)
+            if machine.currentPhase != .run { break }
+        }
+
+        #expect(machine.segments[2].targetDuration == 60) // 45 + 15, not 56.25
+        #expect(machine.convergedRunSeconds == 60)
+    }
+
+    @Test func finalRunExtensionRecordsNoUpwardConvergence() {
+        // Run 1 backs off (converged 30); run 2 — the LAST run — extends and completes. With
+        // no future segment to slew-limit against, recording the raw demonstration would
+        // bypass the injury cap; the long run is the snap path's job (`longestRunInterval`).
+        let adapt = AdaptationConfig(backOffWindow: 10, allowRunExtension: true, extendWindow: 5,
+                                     recoverWindow: 999, minRunDuration: 10, runExtendIncrement: 30)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 60), (.walk, 30), (.run, 60),
+        ]), adaptationConfig: adapt)
+
+        while machine.currentPhase == .run, machine.currentIndex == 0 {
+            let zone = machine.intervalElapsed < 20 ? 2 : 3
+            _ = machine.tick(deltaTime: 1, currentZone: zone)
+        }
+        #expect(machine.convergedRunSeconds == 30)
+        while machine.currentPhase == .walk { _ = machine.tick(deltaTime: 1, currentZone: nil) }
+        // Run 2 (converged target 30) extends comfortably to 60, then completes on a gap.
+        while machine.currentPhase == .run {
+            let zone: Int? = machine.intervalElapsed < 59 ? 2 : nil
+            _ = machine.tick(deltaTime: 1, currentZone: zone)
+            if machine.isComplete { break }
+        }
+
+        #expect(machine.convergedRunSeconds == 30)          // unchanged — no un-slewed record
+        #expect(machine.longestRunInterval >= 59)           // the demonstration lives here
+    }
+
+    // MARK: - Cooldown backfill
+
+    @Test func cooldownBackfillsAdaptationShrinkUpToTheCap() {
+        let adapt = AdaptationConfig(backOffWindow: 10, recoverWindow: 10,
+                                     minRunDuration: 10, minWalkDuration: 60)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 300), (.walk, 300), (.cooldownWalk, 300),
+        ]), adaptationConfig: adapt)
+
+        // Run cut at 10s (hot from the start), walk recovered at the 60s floor:
+        // 350s of planned interval time evaporates to adaptation.
+        while machine.currentPhase == .run {
+            _ = machine.tick(deltaTime: 1, sample: WorkoutSample(zone: 3, heartRate: 160))
+        }
+        while machine.currentPhase == .walk {
+            _ = machine.tick(deltaTime: 1, sample: WorkoutSample(zone: 1, heartRate: 120))
+        }
+
+        // Shortfall = 900 − (70 + 300) = 530, but the cap is min(300+600, 300×2) = 600.
+        #expect(machine.currentPhase == .cooldownWalk)
+        #expect(machine.segments[2].targetDuration == 600)
+        #expect(machine.backfilledCooldownSeconds == 300)
+
+        // Delivered backfill counts only what was actually walked (N6): nothing until the
+        // authored 300s is behind the user, then the extension accrues, then the full value.
+        #expect(machine.deliveredCooldownBackfill == 0)
+        for _ in 0..<400 { _ = machine.tick(deltaTime: 1, currentZone: nil) }
+        #expect(machine.deliveredCooldownBackfill == 100)  // 400s in − 300s authored
+        while !machine.isComplete { _ = machine.tick(deltaTime: 1, currentZone: nil) }
+        #expect(machine.deliveredCooldownBackfill == 300)
+    }
+
+    @Test func skippedTimeIsNeverBackfilled() {
+        var machine = IntervalStateMachine(config: config([
+            (.warmupWalk, 60), (.run, 30), (.cooldownWalk, 60),
+        ]))
+
+        // Skip the warmup 10s in — the user's choice removes those 50s from the budget.
+        for _ in 0..<10 { _ = machine.tick(deltaTime: 1, currentZone: nil) }
+        _ = machine.skipCurrentSegment()
+        while machine.currentPhase == .run { _ = machine.tick(deltaTime: 1, currentZone: nil) }
+
+        #expect(machine.currentPhase == .cooldownWalk)
+        #expect(machine.segments[2].targetDuration == 60) // authored — nothing to backfill
+        #expect(machine.backfilledCooldownSeconds == 0)
+    }
+
+    @Test func naturalSessionNeverBackfills() {
+        var machine = IntervalStateMachine(config: config([
+            (.run, 30), (.walk, 30), (.cooldownWalk, 60),
+        ]))
+        while machine.currentPhase != .cooldownWalk {
+            _ = machine.tick(deltaTime: 1, currentZone: nil)
+        }
+        #expect(machine.segments[2].targetDuration == 60)
+        #expect(machine.backfilledCooldownSeconds == 0)
+    }
+
+    // MARK: - Above-zone dwell
+
+    @Test func timeAboveTargetZoneAccruesOnlyAboveDuringRuns() {
+        let adapt = AdaptationConfig(backOffWindow: 999, recoverWindow: 999, maxWalkDuration: 999)
+        var machine = IntervalStateMachine(config: config([(.run, 10), (.walk, 5)]), adaptationConfig: adapt)
+
+        for second in 0..<10 {
+            let zone: Int? = second < 4 ? 3 : (second < 7 ? 2 : nil)
+            _ = machine.tick(deltaTime: 1, currentZone: zone)
+        }
+        while machine.currentPhase == .walk { _ = machine.tick(deltaTime: 1, currentZone: 3) }
+
+        #expect(machine.timeAboveTargetZone == 4) // above-zone run ticks only
+        #expect(machine.timeInTargetZone == 3)    // in-zone run ticks only; walks never count
+    }
 }

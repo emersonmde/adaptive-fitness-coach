@@ -336,13 +336,17 @@ struct RunSessionContainerView: View {
                         saveState: manager.healthSaveState,
                         comparisons: comparisons,
                         notePreview: { effort in progressionNote(for: summary, effort: effort) },
-                        onDone: { effort in
+                        onDone: { effort, userAdjusted in
                             // Emit progression ONCE, on Done, with the rating (so a high rating
                             // holds rather than advances). Then write Health and tear down —
                             // reset clears the backend the write needs. The write awaits the
                             // background finalize, so it races a timeout: if the OS wedges,
                             // the effort is skipped (best-effort) rather than wedging Done.
-                            recordOutcome(summary, effort: effort)
+                            // Only a USER-adjusted rating gates progression — an untouched
+                            // suggestion is our own objective signals echoed back, and feeding
+                            // it into the high-effort gate would double-count them (it still
+                            // records to Health below, per the prefill decision).
+                            recordOutcome(summary, effort: userAdjusted ? effort : nil)
                             Task {
                                 if let effort {
                                     await awaitBestEffort(timeoutSeconds: 5) {
@@ -467,7 +471,10 @@ struct RunSessionContainerView: View {
                 backOffWindow: 3, hardBackOffWindow: 2, hardBackOffMinRun: 2,
                 extendWindow: 4, recoverWindow: 3, recoveryDropBPM: 20,
                 minRunDuration: 2, minWalkDuration: 2,
-                runExtendIncrement: 6, walkLengthenIncrement: 4, maxWalkDuration: 30
+                runExtendIncrement: 6, walkLengthenIncrement: 4, maxWalkDuration: 30,
+                // Scale the convergence grid/slew with the compressed 6s runs — the default
+                // 15s grid would floor every demo back-off to the 2s minimum.
+                convergenceRounding: 2, maxUpwardConvergenceStep: 4
             )
             manager.start(config: SessionConfig(plan: plan), routineName: name, adaptationConfig: adaptation)
         } else {

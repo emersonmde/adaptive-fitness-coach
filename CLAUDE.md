@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-A watch-first adaptive running app (iOS + watchOS, SwiftUI). For current status, milestone scope (P0–P5 shipped; P6 next), and open TODOs, read **`docs/PROJECT-STATUS.md`** first, then the PRD `docs/adaptive-fitness-coach-spec.md`.
+A watch-first adaptive running app (iOS + watchOS, SwiftUI). For current status and open TODOs, read **`docs/PROJECT-STATUS.md`** first. Before changing anything in the adaptive engines, progression policies, or the watch↔phone sync path, read **`docs/ADAPTIVE-SYSTEM.md`** — it documents the mechanisms and the invariants changes must preserve. The PRD is `docs/adaptive-fitness-coach-spec.md` (§3 non-negotiables bind everything).
 
 ## Build & test
 

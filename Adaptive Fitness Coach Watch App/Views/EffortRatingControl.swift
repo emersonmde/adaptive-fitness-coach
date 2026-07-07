@@ -16,6 +16,11 @@ import AdaptiveCore
 struct EffortRatingControl: View {
     @Binding var effort: Int?
     var tint: Color
+    /// True while the current value is the app's HR-derived suggestion the user hasn't
+    /// touched yet — rendered visibly *as* a suggestion (secondary tint + caption) so the
+    /// pre-selection reads as "our guess, adjust if it felt different", never as their answer
+    /// already given.
+    var isSuggested: Bool = false
 
     private var level: EffortLevel? {
         effort.flatMap(EffortLevel.init(score:))
@@ -33,7 +38,8 @@ struct EffortRatingControl: View {
                 }
                 Text(level?.label ?? "–")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundStyle(level == nil ? .secondary : tint)
+                    .foregroundStyle(level == nil ? AnyShapeStyle(.secondary)
+                                     : AnyShapeStyle(tint.opacity(isSuggested ? 0.55 : 1)))
                     .frame(minWidth: 88)          // fits "Moderate"; the words never reflow the ±
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -41,14 +47,15 @@ struct EffortRatingControl: View {
                     effort = (level?.up ?? .easy).score
                 }
             }
-            Text(level == nil ? "How did it feel?" : " ")
+            Text(level == nil ? "How did it feel?"
+                 : (isSuggested ? "Suggested — adjust if it felt different" : " "))
                 .font(.caption2)
                 .foregroundStyle(WatchTheme.textSecondary)
         }
         // One element for VoiceOver, adjustable: swipe up/down steps the levels.
         .accessibilityElement()
         .accessibilityLabel("Effort rating")
-        .accessibilityValue(level?.label ?? "not rated")
+        .accessibilityValue(level.map { isSuggested ? "\($0.label), suggested" : $0.label } ?? "not rated")
         .accessibilityHint("Adjust to rate how hard the workout felt")
         .accessibilityAdjustableAction { direction in
             switch direction {
