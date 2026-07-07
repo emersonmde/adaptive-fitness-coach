@@ -122,7 +122,12 @@ tap in-workout paged views).
   sims by UDID.
 - `HKCorrelationType` must **not** appear in HealthKit authorization request sets
   (runtime exception; contained quantity types carry the auth).
-- App Intent descriptions **can't contain the word "apple"** (ITMS-90626).
+- App Intent descriptions **can't contain Apple trademark words** (ITMS-90626 — bounced
+  build 9 on "apple" and build 19 on "iPhone"). The rejection is **email-only**: the
+  upload reports success, then the build silently never appears in the ASC API (not even
+  PROCESSING) — hours of apparent ingest stall. Before any release, grep every
+  `IntentDescription`/intent title for `apple|iphone|ipad|siri|watch os`; when a build
+  vanishes post-upload, check email first.
 - SwiftUI Menu items surface to XCUI **by label, not accessibilityIdentifier**; a bare
   `.accessibilityIdentifier` on a stack can swallow child buttons — use
   `.accessibilityElement(children: .contain)`.
