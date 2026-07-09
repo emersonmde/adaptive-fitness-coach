@@ -12,20 +12,35 @@ The entry point for picking up this project. Read this, then:
 Detailed build-by-build history lives in git (`git log` — commit messages are thorough);
 this file carries only current state, the active roadmap, and still-open items.
 
-_Last updated 2026-07-06._
+_Last updated 2026-07-08._
 
 ## Where things stand
 
-**Shipped:** P0–P6 plus P6.1 (run summary & insights). TestFlight **build 18**
-(P6.1 + the quick-log always-pending rework) is `IN_BETA_TESTING`.
+**Shipped:** P0–P6 plus P6.1 (run summary & insights). TestFlight **build 20**
+(run-convergence + the queued build-18 feedback fixes) is `IN_BETA_TESTING`;
+**build 21** (the food-UX overhaul below) is the current release.
 
-**On `main`, unreleased (queued for build 19):** five small changes from the user's
-build-18 on-device session — context re-push on watch reinstall, watch quick-log button
-copy ("Save for iPhone"), in-sheet delete for pending review items, the "Log a Meal"
-watch complication + `LogMealIntent`, and the reserved INSIGHTS slot with a waiting
-state before digest history exists.
+**Food-UX overhaul (2026-07-08 → build 21):** from the user's build-20 field notes.
+(1) **Day rollover** — an app left open overnight kept yesterday's date everywhere;
+`WeekView` now refreshes a `today` state on `NSCalendarDayChanged` (+ foregrounding)
+and passes it into `WeekStrip`/`nextOccurrence()` explicitly. (2) **Food day rows
+migrated to a native `List` + `swipeActions`** (custom `SwipeableRow` deleted; its
+`PressableCardStyle` survives in its own file); delete confirms via a row-owned
+**`.alert`** — centered, AX-complete, no more popping over the gauge. (3) **Edit
+sheet rework:** fresh state per entry (`.id(entry.id)` — `sheet(item:)` reuses @State
+storage otherwise), quantity editing (shared `QuantityStepper` + `edited(quantity:)`),
+kcal-focused-only keyboard Done via `@FocusState`, pinned Save bar, dirty-guarded
+"Log again"/swipe-dismiss with a discard confirm, digit-filtered kcal input.
+(4) **Confirmation sheet:** themed `QuantityStepper` replaces the stock `Stepper`,
+worded "Delete" toolbar button, conditional dismiss lock, 44 pt tap targets.
+(5) **Scan de-jank:** live `.text()` recognition removed from `DataScannerViewController`
+(OCR runs on the captured still — the roaming highlight/"hold still" guidance served
+nothing and made hand-held receipts uncapturable); shutter haptic on tap + an honest
+miss toast when `capturePhoto()` fails. (6) `WhenRow` chips overflow-safe at
+accessibility sizes; `textTertiary` lightened to clear AA at caption sizes.
+**On-device pending: a real receipt/plate scan** (the sim can't drive DataScanner).
 
-**Run-convergence milestone (2026-07-07, branch `run-convergence` → build 19):** from
+**Run-convergence milestone (2026-07-07 → builds 19/20):** from
 the user's first real run — the live HR loop was right but the timers lied, the session
 shrank, and the policy punished a well-regulated session. Shipped: in-session
 bidirectional future-segment convergence (timers turn truthful within an interval or
@@ -43,9 +58,9 @@ prefill accuracy, cue duration; convergence bounds are literature-seeded
 (ADAPTIVE-SYSTEM.md §7 tuning debt).
 
 **NEXT:** strength-adaptation feedback from the user (details TBD — parked out of the
-run milestone), then on-device validation of build 19.
+run milestone), then on-device validation of builds 20/21.
 
-**Package tests:** ~478 (`cd AdaptiveCore && swift test`). Phone UI suites
+**Package tests:** ~517 (`cd AdaptiveCore && swift test`). Phone UI suites
 (`RoutineFlowUITests`, `CoachFlowUITests`, `MealFlowUITests`) run **serially**; watch
 in-workout flows verify via manager-level unit tests + manual sim (watchOS XCUI can't
 tap in-workout paged views).
@@ -132,8 +147,20 @@ tap in-workout paged views).
   `.accessibilityIdentifier` on a stack can swallow child buttons — use
   `.accessibilityElement(children: .contain)`.
 - Inside ScrollView+Button stacks, `.gesture`/`.simultaneousGesture` lose the recognizer
-  race — `.highPriorityGesture` + minimum distance + horizontal latch is the working
-  swipe-row recipe (`SwipeableRow`).
+  race — `.highPriorityGesture` + minimum distance + horizontal latch was the working
+  custom-swipe recipe (the component itself was retired for native `List.swipeActions`
+  in build 21).
+- In `List.swipeActions`, a `role: .destructive` button **optimistically animates the
+  row away on tap** even if the action only opens a confirmation — and tears down any
+  presentation attached to that row. Confirm-first delete buttons must be role-less with
+  `.tint` red (the global accent otherwise paints them green).
+- A row-anchored `confirmationDialog` popover ships **AX-empty on iOS 27** (visible on
+  screen; its buttons invisible to VoiceOver and XCUITest). Use `.alert` for row-level
+  confirms.
+- XCUITest taps land at an element's coordinates **even when it's covered** (e.g. under
+  a pinned `safeAreaInset` bar → the tap hits whatever is on top), and `isHittable`
+  reports true through material backgrounds — scroll by frame geometry, not hittability,
+  before tapping near pinned bars.
 - WC: `transferUserInfo` on an unactivated session is **silently dropped** (hence the
   persisted pending-transfers buffer); a watch-app reinstall **drops the OS-held
   application context** (hence re-push on `sessionWatchStateDidChange`).

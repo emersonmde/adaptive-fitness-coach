@@ -4,10 +4,13 @@ import Vision
 import AdaptiveCore
 
 /// The capture screen (spec §4.1) — a full-screen camera, not a sheet. VisionKit's
-/// `DataScannerViewController` runs live barcode + text recognition:
+/// `DataScannerViewController` runs live **barcode-only** recognition:
 /// - a recognized **barcode auto-advances** with no shutter tap (the fastest salad benchmark),
-/// - the **shutter** (the screen's one dominant element) captures a still → Vision OCR →
-///   receipt/label/plate classification downstream.
+/// - the **shutter** (the screen's one dominant element) captures a still of ANYTHING —
+///   plate, receipt, label — → Vision OCR → classification downstream.
+/// Live `.text()` recognition used to run too and was pure sabotage: OCR happens on the
+/// still, so the roaming yellow highlight + "hold still" guidance it produced were fighting
+/// the user for a result nothing consumed (a hand-held receipt was nearly uncapturable).
 /// Cancel always exits (principle 13). Under `-simulateMealScan` the camera is replaced by
 /// `SimulatedCapturePicker` — the simulator has no camera.
 struct MealCaptureView: View {
@@ -17,6 +20,9 @@ struct MealCaptureView: View {
     @State private var cancelled = false
     @State private var cameraFailed = false
     @State private var showingTypedEntry = false
+    /// A shutter tap whose capture failed — say so briefly instead of dead silence
+    /// (a no-op shutter reads as "it won't let me take the photo").
+    @State private var showingCaptureMiss = false
     /// The captured frame, frozen on screen while OCR runs — a shutter tap with zero
     /// feedback reads as a miss and invites a second tap.
     @State private var frozenStill: UIImage?
@@ -69,6 +75,18 @@ struct MealCaptureView: View {
             }
             .padding(16)
 
+            if showingCaptureMiss {
+                Text("Didn't catch that — try again")
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .frame(maxHeight: .infinity, alignment: .center)
+                    .transition(.opacity)
+                    .accessibilityIdentifier("meal.capture.missToast")
+            }
+
             // Frozen frame + progress while OCR runs (the shutter's honest "got it").
             if let frozenStill {
                 Image(uiImage: frozenStill)
@@ -108,10 +126,17 @@ struct MealCaptureView: View {
             },
             onStill: { image in
                 frozenStill = image   // immediate feedback — the OCR takes a beat
-                Theme.Haptics.capture()
                 Task {
                     let lines = await Self.recognizeText(image)
                     forward(MealCapture(ocrLines: lines, imageData: image.jpegData(compressionQuality: 0.6)))
+                }
+            },
+            onStillFailed: {
+                Theme.Haptics.warning()
+                withAnimation(.easeInOut(duration: 0.2)) { showingCaptureMiss = true }
+                Task {
+                    try? await Task.sleep(for: .seconds(1.8))
+                    withAnimation(.easeInOut(duration: 0.2)) { showingCaptureMiss = false }
                 }
             },
             onFailure: { cameraFailed = true }
@@ -183,6 +208,7 @@ private final class Once: @unchecked Sendable {
 private struct DataScannerRepresentable: UIViewControllerRepresentable {
     let onBarcode: (String) -> Void
     let onStill: (UIImage) -> Void
+    let onStillFailed: () -> Void
     let onFailure: () -> Void
 
     func makeUIViewController(context: Context) -> UIViewController {
@@ -193,16 +219,16 @@ private struct DataScannerRepresentable: UIViewControllerRepresentable {
         let scanner = DataScannerViewController(
             recognizedDataTypes: [
                 .barcode(symbologies: [.ean13, .ean8, .upce, .code128]),
-                .text(),
             ],
             qualityLevel: .balanced,
             recognizesMultipleItems: false,
-            isHighlightingEnabled: true
+            isHighlightingEnabled: true   // barcodes only — text is captured, not chased
         )
         scanner.delegate = context.coordinator
         context.coordinator.scanner = scanner
         context.coordinator.onBarcode = onBarcode
         context.coordinator.onStill = onStill
+        context.coordinator.onStillFailed = onStillFailed
 
         // The shutter — the one dominant element (DESIGN-PRINCIPLES 1).
         let shutter = UIButton(type: .custom, primaryAction: UIAction { [weak coordinator = context.coordinator] _ in
@@ -233,6 +259,9 @@ private struct DataScannerRepresentable: UIViewControllerRepresentable {
         weak var scanner: DataScannerViewController?
         var onBarcode: ((String) -> Void)?
         var onStill: ((UIImage) -> Void)?
+        var onStillFailed: (() -> Void)?
+        /// Re-entrancy latch too: capturePhoto() takes a beat, and a double-tap mid-flight
+        /// must not race a second capture.
         private var fired = false
 
         // Live barcode → auto-advance, once.
@@ -251,11 +280,17 @@ private struct DataScannerRepresentable: UIViewControllerRepresentable {
 
         func captureStill() {
             guard let scanner, !fired else { return }
+            fired = true
+            // The tap must be FELT the instant it lands — capturePhoto() failing silently
+            // (no haptic, no freeze, nothing) read as "the shutter won't let me".
+            Theme.Haptics.capture()
             Task { @MainActor in
                 if let photo = try? await scanner.capturePhoto() {
-                    fired = true
                     scanner.stopScanning()
                     onStill?(photo)
+                } else {
+                    fired = false   // keep scanning — the shutter stays live for a retry
+                    onStillFailed?()
                 }
             }
         }

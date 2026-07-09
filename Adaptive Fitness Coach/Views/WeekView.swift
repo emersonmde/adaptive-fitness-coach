@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 import AdaptiveCore
 
 /// P1 — the hub, rebuilt dark/neon. Top to bottom: an "Up Next" hero (what's next), a
@@ -49,6 +50,10 @@ struct WeekView: View {
     @State private var navigationPath = NavigationPath()
     /// Days this week with a completed workout of ours (Health read-back → strip checks).
     @State private var doneDays: Set<DayOfWeek> = []
+    /// "Now" for everything date-derived on this screen (week-strip highlight, Up Next).
+    /// Views only re-render on state changes, so an app left open across midnight kept
+    /// showing yesterday — this refreshes on the system's day-changed notification.
+    @State private var today = Date()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -188,8 +193,19 @@ struct WeekView: View {
             .onChange(of: scenePhase) {
                 // A workout finished on the watch while we were backgrounded → re-glance.
                 if scenePhase == .active {
+                    today = Date()
                     Task { doneDays = await WorkoutWeekHistory.shared.doneDays() }
                     quickLog.refreshReviewItems()
+                }
+            }
+            .onReceive(NotificationCenter.default
+                .publisher(for: .NSCalendarDayChanged)
+                .receive(on: DispatchQueue.main)) { _ in
+                // Midnight rollover (also delivered on wake if it slept through it).
+                today = Date()
+                Task {
+                    doneDays = await WorkoutWeekHistory.shared.doneDays()
+                    workoutGapDays = await HealthSnapshotBuilder().daysSinceLastWorkout()
                 }
             }
             .onChange(of: mealController.phase) {
@@ -283,8 +299,8 @@ struct WeekView: View {
                             .foregroundStyle(Theme.textTertiary)
                     }
                 }
-                // The quiet card chrome reads passive next to the Food row — this stroke
-                // (SwipeableRow's action-tint treatment) marks "waiting on you".
+                // The quiet card chrome reads passive next to the Food row — this
+                // action-tinted stroke marks "waiting on you".
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.radiusInset, style: .continuous)
                         .strokeBorder(Theme.info.opacity(0.35), lineWidth: 1)
@@ -393,7 +409,7 @@ struct WeekView: View {
     private var content: some View {
         ScrollView {
             VStack(spacing: 18) {
-                if let next = store.nextOccurrence() {
+                if let next = store.nextOccurrence(now: today) {
                     NavigationLink(value: next.routine) {
                         UpNextCard(routine: next.routine, date: next.date)
                     }
@@ -444,7 +460,8 @@ struct WeekView: View {
                     }
                 }
 
-                WeekStrip(store: store, doneDays: doneDays)
+                WeekStrip(store: store, doneDays: doneDays,
+                          today: DayOfWeek(rawValue: Calendar.current.component(.weekday, from: today)) ?? .monday)
                     .padding(.horizontal, 2)
 
                 dailyIntakeLine

@@ -51,6 +51,20 @@ final class MealFlowUITests: XCTestCase {
         button.tap()
     }
 
+    /// Scrolls until the element sits clear ABOVE the pinned commit bar. Frame-based on
+    /// purpose: `isHittable` reports true through the bar's material background, but a tap
+    /// at covered coordinates lands on whatever is on top — the Log button — committing
+    /// to the wrong day.
+    private func scrollClearOfCommitBar(_ element: XCUIElement, in app: XCUIApplication) {
+        let bar = app.buttons["meal.confirm.log"]
+        var attempts = 0
+        while element.frame.maxY >= bar.frame.minY - 40, attempts < 4 {
+            app.swipeUp()
+            attempts += 1
+        }
+        XCTAssertTrue(element.frame.maxY < bar.frame.minY, "couldn't scroll clear of the commit bar")
+    }
+
     /// Taps Log once it's ENABLED — the button stays disabled while any checked item is
     /// still looking up (never commit an unseen number), so an instant tap is a no-op.
     private func tapLogWhenReady(_ app: XCUIApplication, timeout: TimeInterval = 10) {
@@ -178,6 +192,7 @@ final class MealFlowUITests: XCTestCase {
         // Build 8: the scripted receipt prints yesterday's date, so the when-row prefills
         // Yesterday (visible label) — flip to Today so the daily line assertion below holds.
         XCTAssertTrue(app.staticTexts["meal.when.prefill"].exists)
+        scrollClearOfCommitBar(app.buttons["meal.when.today"], in: app)
         app.buttons["meal.when.today"].tap()
 
         // Pantry item is pre-unchecked → Log says 3 items.
@@ -264,6 +279,7 @@ final class MealFlowUITests: XCTestCase {
         XCTAssertTrue(saladKcal.label.contains("your number"))
 
         // Log to today; the day total reflects the override: 520 + 300 + 475 = 1,295.
+        scrollClearOfCommitBar(app.buttons["meal.when.today"], in: app)
         app.buttons["meal.when.today"].tap()
         tapLogWhenReady(app)
         XCTAssertTrue(app.staticTexts["1,295 kcal"].waitForExistence(timeout: 12))
@@ -473,12 +489,10 @@ final class MealFlowUITests: XCTestCase {
         dismissTargetSheetIfPresent(app)
         let row = app.buttons["meal.day.entry.Coca-Cola Classic 12 fl oz"]
         XCTAssertTrue(row.waitForExistence(timeout: 5))
-        // Deliberate press-drag (a synthesized flick can outrun the drag recognizer):
-        // ~30% of the row width leftward lands between reveal and commit → parks open.
-        let start = row.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
-        let end = row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        start.press(forDuration: 0.1, thenDragTo: end)
-        // A short swipe reveals the action button; a longer one commits directly.
+        // Native List swipe actions (the custom recognizer is gone): swipeLeft reveals —
+        // or full-swipes — the trailing Delete; either way it only REQUESTS (the dialog
+        // stays between any flick and a permanent Health deletion).
+        row.swipeLeft()
         let dialogTitle = app.staticTexts["Delete \"Coca-Cola Classic 12 fl oz\"?"]
         if !dialogTitle.waitForExistence(timeout: 2) {
             app.buttons["Delete"].firstMatch.tap()

@@ -367,6 +367,16 @@ struct MealEntryEditTests {
         #expect(renamed.facts.energy.isRange)
     }
 
+    @Test func quantityEditKeepsProvenanceAndPerServingEnergy() {
+        let doubled = original.edited(quantity: 2)
+        #expect(doubled.quantity == 2)
+        #expect(doubled.facts.energy.isRange)        // per-serving number untouched
+        guard case .estimate = doubled.provenance else {
+            Issue.record("quantity must not touch provenance"); return
+        }
+        #expect(original.edited(quantity: 0).quantity == 1)   // nonsense quantity ignored
+    }
+
     @Test func reloggedIsAFreshIdentityNow() {
         let now = Date()
         let again = original.relogged(at: now)

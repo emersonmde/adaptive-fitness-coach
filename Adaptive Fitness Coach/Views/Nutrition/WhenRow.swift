@@ -30,7 +30,7 @@ struct WhenRow: View {
             }
 
             // Meal chips — auto-defaulted, one tap to correct (C1).
-            HStack(spacing: 8) {
+            chipRow {
                 ForEach(MealSlot.dayOrder, id: \.self) { slot in
                     chip(slot.displayName, selected: mealSlot == slot, id: "meal.when.slot.\(slot.rawValue)") {
                         mealSlot = slot
@@ -40,7 +40,7 @@ struct WhenRow: View {
             }
 
             // Day control: Today (default weightless) · Yesterday · Other…
-            HStack(spacing: 8) {
+            chipRow {
                 chip("Today", selected: isToday, id: "meal.when.today") {
                     set(dayOffset: 0)
                 }
@@ -48,9 +48,8 @@ struct WhenRow: View {
                     set(dayOffset: -1)
                 }
                 chip(otherLabel, selected: !isToday && !isYesterday, id: "meal.when.other") {
-                    showingPicker.toggle()
+                    withAnimation(Theme.Motion.settle) { showingPicker.toggle() }
                 }
-                Spacer()
             }
 
             if showingPicker {
@@ -90,8 +89,20 @@ struct WhenRow: View {
             bySettingHour: time.hour ?? 12, minute: time.minute ?? 0, second: 0, of: targetDay
         ) ?? targetDay
         date = min(combined, Date())
-        showingPicker = false
+        withAnimation(Theme.Motion.settle) { showingPicker = false }
         onDateChange?(date)
+    }
+
+    /// Chips fit on one line at standard sizes; at accessibility Dynamic Type they'd
+    /// overflow the sheet's edge — fall back to a horizontal scroll, never clipping.
+    private func chipRow(@ViewBuilder chips: () -> some View) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { chips() }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) { chips() }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func chip(_ label: String, selected: Bool, id: String, action: @escaping () -> Void) -> some View {

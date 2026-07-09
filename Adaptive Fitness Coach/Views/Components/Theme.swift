@@ -31,7 +31,7 @@ enum Theme {
 
     static let textPrimary = Color(hex: 0xF4F5F7)   // ~92% white, less halation
     static let textSecondary = Color(hex: 0x9DA3AE) // metadata (AA)
-    static let textTertiary = Color(hex: 0x6A6F7A)  // sparingly, >= 13pt only
+    static let textTertiary = Color(hex: 0x828895)  // sparingly; lightest tier that clears AA (4.5:1) on both surfaces at caption sizes (was 0x6A6F7A ≈ 3.7:1)
 
     // Brand accent (phone identity only)
     static let accent = Color(hex: 0x34E27A)        // Emerald (matches the run semantic — one coherent green)
