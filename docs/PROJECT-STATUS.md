@@ -12,13 +12,46 @@ The entry point for picking up this project. Read this, then:
 Detailed build-by-build history lives in git (`git log` — commit messages are thorough);
 this file carries only current state, the active roadmap, and still-open items.
 
-_Last updated 2026-07-08._
+_Last updated 2026-07-09._
 
 ## Where things stand
 
-**Shipped:** P0–P6 plus P6.1 (run summary & insights). TestFlight **build 20**
-(run-convergence + the queued build-18 feedback fixes) is `IN_BETA_TESTING`;
-**build 21** (the food-UX overhaul below) is the current release.
+**Shipped:** P0–P6 plus P6.1 (run summary & insights). TestFlight **build 21**
+(the food-UX overhaul below) is the current release.
+
+**On `main`, committed but UNRELEASED (queued for build 22)** — three follow-up passes
+from the user's build-21 on-device session, each screenshot-verified:
+
+1. **Edit-sheet layout polish.** Build 21's edit sheet shipped visibly broken (floating
+   keyboard Done colliding with the pinned Save bar; QUANTITY as a giant empty input
+   card). Fixed: inline Done on the kcal field (keyboard-placement toolbars render as
+   stray floating capsules on iOS 27), Save bar hides while typing, QUANTITY as a
+   settings-style row, the lookup cluster (provenance → Look up again → alternates)
+   regrouped under CALORIES, "WHEN" label, distinct lookup/relog icons.
+   *Process fix that must outlive this entry: UI-test-green is NOT visually-verified —
+   review screenshots of every changed state (temp screenshot-grab XCUITest on phone;
+   `-startPage` + `simctl io screenshot` on watch).*
+2. **Watch strength screens.** Exercise page: ± adjusters now lead (the 84 pt form-demo
+   placeholder pushed the REPS buttons under the page dots on every watch size — labels
+   fold between the − / + buttons); demo + how-to text are the scrollable reference
+   below. Controls pages (strength AND run): session header + **Water Lock** + End,
+   mirroring the native Workout app.
+3. **Food-day trust fixes (the "all my meals are gone" scare).** `FoodDayView` re-anchors
+   its "today" on every appearance and shifts selection at midnight (NavigationStack
+   keeps destination `@State` alive across presentations — the screen resumed a stale
+   day frame, mislabeling yesterday as Today and mis-dating captures). A failed
+   HealthKit read renders "Couldn't read this day from Health — Try again" (one
+   automatic retry), never the empty-day text, and failed fetches never write the day
+   cache — the neighbor prefetcher was caching fabricated-empty snapshots, making the
+   whole history look deleted after a cold-launch read failure. **Binding standard from
+   the user: a failed read must never render as absence. Data / genuinely-empty /
+   failed-to-load are three distinct UI states, everywhere.**
+
+**NEXT (new session): update the calorie-deficit algorithm** (the target/budget math —
+`CalorieTargetStore` / `DayBudget` in AdaptiveCore, `TargetSetupSheet` /
+`CalorieGaugeView` / `DailyIntakeLine` on the phone; the gauge's remaining/over
+arithmetic and the target-setup heuristics are the current implementation). Then ship
+build 22 with everything queued above.
 
 **Food-UX overhaul (2026-07-08 → build 21):** from the user's build-20 field notes.
 (1) **Day rollover** — an app left open overnight kept yesterday's date everywhere;
@@ -164,6 +197,18 @@ tap in-workout paged views).
 - WC: `transferUserInfo` on an unactivated session is **silently dropped** (hence the
   persisted pending-transfers buffer); a watch-app reinstall **drops the OS-held
   application context** (hence re-push on `sessionWatchStateDidChange`).
+- **NavigationStack destinations keep their `@State` alive across presentations** —
+  "recreated on each open" is false. Any pushed screen anchoring itself to push-time
+  facts (dates especially) must realign `.onAppear`.
+- **Failed reads must never render as empty states** (binding user standard, 2026-07-09):
+  HealthKit reads can fail transiently on cold launch (daemon warmup); surface
+  data / genuinely-empty / failed-to-load as three distinct states with a retry, and
+  never cache a value fabricated from a failure.
+- Keyboard-placement toolbar items render as a **floating glass capsule** on iOS 27 (not
+  an attached accessory bar) — scope Done buttons inline in the field instead.
+- watchOS screenshot recipe: `-simulateStrength`/`-simulateWorkout` +
+  `-startPage=controls|exercise`, then `simctl io <UDID> screenshot` — the only way to
+  visually review watch screens (sim XCUI can't tap or swipe).
 
 ## Open items
 

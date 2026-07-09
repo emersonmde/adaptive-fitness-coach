@@ -8,13 +8,18 @@ import SwiftUI
 struct QuantityStepper: View {
     @Binding var quantity: Int
     var range: ClosedRange<Int> = 1...20
+    /// Callers whose row already states the count (the edit sheet's "2 × 140 = 280 kcal"
+    /// line) hide the ×N so the same number isn't said twice in one row.
+    var showsCount: Bool = true
 
     var body: some View {
         HStack(spacing: 6) {
-            Text("×\(quantity)")
-                .font(.subheadline.monospacedDigit().weight(.medium))
-                .foregroundStyle(quantity > 1 ? Theme.textPrimary : Theme.textSecondary)
-                .frame(minWidth: 26, alignment: .trailing)
+            if showsCount {
+                Text("×\(quantity)")
+                    .font(.subheadline.monospacedDigit().weight(.medium))
+                    .foregroundStyle(quantity > 1 ? Theme.textPrimary : Theme.textSecondary)
+                    .frame(minWidth: 26, alignment: .trailing)
+            }
             stepButton(systemImage: "minus", enabled: quantity > range.lowerBound) {
                 quantity = max(range.lowerBound, quantity - 1)
             }

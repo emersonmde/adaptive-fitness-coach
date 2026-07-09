@@ -399,6 +399,9 @@ final class MealFlowUITests: XCTestCase {
         clear(kcalField)
         kcalField.typeText("500")
         XCTAssertTrue(app.staticTexts["meal.edit.userStatedNote"].exists)
+        // Typing hides the pinned Save bar (it collided with the keyboard); the inline
+        // Done ends editing and brings it back.
+        app.buttons["meal.edit.kcalDone"].tap()
         app.buttons["meal.edit.save"].tap()
 
         XCTAssertTrue(app.staticTexts["your number"].waitForExistence(timeout: 5))

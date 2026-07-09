@@ -104,27 +104,24 @@ struct EntryEditSheet: View {
                                     }
                                     .accessibilityLabel("Calories per serving")
                                     .accessibilityIdentifier("meal.edit.kcal")
-                                Text("kcal")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Theme.textTertiary)
-                            }
-                        }
-                        field("QUANTITY") {
-                            HStack {
-                                // The kcal field is PER SERVING; say what the day row will show.
-                                if quantity > 1, let each = Double(kcalText) {
-                                    Text("\(quantity) × \(Int(each)) = \(Int(each) * quantity) kcal")
-                                        .font(.subheadline.monospacedDigit())
-                                        .foregroundStyle(Theme.textSecondary)
-                                        .accessibilityIdentifier("meal.edit.quantityTotal")
+                                // Inline Done, same pattern as the confirmation sheet's kcal
+                                // editor — the number pad has no return key, and a keyboard-
+                                // placement toolbar renders as a stray floating capsule on
+                                // iOS 27 (it sat on top of the Save bar).
+                                if focusedField == .kcal {
+                                    Button("Done") { focusedField = nil }
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(Theme.accent)
+                                        .accessibilityIdentifier("meal.edit.kcalDone")
+                                } else {
+                                    Text("kcal")
+                                        .font(.subheadline)
+                                        .foregroundStyle(Theme.textTertiary)
                                 }
-                                Spacer()
-                                QuantityStepper(quantity: $quantity)
-                                    .accessibilityIdentifier("meal.edit.quantity")
                             }
                         }
-                        // Where the current number comes from — and the honest state after
-                        // a re-lookup ("estimate", "verified · saladworks.com", …).
+                        // The lookup cluster stays glued to the number it describes: where
+                        // it came from, the honest override note, and the re-lookup door.
                         Text((rescanResult?.provenance ?? entry.provenance).detailLabel)
                             .font(.caption)
                             .foregroundStyle(Theme.textSecondary)
@@ -137,7 +134,8 @@ struct EntryEditSheet: View {
                         }
 
                         // Re-run the lookup ladder against the edited name/restaurant — the
-                        // "I fixed the seller, now find MY salad" path.
+                        // "I fixed the seller, now find MY salad" path. (A magnifier, not the
+                        // relog arrow — "Log again today" below is a different action.)
                         Button {
                             Task { await rescan() }
                         } label: {
@@ -145,7 +143,7 @@ struct EntryEditSheet: View {
                                 if rescanning {
                                     ProgressView().controlSize(.small)
                                 } else {
-                                    Image(systemName: "arrow.counterclockwise")
+                                    Image(systemName: "magnifyingglass")
                                 }
                                 Text(rescanning ? "Looking up…" : "Look up again")
                             }
@@ -194,7 +192,35 @@ struct EntryEditSheet: View {
                             }
                         }
 
-                        WhenRow(mealSlot: $mealSlot, date: $date)
+                        // A plain settings-style row, NOT field() chrome: a stepper in a
+                        // full-width input card read as a giant empty text box at ×1.
+                        HStack {
+                            Text("QUANTITY")
+                                .font(.caption.weight(.semibold))
+                                .tracking(1.5)
+                                .foregroundStyle(Theme.textTertiary)
+                            Spacer()
+                            // The kcal field is PER SERVING; say what the day row will show.
+                            if quantity > 1, let each = Double(kcalText) {
+                                Text("\(quantity) × \(Int(each)) = \(Int(each) * quantity) kcal")
+                                    .font(.subheadline.monospacedDigit())
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .accessibilityIdentifier("meal.edit.quantityTotal")
+                            }
+                            QuantityStepper(quantity: $quantity, showsCount: quantity <= 1)
+                                .accessibilityIdentifier("meal.edit.quantity")
+                        }
+                        .padding(.top, 4)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            // The chip rows get the same caps label rhythm as every field.
+                            Text("WHEN")
+                                .font(.caption.weight(.semibold))
+                                .tracking(1.5)
+                                .foregroundStyle(Theme.textTertiary)
+                            WhenRow(mealSlot: $mealSlot, date: $date)
+                        }
+                        .padding(.top, 4)
 
                         if let error {
                             Text(error)
@@ -249,16 +275,20 @@ struct EntryEditSheet: View {
             }
             // The primary action never scrolls away (keyboard up + alternates expanded used
             // to push Save off-screen) — same pinned-bar pattern as the confirmation sheet.
+            // Hidden while a field is focused: riding above the keyboard it stacked on the
+            // chips and collided with the inline Done — you finish typing, then you save.
             .safeAreaInset(edge: .bottom) {
-                PrimaryButton(title: saving ? "Saving…" : "Save changes", systemImage: "checkmark") {
-                    Task { await save() }
+                if focusedField == nil {
+                    PrimaryButton(title: saving ? "Saving…" : "Save changes", systemImage: "checkmark") {
+                        Task { await save() }
+                    }
+                    .disabled(saving)
+                    .accessibilityIdentifier("meal.edit.save")
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+                    .background(.ultraThinMaterial)
                 }
-                .disabled(saving)
-                .accessibilityIdentifier("meal.edit.save")
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-                .padding(.bottom, 4)
-                .background(.ultraThinMaterial)
             }
             .navigationTitle("Edit entry")
             .navigationBarTitleDisplayMode(.inline)
@@ -266,15 +296,6 @@ struct EntryEditSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
                         if isDirty { confirmingDiscard = true } else { dismiss() }
-                    }
-                }
-                // The number pad has no return key — without this the keyboard is a trap.
-                // kcal-only: the text fields' own Return covers them, and view-wide the
-                // system renders this as a stray capsule floating over every keyboard.
-                if focusedField == .kcal {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") { focusedField = nil }
                     }
                 }
             }
@@ -326,6 +347,7 @@ struct EntryEditSheet: View {
     /// Re-run the lookup ladder with the edited name/restaurant. The result previews into
     /// the kcal field (programmatic — doesn't count as "your number") and records on Save.
     private func rescan() async {
+        focusedField = nil   // tapping an action means typing is done — free the Save bar
         rescanning = true
         defer { rescanning = false }
         let item = DraftItem(name: name.trimmingCharacters(in: .whitespaces))
@@ -342,6 +364,7 @@ struct EntryEditSheet: View {
     /// Adopt an alternate wholesale: its name, number, and provenance become the preview
     /// (recorded on Save via the same `rescanResult` path as the primary re-lookup).
     private func pick(_ alternate: ResolvedAlternative) {
+        focusedField = nil
         name = alternate.name
         rescanResult = alternate.nutrition
         programmaticKcalWrite = true

@@ -41,7 +41,7 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
 Pre-boot the simulator (`xcrun simctl boot <UDID>`) to save the cold-boot 20–40s on the first test.
 
 **Simulator launch args** (the sim generates no HR/zone data and `simctl` can't grant HealthKit/notification auth, so use these to demo/test):
-- Watch `-simulateWorkout` — scripted HR/zones via `SimulatedWorkoutBackend`, compressed plan, auto-starts, skips the HealthKit prompt. **The only way to see the adaptive loop in the simulator.**
+- Watch `-simulateWorkout` — scripted HR/zones via `SimulatedWorkoutBackend`, compressed plan, auto-starts, skips the HealthKit prompt. **The only way to see the adaptive loop in the simulator.** (`-simulateStrength` is the strength analogue.) Add `-startPage=controls|exercise` to land the session pager on a specific page — the screenshot hook for visual review (watch-sim XCUI can't tap or swipe, so `simctl launch` + `simctl io screenshot` per page is how watch screens get eyeballed).
 - Watch `-simulateQuickLog` — the quick-log flow standalone (pre-filled field, no-op park; paired-sim WC is unreliable). Always-pending: input → "Saved for iPhone". Phone side demos via `-seedNeedsReview`. NOTE: watchOS-sim XCUI taps don't fire ANY watch `Button` (see the `WatchSessionUITests` header) — watch flows verify manually, not by UI test.
 - Phone `-uiTesting` — throwaway store so runs start clean (used by the XCUITests).
 - Phone `-seedDemo` — throwaway store seeded with demo routines (QA/screenshots).

@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AdaptiveCore
 
 /// The Food day screen (build 8; regestured builds 15–16) — pushed from the hub's daily
@@ -26,7 +27,10 @@ struct FoodDayView: View {
     /// Day position relative to today: 0 = today, negative = past (floor: one year —
     /// beyond that, Health's own trends are the archive, not day-by-day paging).
     @State private var selection = 0
-    /// Frozen at push time — days are offsets from here.
+    /// The anchor days are offsets from. NOT push-time-frozen: NavigationStack keeps this
+    /// view's @State alive across presentations, so a screen last opened yesterday resumed
+    /// with yesterday as "Today" (and, opened from there, prefilled captures with the wrong
+    /// day). Realigned on appear and at midnight — see `realignToday`.
     @State private var todayStart = Calendar.current.startOfDay(for: Date())
     /// Which edge the INCOMING day slides from (set before every day change).
     @State private var slideInEdge: Edge = .leading
@@ -98,6 +102,14 @@ struct FoodDayView: View {
         }
         .task(id: "\(selection)/\(refreshTick)") { await prefetchNeighbors() }
         .onChange(of: refreshTick) { dayCache = [:] }   // Health changed → nothing cached is safe
+        .onAppear { realignToday(preservingViewedDay: false) }
+        .onReceive(NotificationCenter.default
+            .publisher(for: .NSCalendarDayChanged)
+            .receive(on: DispatchQueue.main)) { _ in
+            // Midnight while the screen is up: keep the user on the day they were reading —
+            // the content under them must not silently become a different day's.
+            realignToday(preservingViewedDay: true)
+        }
         .onChange(of: controller.phase) { refreshTick += 1 }
         .alert("Couldn't delete", isPresented: Binding(
             get: { deleteError != nil },
@@ -141,6 +153,21 @@ struct FoodDayView: View {
         calendar.date(byAdding: .day, value: offset, to: todayStart) ?? todayStart
     }
 
+    /// Re-anchor `todayStart` to the actual calendar day. On (re)appear the screen opens on
+    /// today (fresh-open semantics); at midnight mid-session the selection shifts so the
+    /// VIEWED day stays the same. The cache survives either way — it's keyed by absolute date.
+    private func realignToday(preservingViewedDay: Bool) {
+        let now = calendar.startOfDay(for: Date())
+        guard now != todayStart else { return }
+        if preservingViewedDay {
+            let delta = calendar.dateComponents([.day], from: todayStart, to: now).day ?? 0
+            selection = max(selection - delta, -Self.maxDaysBack)
+        } else {
+            selection = 0
+        }
+        todayStart = now
+    }
+
     /// Warm the cache for the neighbor days the chevrons reach, so they slide in populated.
     private func prefetchNeighbors() async {
         for offset in [selection - 1, selection + 1]
@@ -148,7 +175,11 @@ struct FoodDayView: View {
             let target = day(for: offset)
             guard dayCache[target] == nil else { continue }
             let (intake, active) = await DaySnapshot.fetch(recorder: recorder, day: target)
-            dayCache[target] = DaySnapshot(intake: intake ?? DailyIntake(), activeKcal: active)
+            // A failed prefetch caches NOTHING: substituting an empty DailyIntake seeded
+            // every neighboring day with fabricated "nothing logged" (the day's own
+            // fetch then failing too made the whole history look deleted).
+            guard let intake else { continue }
+            dayCache[target] = DaySnapshot(intake: intake, activeKcal: active)
         }
     }
 
@@ -357,6 +388,9 @@ private struct FoodDayContent: View {
 
     @State private var intake: DailyIntake
     @State private var activeKcal: Double?
+    /// The last fetch THREW (cold-launch reads can race the Health daemon). Rendering that
+    /// as "Nothing logged" reads as data loss — the one thing this screen must never fake.
+    @State private var loadFailed = false
 
     init(
         day: Date,
@@ -401,7 +435,16 @@ private struct FoodDayContent: View {
                 .accessibilityIdentifier("meal.day.summary")
             entryScroll
         }
-        .task(id: refreshTick) { await refresh() }
+        .task(id: refreshTick) {
+            await refresh()
+            if loadFailed {
+                // One automatic retry — the common failure is transient (daemon warmup
+                // right after launch); the visible Try-again handles anything persistent.
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                await refresh()
+            }
+        }
     }
 
     // MARK: Summary zone (fixed above the scrolling entries)
@@ -492,12 +535,30 @@ private struct FoodDayContent: View {
                     .plainDayRow()
             }
             if intake.entries.isEmpty && otherAppsKcal == 0 {
-                Text(isToday ? "Nothing logged yet today." : "Nothing logged this day.")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.textSecondary)
+                if loadFailed {
+                    // Failure must be as visible as success (principle 13) — an empty day
+                    // we couldn't verify is NOT "nothing logged".
+                    VStack(spacing: 8) {
+                        Text("Couldn't read this day from Health.")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.textSecondary)
+                        Button("Try again") { Task { await refresh() } }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("meal.day.retryLoad")
+                    }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
                     .plainDayRow()
+                } else {
+                    Text(isToday ? "Nothing logged yet today." : "Nothing logged this day.")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .plainDayRow()
+                }
             }
         }
         .listStyle(.plain)
@@ -550,10 +611,18 @@ private struct FoodDayContent: View {
 
     private func refresh() async {
         let (fetched, active) = await DaySnapshot.fetch(recorder: recorder, day: day)
-        let fresh = fetched ?? intake   // failed query keeps the numbers we had (N6)
-        intake = fresh
-        activeKcal = active
-        onFetched(day, DaySnapshot(intake: fresh, activeKcal: active))
+        if let fetched {
+            loadFailed = false
+            intake = fetched
+            activeKcal = active
+            onFetched(day, DaySnapshot(intake: fetched, activeKcal: active))
+        } else {
+            // Failed query ≠ empty day. Keep whatever numbers we had (N6), flag the
+            // failure, and NEVER seed the parent cache — a fabricated empty snapshot
+            // used to poison every day it prefetched ("all my meals are gone").
+            loadFailed = true
+            activeKcal = active ?? activeKcal
+        }
     }
 }
 

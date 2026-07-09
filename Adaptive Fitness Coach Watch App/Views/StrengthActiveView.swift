@@ -1,4 +1,5 @@
 import SwiftUI
+import WatchKit
 import AdaptiveCore
 
 /// Pages the strength session like the native Workout app, as three swipe pages with the dots as
@@ -11,7 +12,14 @@ import AdaptiveCore
 /// metrics page.
 struct StrengthSessionPager: View {
     let manager: StrengthSessionManager
-    @State private var selection = Page.glance
+    // watchOS-sim XCUI can't tap or swipe (see WatchSessionUITests) — `-startPage=…` lets
+    // scripted screenshot runs land directly on a specific page for visual review.
+    @State private var selection: Page = {
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("-startPage=controls") { return .controls }
+        if args.contains("-startPage=exercise") { return .exercise }
+        return .glance
+    }()
 
     private enum Page { case controls, glance, exercise }
 
@@ -47,27 +55,50 @@ struct StrengthSessionPager: View {
     }
 }
 
-/// The controls page: End the strength workout (ends the underlying HKWorkoutSession cleanly).
+/// The controls page — session-level things that must stay off the glance (N5): where you
+/// are in the session, Water Lock (sweat and rain fire false touches mid-set), and End.
+/// Mirrors the native Workout app's controls page so the swipe-left habit transfers.
 struct StrengthControlsView: View {
     let manager: StrengthSessionManager
 
     var body: some View {
         VStack(spacing: 10) {
+            VStack(spacing: 2) {
+                Text(manager.routineName)
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text("Exercise \(manager.exercisePosition.current) of \(manager.exercisePosition.total)")
+                    .font(.caption2)
+                    .foregroundStyle(WatchTheme.textSecondary)
+            }
+
+            Spacer(minLength: 4)
+
+            Button {
+                WKInterfaceDevice.current().enableWaterLock()
+            } label: {
+                Label("Water Lock", systemImage: "drop.fill")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(WatchTheme.recover)
+
             Button(role: .destructive) {
                 manager.endManually()
             } label: {
                 Label("End Workout", systemImage: "xmark")
-                    .font(.title3.weight(.semibold))
+                    .font(.headline)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
             }
+            .buttonStyle(.bordered)
             .tint(WatchTheme.hot)
-
-            Text("Swipe back to your set")
-                .font(.caption2)
-                .foregroundStyle(WatchTheme.textSecondary)
         }
-        .padding()
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .pagedWorkoutBackground(WatchTheme.strengthField)
     }
 }
 
@@ -252,9 +283,10 @@ struct StrengthGlanceView: View {
     }
 }
 
-/// ▶ The Exercise page — setup for the current movement: the form demo (tap to bounce; the
-/// future home of tap-to-play animations) and the ± weight adjust, plus a prescription summary.
-/// A reference page, so it scrolls.
+/// ▶ The Exercise page — setup for the current movement. The ± adjusters are the page's JOB
+/// (what you touch mid-session), so they lead and fit without scrolling; the form demo and
+/// how-to text are reference and live below the fold. (The demo used to sit on top — an 84pt
+/// decorative placeholder pushed the WEIGHT/REPS buttons half off-screen.)
 struct ExerciseDetailView: View {
     let manager: StrengthSessionManager
 
@@ -268,36 +300,41 @@ struct ExerciseDetailView: View {
         ScrollView {
             VStack(spacing: 10) {
                 if let exercise, let item {
-                    FormDemoView(formDemo: exercise.formDemo)
-                        .frame(height: 84)
+                    Text(exercise.name)
+                        .font(.headline)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
 
-                        Text(exercise.name)
-                            .font(.headline)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.white)
+                    if let weight = item.seedWeight {
+                        adjustRow(title: "WEIGHT", value: weight.displayString(),
+                                  onMinus: { adjust(-step) }, onPlus: { adjust(step) })
+                    }
 
-                        if let weight = item.seedWeight {
-                            adjustRow(title: "WEIGHT", value: weight.displayString(),
-                                      onMinus: { adjust(-step) }, onPlus: { adjust(step) })
-                        }
+                    // Reps are adjustable for rep-based moves (not holds) — bump them when the
+                    // prescribed count feels easy; it persists as the new seed (N7).
+                    if let reps = item.reps {
+                        adjustRow(title: "REPS", value: "\(reps)",
+                                  onMinus: { adjustReps(-1) }, onPlus: { adjustReps(1) })
+                    }
 
-                        // Reps are adjustable for rep-based moves (not holds) — bump them when the
-                        // prescribed count feels easy; it persists as the new seed (N7).
-                        if let reps = item.reps {
-                            adjustRow(title: "REPS", value: "\(reps)",
-                                      onMinus: { adjustReps(-1) }, onPlus: { adjustReps(1) })
-                        }
-
-                        Text(prescription(item, exercise: exercise))
+                    // Holds only: rep moves already state the count in the REPS row above.
+                    if item.isHold {
+                        Text("\(Int(item.holdSeconds ?? 0))s hold")
                             .font(.footnote)
                             .foregroundStyle(WatchTheme.textSecondary)
-                            .padding(.top, 2)
-
-                        ExerciseInfoView(exercise: exercise)
-                            .padding(.top, 6)
-                    } else {
-                        ProgressView().tint(WatchTheme.strength)
                     }
+
+                    FormDemoView(formDemo: exercise.formDemo)
+                        .frame(height: 84)
+                        .padding(.top, 6)
+
+                    ExerciseInfoView(exercise: exercise)
+                        .padding(.top, 6)
+                } else {
+                    ProgressView().tint(WatchTheme.strength)
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -313,25 +350,28 @@ struct ExerciseDetailView: View {
         withAnimation(WatchTheme.Motion.snap) { manager.adjustReps(by: delta) }
     }
 
-    /// A labelled ± row — the shared layout for the WEIGHT and REPS adjusters.
+    /// A labelled ± row — the shared layout for the WEIGHT and REPS adjusters. The label
+    /// stacks over the value BETWEEN the buttons (a separate label line per row pushed the
+    /// second row's buttons under the page dots on every watch size).
     private func adjustRow(title: String, value: String,
                            onMinus: @escaping () -> Void, onPlus: @escaping () -> Void) -> some View {
-        VStack(spacing: 6) {
-            Text(title)
-                .font(.caption2.weight(.semibold))
-                .tracking(1.5)
-                .foregroundStyle(WatchTheme.textSecondary)
-            HStack(spacing: 12) {
-                adjustButton("minus", action: onMinus)
+        HStack(spacing: 12) {
+            adjustButton("minus", action: onMinus)
+            VStack(spacing: 0) {
+                Text(title)
+                    .font(.caption2.weight(.semibold))
+                    .tracking(1.5)
+                    .foregroundStyle(WatchTheme.textSecondary)
                 Text(value)
                     .font(.system(.title2, design: .rounded, weight: .bold))
                     .foregroundStyle(WatchTheme.strength)
                     .monospacedDigit()
                     .contentTransition(.numericText())
-                    .frame(minWidth: 70)
-                adjustButton("plus", action: onPlus)
             }
+            .frame(minWidth: 70)
+            adjustButton("plus", action: onPlus)
         }
+        .accessibilityElement(children: .contain)
     }
 
     private func adjustButton(_ systemName: String, action: @escaping () -> Void) -> some View {
@@ -345,10 +385,6 @@ struct ExerciseDetailView: View {
         .clipShape(Circle())
     }
 
-    private func prescription(_ item: StrengthExerciseItem, exercise: Exercise) -> String {
-        if item.isHold { return "\(Int(item.holdSeconds ?? 0))s hold" }
-        return "\(item.reps ?? 0) reps"
-    }
 }
 
 /// A rest card — the glance page during recovery between sets, rendered from manager state
