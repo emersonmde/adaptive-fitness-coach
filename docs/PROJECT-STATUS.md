@@ -7,6 +7,9 @@ The entry point for picking up this project. Read this, then:
   every change.
 - **`docs/DESIGN-PRINCIPLES.md`** — binding on any new screen.
 - **`docs/calorie-tracking-spec.md`** — the P4 nutrition spec (C1–C7).
+- **`docs/NUTRITION-SYSTEM.md`** — how meals are logged and the energy budget adapts (the
+  design reference for any target/budget/calibration change; the nutrition analogue of
+  ADAPTIVE-SYSTEM.md).
 - **`docs/TESTFLIGHT.md`** — the headless release runbook.
 
 Detailed build-by-build history lives in git (`git log` — commit messages are thorough);
@@ -16,11 +19,25 @@ _Last updated 2026-07-09._
 
 ## Where things stand
 
-**Shipped:** P0–P6 plus P6.1 (run summary & insights). TestFlight **build 21**
-(the food-UX overhaul below) is the current release.
+**Shipped:** P0–P6 plus P6.1 (run summary & insights). **Build 22** (the adaptive energy
+budget below, plus the build-21 follow-ups) is releasing to TestFlight.
 
-**On `main`, committed but UNRELEASED (queued for build 22)** — three follow-up passes
-from the user's build-21 on-device session, each screenshot-verified:
+**Adaptive energy budget (2026-07-09 → build 22).** The fixed daily calorie target became a
+**live budget** built from Apple Health: basal (Mifflin) banked up front, active energy
+**realized as earned** from the watch (never forecast, ×0.80 to counter the watch's ~28%
+overestimate), minus a user-chosen **deficit** (the new stored primitive; ±goal chips replaced
+by a numeric deficit + presets). A per-user **weight-trend calibration** (`EnergyBalanceCalibrator`,
+Bayesian shrinkage) learns how far the textbook estimate is from the user's real metabolism and
+migrates from safe default to personal as weigh-ins accrue — folding the whole residual into
+`basalTrust` (weight identifies only total TDEE). All pure math in `AdaptiveCore/Nutrition/`
+(`EnergyBudget.swift`, `EnergyHistorySource.swift`); phone adds `HealthKitEnergyHistorySource`,
+extends `CalorieTargetStore`, reworks `TargetSetupSheet`/`FoodDayView`. Validated by Monte-Carlo
+against synthetic ground truth (weight is too slow to hand-check). No migration of pre-22 fixed
+targets — the target is a preference, not data. **Full design + invariants: `docs/NUTRITION-SYSTEM.md`.**
+**On-device pending: real weigh-in data over weeks to see the calibration converge.**
+
+**Also in build 22 — three follow-up passes** from the user's build-21 on-device session, each
+screenshot-verified:
 
 1. **Edit-sheet layout polish.** Build 21's edit sheet shipped visibly broken (floating
    keyboard Done colliding with the pinned Save bar; QUANTITY as a giant empty input
@@ -47,11 +64,11 @@ from the user's build-21 on-device session, each screenshot-verified:
    the user: a failed read must never render as absence. Data / genuinely-empty /
    failed-to-load are three distinct UI states, everywhere.**
 
-**NEXT (new session): update the calorie-deficit algorithm** (the target/budget math —
-`CalorieTargetStore` / `DayBudget` in AdaptiveCore, `TargetSetupSheet` /
-`CalorieGaugeView` / `DailyIntakeLine` on the phone; the gauge's remaining/over
-arithmetic and the target-setup heuristics are the current implementation). Then ship
-build 22 with everything queued above.
+**NEXT (new session):** on-device verification of build 22 — set a deficit on a real device,
+confirm the live budget banks active energy through the day, and (over weeks, with a scale
+reporting to Health) watch the calibration note appear and the target tune. Then the deferred
+"lose X lb/week" view over the deficit (dynamic model, never the 3500-kcal rule — see
+`NUTRITION-SYSTEM.md` §Deferred).
 
 **Food-UX overhaul (2026-07-08 → build 21):** from the user's build-20 field notes.
 (1) **Day rollover** — an app left open overnight kept yesterday's date everywhere;

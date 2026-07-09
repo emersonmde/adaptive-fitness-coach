@@ -364,10 +364,11 @@ final class MealFlowUITests: XCTestCase {
         openFoodDay(app)
         app.buttons["meal.day.setTarget"].tap()
 
-        // The sheet offers the suggestion (fixed sim profile 80kg/180cm/35/M). Confirm.
+        // The sheet offers a deficit budget (fixed sim profile 80kg/180cm/35/M) with a live
+        // resting-target preview. Confirm the default deficit.
         let confirm = app.buttons["meal.target.confirm"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 6))
-        XCTAssertTrue(app.staticTexts["meal.target.suggested"].exists)
+        XCTAssertTrue(app.staticTexts["meal.target.resting"].exists)
         confirm.tap()
 
         // The gauge takes the slot: consumed hero + "of N" target line; the hub line gains
@@ -582,15 +583,17 @@ final class MealFlowUITests: XCTestCase {
     }
 
     private func dismissTargetSheetIfPresent(_ app: XCUIApplication) {
-        // The first-run target offer (a sheet) appears on the Food screen's first open.
-        let field = app.textFields["meal.target.field"]
-        if field.waitForExistence(timeout: 3) {
+        // The first-run target offer (a sheet) appears on the Food screen's first open. The
+        // confirm button is present in both the deficit and manual paths, so it's the reliable
+        // "sheet is up" signal.
+        let confirm = app.buttons["meal.target.confirm"]
+        if confirm.waitForExistence(timeout: 3) {
             let cancel = app.buttons["Cancel"].firstMatch
             if cancel.waitForExistence(timeout: 2) {
                 cancel.tap()
                 // The sheet must be fully GONE before the caller taps beneath it — a tap
                 // mid-dismissal can have its own presentation silently dropped.
-                XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+                XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
             }
         }
     }
