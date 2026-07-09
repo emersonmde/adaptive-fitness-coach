@@ -91,11 +91,11 @@ struct TargetSetupSheet: View {
                 .font(.subheadline)
                 .foregroundStyle(Theme.textSecondary)
 
-            // Preset chips.
-            HStack(spacing: 8) {
+            // Preset segments — equal width, single line, so nothing ever wraps.
+            HStack(spacing: 6) {
                 ForEach(Self.presets, id: \.self) { value in
-                    chip(label(for: value), selected: deficit == value && deficitText.isEmpty,
-                         id: "meal.target.deficit.\(value)") {
+                    segment(label(for: value), selected: deficit == value && deficitText.isEmpty,
+                            id: "meal.target.deficit.\(value)") {
                         deficit = value
                         deficitText = ""
                         fieldFocused = false
@@ -203,16 +203,23 @@ struct TargetSetupSheet: View {
         dismiss()
     }
 
-    private func chip(_ label: String, selected: Bool, id: String, action: @escaping () -> Void) -> some View {
+    /// One equal-width segment of the preset row. `maxWidth: .infinity` makes every segment the
+    /// same size regardless of label length; `lineLimit(1)` + `minimumScaleFactor` guarantee a
+    /// single line ("Maintain" / "−1000" never wrap).
+    private func segment(_ label: String, selected: Bool, id: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
                 .font(.subheadline.weight(selected ? .semibold : .regular))
+                .monospacedDigit()
                 .foregroundStyle(selected ? Theme.bg : Theme.textSecondary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(maxWidth: .infinity, minHeight: 42)
                 .background(Capsule().fill(selected ? Theme.accent : Theme.surface2))
                 .overlay(Capsule().strokeBorder(selected ? Color.clear : Theme.hairline))
+                .contentShape(Capsule())
         }
+        .buttonStyle(.plain)
         .accessibilityIdentifier(id)
     }
 }

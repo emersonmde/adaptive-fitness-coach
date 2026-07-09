@@ -491,10 +491,17 @@ private struct FoodDayContent: View {
             }
             .accessibilityIdentifier("meal.day.editTarget")
 
-            if isToday, dynamic.earnedTodayKcal > 0 {
-                Text("+\(dynamic.earnedTodayKcal.formatted()) earned today")
+            // Show the budget's composition so the moving target is unambiguous: the earned
+            // active energy is PART of the target (base + active = "of N"), never a separate
+            // credit waiting to be added. Only when there's activity to explain and we're not
+            // pinned to the floor (which has its own hint).
+            if isToday, dynamic.earnedTodayKcal > 0, !dynamic.isAtFloor {
+                let base = dynamic.targetKcal - dynamic.earnedTodayKcal
+                (Text("\(base.formatted()) base ").foregroundColor(Theme.textTertiary)
+                    + Text("+ \(dynamic.earnedTodayKcal.formatted()) active").foregroundColor(Theme.accent))
                     .font(.caption2)
-                    .foregroundStyle(Theme.accent)
+                    .accessibilityElement()
+                    .accessibilityLabel("Budget of \(dynamic.targetKcal): \(base) base plus \(dynamic.earnedTodayKcal) from today's activity")
                     .accessibilityIdentifier("meal.day.earned")
             }
             if dynamic.isAtFloor {

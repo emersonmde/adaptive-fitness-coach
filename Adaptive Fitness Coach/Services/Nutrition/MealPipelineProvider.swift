@@ -76,9 +76,14 @@ enum MealPipelineProvider {
     /// One recorder per launch, shared by the controller and the daily line: in-memory under
     /// simulation (the sim can't grant HealthKit auth, and demos shouldn't write real data),
     /// HealthKit otherwise.
-    static let sharedRecorder: any NutritionRecorder = isSimulated
-        ? InMemoryNutritionRecorder()
-        : HealthKitNutritionRecorder()
+    static let sharedRecorder: any NutritionRecorder = {
+        guard isSimulated else { return HealthKitNutritionRecorder() }
+        let recorder = InMemoryNutritionRecorder()
+        // Seed a day with activity so the demo budget shows the base + active composition
+        // (the real signal comes from the watch; the sim generates none).
+        recorder.setActiveEnergy(524, on: Date())
+        return recorder
+    }()
 
     /// The daily target setting — one instance drives the gauge and the hub line. Carries its
     /// own body-profile + energy-history sources so it can refresh the learned TDEE calibration.
