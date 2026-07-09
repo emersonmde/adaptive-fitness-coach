@@ -95,10 +95,15 @@ struct FoodDayView: View {
         }
         .task {
             // First run: offer the target once, skippable (a target is opt-in — C6).
-            if targetStore.target == nil && !targetStore.wasOffered {
+            if !targetStore.hasTarget && !targetStore.wasOffered {
                 targetStore.markOffered()
                 showingTargetSheet = true
             }
+        }
+        .task {
+            // Learn/refresh the per-user TDEE correction from the Health weight trend. Throttled
+            // to once a day inside the store — weight moves over weeks, not minutes.
+            await targetStore.refreshCalibration()
         }
         .task(id: "\(selection)/\(refreshTick)") { await prefetchNeighbors() }
         .onChange(of: refreshTick) { dayCache = [:] }   // Health changed → nothing cached is safe
@@ -456,39 +461,98 @@ private struct FoodDayContent: View {
         }
     }
 
+    @ViewBuilder
     private var gaugeSlot: some View {
-        VStack(spacing: 8) {
-            if let budget = targetStore.budget(consumedKcal: intake.totalKcal) {
-                CalorieGaugeView(budget: budget)
-                Button(action: onEditTarget) {
-                    // The decision-driving number: what's LEFT (the center already says
-                    // "of 1,600" — repeating the target here wasted the slot). When over,
-                    // the center says "N over", so the target is the informative line again.
-                    Text(budget.remainingKcal.map { "\($0.formatted()) kcal left" }
-                        ?? "Target \(budget.targetKcal.formatted()) kcal")
-                        .font(.caption)
-                        .foregroundStyle(Theme.textSecondary)   // decision-driving number — legible tier
-                }
-                .accessibilityIdentifier("meal.day.editTarget")
+        VStack(spacing: 6) {
+            if let dynamic = targetStore.dynamicBudget(
+                consumedKcal: intake.totalKcal, activeEarnedKcal: activeKcal ?? 0
+            ) {
+                dynamicGauge(dynamic)
+            } else if let budget = targetStore.budget(consumedKcal: intake.totalKcal) {
+                fixedGauge(budget)
             } else {
-                VStack(spacing: 10) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "fork.knife")
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.textTertiary)
-                        Text("\(Int(intake.totalKcal.rounded()).formatted()) kcal")
-                            .font(Theme.metricNumber)
-                            .foregroundStyle(Theme.textPrimary)
-                    }
-                    Button("Set a daily target", action: onEditTarget)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.accent)
-                        .accessibilityIdentifier("meal.day.setTarget")
-                }
+                noTargetPrompt
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 208)   // same slot either way — no jump when a target appears
+        .frame(height: 236)   // same slot every mode — no jump when a target appears
+    }
+
+    /// Deficit mode: the live budget rises as active energy banks. Below the ring: what's left,
+    /// today's banked (trusted) active, and either the safe-floor hint or the calibration note.
+    private func dynamicGauge(_ dynamic: DynamicDayBudget) -> some View {
+        VStack(spacing: 6) {
+            CalorieGaugeView(budget: dynamic.budget)
+            Button(action: onEditTarget) {
+                Text(dynamic.remainingKcal.map { "\($0.formatted()) kcal left" }
+                    ?? "Target \(dynamic.targetKcal.formatted()) kcal")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .accessibilityIdentifier("meal.day.editTarget")
+
+            if isToday, dynamic.earnedTodayKcal > 0 {
+                Text("+\(dynamic.earnedTodayKcal.formatted()) earned today")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.accent)
+                    .accessibilityIdentifier("meal.day.earned")
+            }
+            if dynamic.isAtFloor {
+                Text("At your safe minimum — move more to unlock your full deficit")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("meal.day.atFloor")
+            } else if let note = calibrationNote {
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(Theme.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("meal.day.calibrationNote")
+            }
+        }
+    }
+
+    /// Fixed manual target (Health lacked body data) — the pre-build-22 behavior.
+    private func fixedGauge(_ budget: DayBudget) -> some View {
+        VStack(spacing: 8) {
+            CalorieGaugeView(budget: budget)
+            Button(action: onEditTarget) {
+                // The decision-driving number: what's LEFT (the center already says "of 1,600").
+                Text(budget.remainingKcal.map { "\($0.formatted()) kcal left" }
+                    ?? "Target \(budget.targetKcal.formatted()) kcal")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .accessibilityIdentifier("meal.day.editTarget")
+        }
+    }
+
+    private var noTargetPrompt: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "fork.knife")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textTertiary)
+                Text("\(Int(intake.totalKcal.rounded()).formatted()) kcal")
+                    .font(Theme.metricNumber)
+                    .foregroundStyle(Theme.textPrimary)
+            }
+            Button("Set a daily target", action: onEditTarget)
+                .font(.subheadline)
+                .foregroundStyle(Theme.accent)
+                .accessibilityIdentifier("meal.day.setTarget")
+        }
+    }
+
+    /// "runs ~10% below the estimate" — only once the calibration is confident.
+    private var calibrationNote: String? {
+        guard let cal = targetStore.calibration, cal.isConfident,
+              let deviation = cal.deviationPercent, deviation != 0 else { return nil }
+        let direction = deviation < 0 ? "below" : "above"
+        return "Tuned to your recent weigh-ins — runs \(abs(deviation))% \(direction) the estimate"
     }
 
     private var activeEnergyLine: some View {

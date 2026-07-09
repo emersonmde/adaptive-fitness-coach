@@ -80,12 +80,23 @@ enum MealPipelineProvider {
         ? InMemoryNutritionRecorder()
         : HealthKitNutritionRecorder()
 
-    /// The daily target setting (build 8) — one instance drives the gauge and the hub line.
-    static let sharedTargetStore = CalorieTargetStore()
+    /// The daily target setting — one instance drives the gauge and the hub line. Carries its
+    /// own body-profile + energy-history sources so it can refresh the learned TDEE calibration.
+    static let sharedTargetStore = CalorieTargetStore(
+        bodyProfileSource: makeBodyProfileSource(),
+        energyHistorySource: makeEnergyHistorySource()
+    )
 
     /// Body data for the target suggestion: fixed fixture in the sim (stable suggested
     /// numbers for demos/UI tests), HealthKit on device.
     static func makeBodyProfileSource() -> any BodyProfileSource {
         isSimulated ? FixedBodyProfileSource() : HealthKitBodyProfileSource()
+    }
+
+    /// Trailing weight / intake / active-energy series for the TDEE calibration: a seeded
+    /// in-memory fake under simulation (so `-simulateMealScan` can demo a tuned budget), the
+    /// HealthKit collection queries on device.
+    static func makeEnergyHistorySource() -> any EnergyHistorySource {
+        isSimulated ? InMemoryEnergyHistorySource(SimulatedEnergyHistory.demo) : HealthKitEnergyHistorySource()
     }
 }
