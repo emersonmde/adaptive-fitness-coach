@@ -52,10 +52,10 @@ struct MealConfirmationSheet: View {
                 }
                 if onDiscardReview != nil {
                     ToolbarItem(placement: .destructiveAction) {
-                        Button(role: .destructive) {
+                        // A worded button, not a bare trash glyph: an icon-only destructive
+                        // action one slot from Cancel is a reflex mis-tap waiting to happen.
+                        Button("Delete", role: .destructive) {
                             confirmingDiscard = true
-                        } label: {
-                            Image(systemName: "trash")
                         }
                         .accessibilityLabel("Delete this watch log")
                         .accessibilityIdentifier("meal.confirm.discardReview")
@@ -71,7 +71,9 @@ struct MealConfirmationSheet: View {
                 Text("Nothing will be saved to Health. Cancel keeps it waiting instead.")
             }
         }
-        .interactiveDismissDisabled()   // Cancel is explicit; a swipe shouldn't silently drop edits
+        // A swipe shouldn't silently drop a reviewed draft — but while identifying/failed
+        // there's nothing to lose yet, and the HIG's swipe-to-dismiss should keep working.
+        .interactiveDismissDisabled(controller.phase == .confirming)
     }
 
     // MARK: - Identifying (the previously-invisible gap)
@@ -314,6 +316,9 @@ private struct ItemRow: View {
                                 .font(.caption2)
                                 .foregroundStyle(Theme.textTertiary)
                         }
+                        // The glyphs stay caption-sized; the touch target reaches 44pt.
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
                         .onTapGesture(perform: beginRename)
                         // A tap gesture on a plain view is invisible to VoiceOver —
                         // expose the rename as the button it behaves like.
@@ -397,6 +402,8 @@ private struct ItemRow: View {
                         .font(.caption2)
                         .foregroundStyle(Theme.textTertiary)
                 }
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.leading, 34)
@@ -431,16 +438,9 @@ private struct ItemRow: View {
     }
 
     private var quantityControl: some View {
-        HStack(spacing: 8) {
-            if item.quantity > 1 {
-                Text("×\(item.quantity)")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            Stepper("Quantity", value: Binding(get: { item.quantity }, set: onQuantity), in: 1...20)
-                .labelsHidden()
-                .fixedSize()
-        }
+        // Theme-styled and always labeled "×N" — the stock Stepper was the one visibly
+        // off-theme control, and unlabeled at ×1 nobody knew what it stepped.
+        QuantityStepper(quantity: Binding(get: { item.quantity }, set: onQuantity))
     }
 
     private func beginRename() {

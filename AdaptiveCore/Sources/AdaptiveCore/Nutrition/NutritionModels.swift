@@ -331,11 +331,13 @@ public struct MealEntry: Identifiable, Sendable, Codable, Hashable {
 public extension MealEntry {
     /// A post-hoc edit (the day screen's edit sheet). Changing the calorie value makes the
     /// number the user's — energy becomes `.exact(kcal)` and provenance `.userStated`
-    /// (macros are kept: the user restated energy, not composition). Name/slot/day edits
-    /// alone preserve the original facts and provenance.
+    /// (macros are kept: the user restated energy, not composition). Name/slot/day/quantity
+    /// edits alone preserve the original facts and provenance — `kcal` is per serving, so
+    /// a quantity change never touches the number's ownership.
     func edited(
         name: String? = nil,
         kcal: Double? = nil,
+        quantity: Int? = nil,
         meal: MealSlot? = nil,
         date: Date? = nil
     ) -> MealEntry {
@@ -347,6 +349,7 @@ public extension MealEntry {
             copy.facts.energy = .exact(kcal: kcal)
             copy.provenance = .userStated
         }
+        if let quantity, quantity >= 1 { copy.quantity = quantity }
         if let meal { copy.meal = meal }
         if let date { copy.date = date }
         return copy

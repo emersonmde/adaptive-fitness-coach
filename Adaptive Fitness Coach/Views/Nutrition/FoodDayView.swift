@@ -8,9 +8,8 @@ import AdaptiveCore
 /// remains is deliberate:
 ///   · CHEVRONS (+ tap-title-to-today) change days, with one owned directional slide:
 ///     going to the past enters from the LEFT, toward today from the right;
-///   · entry rows swipe like Notification Center rows: a short drag reveals card-styled
-///     buttons that stretch with the finger, a long drag commits with a haptic at the
-///     threshold — leading = log again, trailing = delete-with-confirm.
+///   · entry rows use native List swipe actions — leading = log again, trailing =
+///     delete-with-confirm (the dialog anchors to the row; even a full swipe only asks).
 /// Day data is cached and neighbors prefetched so an incoming day slides in already
 /// populated (an empty active-energy line used to sit visually still mid-transition).
 /// Trends stay in Apple Health (linked); this screen is a day, not a dashboard (C6).
@@ -38,8 +37,6 @@ struct FoodDayView: View {
     @State private var showingTargetSheet = false
     @State private var reloggedID: UUID?
     @State private var deleteError: String?
-    /// Delete confirms first — Health deletion has no undo.
-    @State private var pendingDelete: MealEntry?
     @State private var refreshTick = 0
     /// "Added to Today" notice after relogging from a past day (the entry lands on a day
     /// the user isn't looking at — say so instead of teleporting them there).
@@ -69,7 +66,7 @@ struct FoodDayView: View {
                         onFetched: { day, snapshot in dayCache[day] = snapshot },
                         onEdit: { editingEntry = $0 },
                         onRelog: { entry in Task { await logAgain(entry) } },
-                        onDeleteRequest: { pendingDelete = $0 },
+                        onDeleteConfirmed: { entry in Task { await performDelete(entry) } },
                         onEditTarget: { showingTargetSheet = true }
                     )
                     .id(selection)   // day change replaces the content → the slide transition
@@ -110,30 +107,6 @@ struct FoodDayView: View {
         } message: {
             Text(deleteError ?? "")
         }
-        .confirmationDialog(
-            "Delete \"\(pendingDelete?.name ?? "")\"?",
-            isPresented: Binding(
-                get: { pendingDelete != nil },
-                set: { if !$0 { pendingDelete = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                guard let entry = pendingDelete else { return }
-                Theme.Haptics.warning()   // a permanent Health deletion is the moment to be felt
-                Task {
-                    do {
-                        try await recorder.delete(entryID: entry.id)
-                    } catch {
-                        // An entry that silently stays after "Delete" reads as a bug —
-                        // failure must be as visible as success (principle 13).
-                        deleteError = "Health couldn't delete that entry. Try again."
-                        Theme.Haptics.warning()
-                    }
-                    refreshTick += 1
-                }
-            }
-        }
         .sheet(isPresented: $showingTargetSheet) {
             TargetSetupSheet(targetStore: targetStore, bodyProfileSource: bodyProfileSource)
         }
@@ -144,7 +117,24 @@ struct FoodDayView: View {
                 onSaved: { Theme.Haptics.success(); refreshTick += 1 },
                 onRelogged: { noteRelog(newID: $0) }
             )
+            // Fresh @State per entry: sheet(item:) reuses the presentation's storage, so
+            // without distinct identity editing row B showed row A's half-remembered fields.
+            .id(entry.id)
         }
+    }
+
+    /// The row (or its context menu) already confirmed — this is the commit. Permanent:
+    /// Health deletion has no undo, which is why failure must be as visible as success
+    /// (principle 13).
+    private func performDelete(_ entry: MealEntry) async {
+        Theme.Haptics.warning()   // a permanent Health deletion is the moment to be felt
+        do {
+            try await recorder.delete(entryID: entry.id)
+        } catch {
+            deleteError = "Health couldn't delete that entry. Try again."
+            Theme.Haptics.warning()
+        }
+        refreshTick += 1
     }
 
     private func day(for offset: Int) -> Date {
@@ -362,13 +352,11 @@ private struct FoodDayContent: View {
     let onFetched: (Date, DaySnapshot) -> Void
     let onEdit: (MealEntry) -> Void
     let onRelog: (MealEntry) -> Void
-    let onDeleteRequest: (MealEntry) -> Void
+    let onDeleteConfirmed: (MealEntry) -> Void
     let onEditTarget: () -> Void
 
     @State private var intake: DailyIntake
     @State private var activeKcal: Double?
-    /// The one open swipe row (Notification Center behavior: opening one closes the rest).
-    @State private var openRowID: UUID?
 
     init(
         day: Date,
@@ -381,7 +369,7 @@ private struct FoodDayContent: View {
         onFetched: @escaping (Date, DaySnapshot) -> Void,
         onEdit: @escaping (MealEntry) -> Void,
         onRelog: @escaping (MealEntry) -> Void,
-        onDeleteRequest: @escaping (MealEntry) -> Void,
+        onDeleteConfirmed: @escaping (MealEntry) -> Void,
         onEditTarget: @escaping () -> Void
     ) {
         self.day = day
@@ -393,7 +381,7 @@ private struct FoodDayContent: View {
         self.onFetched = onFetched
         self.onEdit = onEdit
         self.onRelog = onRelog
-        self.onDeleteRequest = onDeleteRequest
+        self.onDeleteConfirmed = onDeleteConfirmed
         self.onEditTarget = onEditTarget
         // Seed from the cache so the slide-in carries real numbers, not blanks.
         _intake = State(initialValue: initial?.intake ?? DailyIntake())
@@ -490,30 +478,31 @@ private struct FoodDayContent: View {
         .frame(height: 18)
     }
 
-    // MARK: Entry stack (vertical scroll; rows own their horizontal swipes)
+    // MARK: Entry list (a real List: native swipe actions, and the delete confirm anchors
+    // to the row it came from instead of popping over the gauge)
 
     private var entryScroll: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                mealSections
-                if otherAppsKcal > 0 {
-                    Text("\(Int(otherAppsKcal.rounded()).formatted()) kcal from other apps")
-                        .font(.caption2)
-                        .foregroundStyle(Theme.textSecondary)   // honesty string — legible tier
-                        .padding(.horizontal, 4)
-                }
-                if intake.entries.isEmpty && otherAppsKcal == 0 {
-                    Text(isToday ? "Nothing logged yet today." : "Nothing logged this day.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                }
+        List {
+            mealSections
+            if otherAppsKcal > 0 {
+                Text("\(Int(otherAppsKcal.rounded()).formatted()) kcal from other apps")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.textSecondary)   // honesty string — legible tier
+                    .padding(.horizontal, 4)
+                    .plainDayRow()
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 12)
+            if intake.entries.isEmpty && otherAppsKcal == 0 {
+                Text(isToday ? "Nothing logged yet today." : "Nothing logged this day.")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .plainDayRow()
+            }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.defaultMinListRowHeight, 1)
     }
 
     @ViewBuilder
@@ -521,18 +510,19 @@ private struct FoodDayContent: View {
         ForEach(MealSlot.dayOrder, id: \.self) { slot in
             let entries = intake.entries.filter { $0.meal == slot }
             if !entries.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    sectionHeader(slot, entries: entries)
-                    ForEach(entries) { entry in
-                        SwipeableRow(
-                            id: entry.id,
-                            openRowID: $openRowID,
-                            onRelog: { onRelog(entry) },
-                            onDelete: { onDeleteRequest(entry) }
-                        ) {
-                            entryRow(entry)
-                        }
-                    }
+                sectionHeader(slot, entries: entries)
+                    .plainDayRow()
+                    .padding(.top, 8)
+                ForEach(entries) { entry in
+                    EntryRow(
+                        entry: entry,
+                        relogged: reloggedID == entry.id,
+                        onEdit: { onEdit(entry) },
+                        onRelog: { onRelog(entry) },
+                        onDeleteConfirmed: { onDeleteConfirmed(entry) }
+                    )
+                    .plainDayRow()
+                    .padding(.vertical, 4)
                 }
             }
         }
@@ -558,18 +548,30 @@ private struct FoodDayContent: View {
         return max(0, intake.totalKcal - ours)
     }
 
-    /// Every action, three surfaces: swipe (Notification-Center style), tap → edit sheet
-    /// (the floor every user finds), long-press → menu (the power path).
-    private func entryRow(_ entry: MealEntry) -> some View {
-        Button {
-            // A tap while a row is open closes it (Notification Center behavior) —
-            // never opens the editor underneath the user's cleanup gesture.
-            if openRowID != nil {
-                withAnimation(Theme.Motion.gesture) { openRowID = nil }
-            } else {
-                onEdit(entry)
-            }
-        } label: {
+    private func refresh() async {
+        let (fetched, active) = await DaySnapshot.fetch(recorder: recorder, day: day)
+        let fresh = fetched ?? intake   // failed query keeps the numbers we had (N6)
+        intake = fresh
+        activeKcal = active
+        onFetched(day, DaySnapshot(intake: fresh, activeKcal: active))
+    }
+}
+
+/// One entry: tap → edit sheet (the floor every user finds), native swipes (leading = log
+/// again, trailing = delete), long-press → menu (the power path). The row owns its delete
+/// confirmation so the dialog anchors HERE — attached at the screen level it presented as
+/// a popover over the calorie gauge.
+private struct EntryRow: View {
+    let entry: MealEntry
+    let relogged: Bool
+    let onEdit: () -> Void
+    let onRelog: () -> Void
+    let onDeleteConfirmed: () -> Void
+
+    @State private var confirmingDelete = false
+
+    var body: some View {
+        Button(action: onEdit) {
             Card {
                 HStack(alignment: .firstTextBaseline) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -585,7 +587,7 @@ private struct FoodDayContent: View {
                                 .font(.caption2)
                                 .foregroundStyle(Theme.textSecondary)
                                 .lineLimit(1)
-                            if reloggedID == entry.id {
+                            if relogged {
                                 Text("· logged again")
                                     .font(.caption2)
                                     .foregroundStyle(Theme.accent)
@@ -593,7 +595,7 @@ private struct FoodDayContent: View {
                         }
                     }
                     Spacer()
-                    Text(energyText(entry))
+                    Text(energyText)
                         .font(.subheadline.monospacedDigit())
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -601,28 +603,54 @@ private struct FoodDayContent: View {
         }
         .buttonStyle(PressableCardStyle())
         .accessibilityIdentifier("meal.day.entry.\(entry.name)")
-        .accessibilityAction(named: "Log again") { onRelog(entry) }
-        .accessibilityAction(named: "Delete") { onDeleteRequest(entry) }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            Button(action: onRelog) {
+                Label("Log again", systemImage: "arrow.counterclockwise")
+            }
+            .tint(Theme.accent)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            // Even a full swipe only REQUESTS — the confirm stays between a flick and a
+            // permanent Health deletion. Deliberately NOT role .destructive: that makes
+            // the List animate the row away on tap (it assumes the action deleted), which
+            // also tears down this row's alert before it can present. Red tint carries
+            // the meaning instead (and keeps the app accent from painting delete green).
+            Button {
+                confirmingDelete = true
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+            .tint(Theme.hot)
+        }
         .contextMenu {
             Button {
-                onEdit(entry)
+                onEdit()
             } label: {
                 Label("Edit", systemImage: "pencil")
             }
             Button {
-                onRelog(entry)
+                onRelog()
             } label: {
                 Label("Log again", systemImage: "arrow.counterclockwise")
             }
             Button(role: .destructive) {
-                onDeleteRequest(entry)   // confirm first — there is no undo
+                confirmingDelete = true   // confirm first — there is no undo
             } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
+        // An alert, not a confirmationDialog: centered and unmissable for an action with
+        // no undo — and the row-anchored dialog popover ships AX-empty on iOS 27 (its
+        // buttons are invisible to VoiceOver and UI tests alike).
+        .alert("Delete \"\(entry.name)\"?", isPresented: $confirmingDelete) {
+            Button("Delete", role: .destructive, action: onDeleteConfirmed)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes it from Apple Health. There's no undo.")
+        }
     }
 
-    private func energyText(_ entry: MealEntry) -> String {
+    private var energyText: String {
         let servings = Double(max(1, entry.quantity))
         switch entry.facts.energy {
         case .exact(let kcal):
@@ -631,14 +659,17 @@ private struct FoodDayContent: View {
             return "\(Int((low * servings).rounded()))–\(Int((high * servings).rounded())) kcal"
         }
     }
+}
 
-    private func refresh() async {
-        let (fetched, active) = await DaySnapshot.fetch(recorder: recorder, day: day)
-        let fresh = fetched ?? intake   // failed query keeps the numbers we had (N6)
-        intake = fresh
-        activeKcal = active
-        onFetched(day, DaySnapshot(intake: fresh, activeKcal: active))
+private extension View {
+    /// The List is chrome-free: the Card look survives, the List contributes only scroll,
+    /// native swipe actions, and row-anchored presentation.
+    func plainDayRow() -> some View {
+        self
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
     }
 }
 
-// SwipeableRow + PressableCardStyle moved to Components/SwipeableRow.swift (P5).
+// PressableCardStyle lives in Components/PressableCardStyle.swift.

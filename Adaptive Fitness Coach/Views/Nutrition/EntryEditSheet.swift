@@ -16,10 +16,13 @@ struct EntryEditSheet: View {
 
     @State private var name: String
     @State private var kcalText: String
+    @State private var quantity: Int
     @State private var mealSlot: MealSlot
     @State private var date: Date
     @State private var error: String?
     @State private var saving = false
+    /// A swipe-down (or Cancel) with unsaved edits confirms instead of silently discarding.
+    @State private var confirmingDiscard = false
     /// The number becomes "yours" only if you actually touched the field — inferring from
     /// value comparison converted a range estimate to `.userStated` on ANY edit (slot/day),
     /// silently destroying the honest range and its assumptions.
@@ -39,6 +42,9 @@ struct EntryEditSheet: View {
     private let resolver = MealPipelineProvider.makeResolver()
     @Environment(\.dismiss) private var dismiss
 
+    private enum Field: Hashable { case name, seller, kcal }
+    @FocusState private var focusedField: Field?
+
     init(
         entry: MealEntry,
         recorder: any NutritionRecorder,
@@ -52,6 +58,7 @@ struct EntryEditSheet: View {
         _name = State(initialValue: entry.name)
         _sellerName = State(initialValue: entry.seller?.name ?? "")
         _kcalText = State(initialValue: String(Int(entry.facts.energy.midpointKcal.rounded())))
+        _quantity = State(initialValue: entry.quantity)
         _mealSlot = State(initialValue: entry.meal)
         _date = State(initialValue: entry.date)
     }
@@ -65,11 +72,15 @@ struct EntryEditSheet: View {
                         field("NAME") {
                             TextField("Name", text: $name)
                                 .foregroundStyle(Theme.textPrimary)
+                                .focused($focusedField, equals: .name)
+                                .accessibilityLabel("Name")
                                 .accessibilityIdentifier("meal.edit.name")
                         }
                         field("RESTAURANT / BRAND") {
                             TextField("Optional — who sold it", text: $sellerName)
                                 .foregroundStyle(Theme.textPrimary)
+                                .focused($focusedField, equals: .seller)
+                                .accessibilityLabel("Restaurant or brand")
                                 .accessibilityIdentifier("meal.edit.seller")
                         }
                         field("CALORIES") {
@@ -78,17 +89,38 @@ struct EntryEditSheet: View {
                                     .keyboardType(.numberPad)
                                     .font(.body.monospacedDigit())
                                     .foregroundStyle(Theme.textPrimary)
+                                    .focused($focusedField, equals: .kcal)
                                     .onChange(of: kcalText) {
+                                        // Number pad or not, text can arrive as paste/dictation —
+                                        // keep the field honest instead of silently ignoring "12a"
+                                        // at save time.
+                                        let digits = kcalText.filter(\.isNumber)
+                                        if digits != kcalText { kcalText = digits; return }
                                         if programmaticKcalWrite {
                                             programmaticKcalWrite = false
                                         } else {
                                             kcalEdited = true
                                         }
                                     }
+                                    .accessibilityLabel("Calories per serving")
                                     .accessibilityIdentifier("meal.edit.kcal")
                                 Text("kcal")
                                     .font(.subheadline)
                                     .foregroundStyle(Theme.textTertiary)
+                            }
+                        }
+                        field("QUANTITY") {
+                            HStack {
+                                // The kcal field is PER SERVING; say what the day row will show.
+                                if quantity > 1, let each = Double(kcalText) {
+                                    Text("\(quantity) × \(Int(each)) = \(Int(each) * quantity) kcal")
+                                        .font(.subheadline.monospacedDigit())
+                                        .foregroundStyle(Theme.textSecondary)
+                                        .accessibilityIdentifier("meal.edit.quantityTotal")
+                                }
+                                Spacer()
+                                QuantityStepper(quantity: $quantity)
+                                    .accessibilityIdentifier("meal.edit.quantity")
                             }
                         }
                         // Where the current number comes from — and the honest state after
@@ -170,26 +202,35 @@ struct EntryEditSheet: View {
                                 .foregroundStyle(Theme.hot)
                         }
 
-                        PrimaryButton(title: saving ? "Saving…" : "Save changes", systemImage: "checkmark") {
-                            Task { await save() }
-                        }
-                        .disabled(saving)
-                        .accessibilityIdentifier("meal.edit.save")
-
                         // The full action set lives here too — the sheet is the surface every
                         // user finds by plain tapping, so nothing is long-press-only.
+                        // Guarded while dirty: it relogs the ORIGINAL entry, and someone who
+                        // just typed a new number would reasonably expect their edit.
                         Button {
                             Task { await logAgainToday() }
                         } label: {
                             Label("Log again today", systemImage: "arrow.counterclockwise")
                                 .font(.subheadline.weight(.medium))
-                                .foregroundStyle(Theme.accent)
+                                .foregroundStyle(isDirty ? Theme.textTertiary : Theme.accent)
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.plain)
+                        .disabled(isDirty)
                         .padding(.top, 2)
                         .accessibilityIdentifier("meal.edit.logAgain")
+                        if isDirty {
+                            Text("Save your edits first — this relogs the original entry.")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(maxWidth: .infinity)
+                                .multilineTextAlignment(.center)
+                        }
 
+                        // Destructive stands apart from the constructive stack (a full-width
+                        // Delete one thumb-length under Save invites the worst mis-tap).
+                        Divider()
+                            .overlay(Theme.hairline)
+                            .padding(.top, 18)
                         Button(role: .destructive) {
                             confirmingDelete = true   // one tap from permanent — confirm first
                         } label: {
@@ -199,23 +240,47 @@ struct EntryEditSheet: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.plain)
-                        .padding(.top, 2)
+                        .padding(.top, 10)
                         .accessibilityIdentifier("meal.edit.delete")
                     }
                     .padding(16)
                 }
+                .scrollDismissesKeyboard(.interactively)
+            }
+            // The primary action never scrolls away (keyboard up + alternates expanded used
+            // to push Save off-screen) — same pinned-bar pattern as the confirmation sheet.
+            .safeAreaInset(edge: .bottom) {
+                PrimaryButton(title: saving ? "Saving…" : "Save changes", systemImage: "checkmark") {
+                    Task { await save() }
+                }
+                .disabled(saving)
+                .accessibilityIdentifier("meal.edit.save")
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 4)
+                .background(.ultraThinMaterial)
             }
             .navigationTitle("Edit entry")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { confirmingDiscard = true } else { dismiss() }
+                    }
                 }
                 // The number pad has no return key — without this the keyboard is a trap.
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") { hideKeyboard() }
+                // kcal-only: the text fields' own Return covers them, and view-wide the
+                // system renders this as a stray capsule floating over every keyboard.
+                if focusedField == .kcal {
+                    ToolbarItemGroup(placement: .keyboard) {
+                        Spacer()
+                        Button("Done") { focusedField = nil }
+                    }
                 }
+            }
+            .confirmationDialog("Discard changes?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
+                Button("Discard changes", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
             }
             .confirmationDialog("Delete \"\(entry.name)\"?", isPresented: $confirmingDelete, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
@@ -233,10 +298,25 @@ struct EntryEditSheet: View {
                 }
             }
         }
+        // Swipe-dismiss stays free while there's nothing to lose (HIG); with edits pending
+        // it routes through the same discard confirm as Cancel.
+        .interactiveDismissDisabled(isDirty)
     }
 
     private var kcalChanged: Bool {
         kcalEdited && Double(kcalText) != nil
+    }
+
+    /// Anything the user has changed but not saved — gates swipe-dismiss, Cancel, and
+    /// "Log again today" (which deliberately relogs the original).
+    private var isDirty: Bool {
+        name != entry.name
+            || trimmedSeller != (entry.seller?.name ?? "")
+            || kcalChanged
+            || quantity != entry.quantity
+            || mealSlot != entry.meal
+            || date != entry.date
+            || rescanResult != nil
     }
 
     private var trimmedSeller: String {
@@ -275,6 +355,7 @@ struct EntryEditSheet: View {
         var edited = entry.edited(
             name: name != entry.name ? name : nil,
             kcal: kcalChanged ? Double(kcalText) : nil,
+            quantity: quantity != entry.quantity ? quantity : nil,
             meal: mealSlot != entry.meal ? mealSlot : nil,
             date: date != entry.date ? date : nil
         )
@@ -315,10 +396,6 @@ struct EntryEditSheet: View {
         } catch {
             self.error = "Couldn't log it again. Try again."
         }
-    }
-
-    private func hideKeyboard() {
-        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     private func field(_ title: String, @ViewBuilder content: () -> some View) -> some View {
