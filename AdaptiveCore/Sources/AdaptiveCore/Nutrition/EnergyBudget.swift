@@ -104,6 +104,19 @@ public struct DynamicDayBudget: Sendable, Equatable {
         max(floorKcal, Int((rawTargetKcal / 10).rounded() * 10))
     }
 
+    /// Consumed rounded to whole kcal (the "eaten" term).
+    public var consumedRoundedKcal: Int { Int(consumedKcal.rounded()) }
+
+    /// **Signed** remaining (negative = over budget). Drives the one "N left" / "N over" line
+    /// with no nil fallback — the label is chosen by sign, never by a null check, so it never
+    /// flips to "Target". Equals the breakdown `base + active − eaten` exactly, by construction.
+    public var remainingSignedKcal: Int { targetKcal - consumedRoundedKcal }
+
+    /// The resting portion of a composed budget (budget − banked active). By construction
+    /// `baseKcal + earnedTodayKcal == targetKcal`, so `base + active − eaten == remaining`.
+    /// Not meaningful when `isAtFloor` (the budget then shows a single "floor" term).
+    public var baseKcal: Int { targetKcal - earnedTodayKcal }
+
     /// Consumed-vs-target arithmetic, reusing the pinned `DayBudget`.
     public var budget: DayBudget {
         DayBudget(targetKcal: targetKcal, consumedKcal: consumedKcal)

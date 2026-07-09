@@ -59,6 +59,23 @@ struct DynamicDayBudgetTests {
         #expect(active.targetKcal > EnergyBudgetConstants.floorKcal)
     }
 
+    @Test func breakdownAlwaysReconcilesToRemaining() {
+        // The governing UI invariant: base + active − eaten == remaining, in every state.
+        let bmr = CalorieTargetCalculator.bmr(profile)
+        for (deficit, active, consumed) in [(500.0, 400.0, 140.0),   // normal
+                                            (500.0, 0.0, 0.0),        // morning, nothing yet
+                                            (300.0, 600.0, 2500.0),   // over budget
+                                            (1000.0, 900.0, 300.0)] { // aggressive deficit
+            let b = DynamicDayBudget(bmrKcal: bmr, deficitKcal: deficit, activeEarnedKcal: active,
+                                     consumedKcal: consumed, basalTrust: 1.0, activeTrust: 0.80)
+            if !b.isAtFloor {
+                #expect(b.baseKcal + b.earnedTodayKcal - b.consumedRoundedKcal == b.remainingSignedKcal)
+            }
+            // Floor case: budget(floor) − eaten == remaining likewise.
+            #expect(b.targetKcal - b.consumedRoundedKcal == b.remainingSignedKcal)
+        }
+    }
+
     @Test func consumedArithmeticDelegatesToDayBudget() {
         let bmr = CalorieTargetCalculator.bmr(profile)
         let b = DynamicDayBudget(bmrKcal: bmr, deficitKcal: 0, activeEarnedKcal: 0, consumedKcal: 1000)

@@ -89,6 +89,18 @@ struct FoodDayView: View {
         .overlay(alignment: .bottom) { relogToast }
         .navigationTitle("Food")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // Trends live in Apple Health (this screen is a day, not a dashboard — C6). Moved
+            // off the summary panel so it stops competing with the budget arithmetic.
+            ToolbarItem(placement: .topBarTrailing) {
+                if let url = URL(string: "x-apple-health://browse/nutrition") {
+                    Link(destination: url) {
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                    }
+                    .accessibilityLabel("Trends in Health")
+                }
+            }
+        }
         .task {
             // The stream ends when this task is cancelled on disappear — no leaked observers.
             for await _ in recorder.changes() { refreshTick += 1 }
@@ -455,15 +467,12 @@ private struct FoodDayContent: View {
     // MARK: Summary zone (fixed above the scrolling entries)
 
     private var summaryZone: some View {
-        VStack(spacing: 8) {
-            gaugeSlot
-            activeEnergyLine
-        }
+        gaugeSlot
     }
 
     @ViewBuilder
     private var gaugeSlot: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             if let dynamic = targetStore.dynamicBudget(
                 consumedKcal: intake.totalKcal, activeEarnedKcal: activeKcal ?? 0
             ) {
@@ -475,66 +484,76 @@ private struct FoodDayContent: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 236)   // same slot every mode — no jump when a target appears
+        .frame(minHeight: 236)   // won't shrink below the no-target prompt (no jump when a target appears)
     }
 
-    /// Deficit mode: the live budget rises as active energy banks. Below the ring: what's left,
-    /// today's banked (trusted) active, and either the safe-floor hint or the calibration note.
+    /// Deficit mode. Three tiers, each derived from the one above so the arithmetic is
+    /// self-evident: the ring center is what's eaten of the budget; the remaining line is the
+    /// decision number; the breakdown proves it (base + active − eaten == remaining, always).
     private func dynamicGauge(_ dynamic: DynamicDayBudget) -> some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             CalorieGaugeView(budget: dynamic.budget)
-            Button(action: onEditTarget) {
-                Text(dynamic.remainingKcal.map { "\($0.formatted()) kcal left" }
-                    ?? "Target \(dynamic.targetKcal.formatted()) kcal")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .accessibilityIdentifier("meal.day.editTarget")
-
-            // Show the budget's composition so the moving target is unambiguous: the earned
-            // active energy is PART of the target (base + active = "of N"), never a separate
-            // credit waiting to be added. Only when there's activity to explain and we're not
-            // pinned to the floor (which has its own hint).
-            if isToday, dynamic.earnedTodayKcal > 0, !dynamic.isAtFloor {
-                let base = dynamic.targetKcal - dynamic.earnedTodayKcal
-                (Text("\(base.formatted()) base ").foregroundColor(Theme.textTertiary)
-                    + Text("+ \(dynamic.earnedTodayKcal.formatted()) active").foregroundColor(Theme.accent))
-                    .font(.caption2)
-                    .accessibilityElement()
-                    .accessibilityLabel("Budget of \(dynamic.targetKcal): \(base) base plus \(dynamic.earnedTodayKcal) from today's activity")
-                    .accessibilityIdentifier("meal.day.earned")
-            }
-            if dynamic.isAtFloor {
-                Text("At your safe minimum — move more to unlock your full deficit")
-                    .font(.caption2)
-                    .foregroundStyle(Theme.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("meal.day.atFloor")
-            } else if let note = calibrationNote {
+            remainingLine(dynamic.remainingSignedKcal)   // A — decision, signed, never "Target"
+            breakdownLine(dynamic)                        // B — proof, sums to A exactly
+            if let note = dynamicNote(dynamic) {          // C — floor / calibration, only if present
                 Text(note)
                     .font(.caption2)
                     .foregroundStyle(Theme.textTertiary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 1)
                     .accessibilityIdentifier("meal.day.calibrationNote")
             }
         }
     }
 
-    /// Fixed manual target (Health lacked body data) — the pre-build-22 behavior.
+    /// Fixed manual target (Health lacked body data) — same remaining line, no adaptive breakdown.
     private func fixedGauge(_ budget: DayBudget) -> some View {
         VStack(spacing: 8) {
             CalorieGaugeView(budget: budget)
-            Button(action: onEditTarget) {
-                // The decision-driving number: what's LEFT (the center already says "of 1,600").
-                Text(budget.remainingKcal.map { "\($0.formatted()) kcal left" }
-                    ?? "Target \(budget.targetKcal.formatted()) kcal")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .accessibilityIdentifier("meal.day.editTarget")
+            remainingLine(budget.targetKcal - Int(budget.consumedKcal.rounded()))
         }
+    }
+
+    /// The decision number: "N left" (or "N over" in amber when negative). Tapping edits the goal.
+    private func remainingLine(_ remaining: Int) -> some View {
+        let over = remaining < 0
+        return Button(action: onEditTarget) {
+            (Text("\(abs(remaining).formatted()) ").foregroundColor(over ? Theme.heat : Theme.textPrimary)
+                + Text(over ? "over" : "left").foregroundColor(over ? Theme.heat : Theme.textSecondary))
+                .font(.title3.weight(.semibold).monospacedDigit())
+        }
+        .accessibilityIdentifier("meal.day.editTarget")
+        .accessibilityLabel(over ? "\(abs(remaining)) calories over budget" : "\(remaining) calories left")
+    }
+
+    /// The proof: `base + active [− eaten]`, or `floor [− eaten]` when pinned. Sums to remaining.
+    private func breakdownLine(_ d: DynamicDayBudget) -> some View {
+        let op = Theme.textTertiary.opacity(0.55)
+        var text: Text
+        if d.isAtFloor {
+            text = Text("\(d.targetKcal.formatted()) floor").foregroundColor(Theme.textTertiary)
+        } else {
+            text = Text("\(d.baseKcal.formatted()) base").foregroundColor(Theme.textTertiary)
+                + Text(" + ").foregroundColor(op)
+                + Text("\(d.earnedTodayKcal.formatted()) active").foregroundColor(Theme.accent)
+        }
+        if d.consumedRoundedKcal > 0 {
+            text = text
+                + Text(" − ").foregroundColor(op)
+                + Text("\(d.consumedRoundedKcal.formatted()) eaten").foregroundColor(Theme.textTertiary)
+        }
+        return text
+            .font(.caption.monospacedDigit())
+            .accessibilityIdentifier("meal.day.breakdown")
+    }
+
+    /// The optional C line: the floor explainer when pinned, else the calibration note when tuned.
+    private func dynamicNote(_ d: DynamicDayBudget) -> String? {
+        if d.isAtFloor {
+            return "Held at the \(d.targetKcal.formatted()) safe minimum · moving adds on top"
+        }
+        return calibrationNote
     }
 
     private var noTargetPrompt: some View {
@@ -554,42 +573,11 @@ private struct FoodDayContent: View {
         }
     }
 
-    /// "runs ~10% below the estimate" — only once the calibration is confident.
+    /// "10% under" — only once the calibration is confident. Short: it rides under the breakdown.
     private var calibrationNote: String? {
         guard let cal = targetStore.calibration, cal.isConfident,
               let deviation = cal.deviationPercent, deviation != 0 else { return nil }
-        let direction = deviation < 0 ? "below" : "above"
-        return "Tuned to your recent weigh-ins — runs \(abs(deviation))% \(direction) the estimate"
-    }
-
-    private var activeEnergyLine: some View {
-        HStack(spacing: 6) {
-            if let activeKcal, activeKcal > 0 {
-                Image(systemName: "flame")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)
-                    .accessibilityHidden(true)   // decorative — the text says "active"
-                Text("\(Int(activeKcal.rounded()).formatted()) kcal active")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)
-                    .accessibilityIdentifier("meal.day.active")
-            }
-            Spacer()
-            // browse/nutrition is undocumented but community-established; an unrecognized
-            // path degrades to just opening Health (exactly the old behavior), so this is
-            // a free attempt at landing on the Nutrition room directly.
-            if let url = URL(string: "x-apple-health://browse/nutrition") {
-                Link(destination: url) {
-                    HStack(spacing: 3) {
-                        Text("Trends in Health")
-                        Image(systemName: "arrow.up.right")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(Theme.textSecondary)   // interactive — keep it legible
-                }
-            }
-        }
-        .frame(height: 18)
+        return "Tuned to your weigh-ins · \(abs(deviation))% \(deviation < 0 ? "under" : "over")"
     }
 
     // MARK: Entry list (a real List: native swipe actions, and the delete confirm anchors

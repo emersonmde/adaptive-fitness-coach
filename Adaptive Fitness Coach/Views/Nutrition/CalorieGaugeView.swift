@@ -37,17 +37,13 @@ struct CalorieGaugeView: View {
                         .foregroundStyle(Theme.textPrimary)
                         .accessibilityIdentifier("meal.day.gauge.consumed")
                 }
-                if let over = budget.overKcal {
-                    Text("\(over.formatted()) over")
-                        .font(.subheadline.monospacedDigit())
-                        .foregroundStyle(Theme.heat)
-                        .accessibilityIdentifier("meal.day.gauge.over")
-                } else {
-                    Text("of \(budget.targetKcal.formatted())")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.textSecondary)
-                        .accessibilityIdentifier("meal.day.gauge.target")
-                }
+                // Always the budget denominator — the ring's meaning (eaten of budget). Over-ness
+                // is carried by the ring's amber tint and the "N over" remaining line below, so
+                // the center never flips label.
+                Text("of \(budget.targetKcal.formatted())")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("meal.day.gauge.target")
             }
         }
         .frame(width: 168, height: 168)
