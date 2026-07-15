@@ -373,7 +373,7 @@ follow-ons), delete the new-routine sheet (M6 candidate).
 | Red heart glyph exception | §5-P5 | M2 | Keep + codify |
 | Amber "gradient jobs only" doc text | T3 | M2 | Amend the contract text |
 | Acknowledge explicit input on no-op (P12 amendment) | §5-P3 | M3 | Amend — keeps the rating channel alive |
-| Ended-early discard threshold | W20 | M1 | < first run interval |
+| Ended-early discard threshold | W20 | M1 | < first run interval — **shipped as recommended (M1, 2026-07-15)** |
 | Watch-seeded first-run routine (N4 letter) | §5-P1 | M4 | Amend — kills the dead end |
 | First-use food interception (C6 amendment) | §5-P4 | M5 | Partial fix needs no change |
 | Tabs vs documented single-stack | §5-P9 | M6 | Decide; absence is the defect |
@@ -384,7 +384,14 @@ follow-ons), delete the new-routine sheet (M6 candidate).
 ## Milestone status
 
 - [ ] M0 — On-body verification & recapture *(parallel)*
-- [ ] M1 — Trust & honesty (blockers B1, B2)
+- [x] M1 — Trust & honesty (blockers B1, B2) — *2026-07-15: state split + shared
+      `WorkoutFailedView`, failure-aware gauge, ended-early summary (neutral header, elapsed
+      hero, W19 digest gate, discard-under-first-interval), done-today receipt, settled
+      proposal receipts, verdict snapshot, includes-line reconcile, day-end up-next +
+      nil-aware when, T5 slots. Discard threshold decided as recommended (< first run
+      interval). New sim hooks: `-simulateStartFailure[Permissions]` / `-simulateMidFailure`.
+      Not sim-forceable (deferred to M0 on-body/manual): B2 loadFailed visual, P13 warning
+      visual, W22 done-today visual — all unit/UI-test covered.*
 - [ ] M2 — App-wide sweep: targets · type · copy · color (B3 minimum)
 - [ ] M3 — Adaptation legibility + mixed sessions (blocker B4, flagship)
 - [ ] M4 — Watch session: resilience + self-sufficiency (B3 full)

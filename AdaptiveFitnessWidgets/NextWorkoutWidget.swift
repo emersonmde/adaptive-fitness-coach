@@ -11,6 +11,9 @@ struct NextWorkoutEntry: TimelineEntry {
     var routineId: String?
     var fires: Date?
     var isStrength: Bool
+    /// False = day-only schedule: `fires` is a midnight placeholder, so views render the
+    /// day alone — never a fabricated "12:00 AM" (P4/N6).
+    var hasTime: Bool = true
 }
 
 struct NextWorkoutProvider: TimelineProvider {
@@ -40,7 +43,8 @@ struct NextWorkoutProvider: TimelineProvider {
             routineName: next.routine.name,
             routineId: next.routine.id.uuidString,
             fires: next.date,
-            isStrength: next.routine.type == .strength
+            isStrength: next.routine.type == .strength,
+            hasTime: next.hasTime
         )
     }
 }
@@ -90,7 +94,7 @@ private struct NextWorkoutView: View {
                 Text("UP NEXT").font(.caption2.weight(.semibold)).foregroundStyle(.white.opacity(0.5))
                 Text(name).font(.headline).foregroundStyle(.white).lineLimit(2)
                 if let fires = entry.fires {
-                    Text(fires, format: relativeDayTime(fires))
+                    Text(dayTimeText(fires))
                         .font(.caption2).foregroundStyle(.white.opacity(0.7))
                 }
                 Spacer(minLength: 0)
@@ -107,7 +111,7 @@ private struct NextWorkoutView: View {
                 Label("UP NEXT", systemImage: glyph).font(.caption2.weight(.semibold)).widgetAccentable()
                 Text(name).font(.headline).lineLimit(1)
                 if let fires = entry.fires {
-                    Text(fires, format: relativeDayTime(fires)).font(.caption2)
+                    Text(dayTimeText(fires)).font(.caption2)
                 }
             }
         } else {
@@ -124,11 +128,23 @@ private struct NextWorkoutView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Same-week days read as the weekday; today/tomorrow are named; then the time.
-    private func relativeDayTime(_ date: Date) -> Date.FormatStyle {
-        if Calendar.current.isDateInToday(date) || Calendar.current.isDateInTomorrow(date) {
-            return .dateTime.hour().minute()
+    /// Same-week days read as the weekday; today/tomorrow are named; then the time — but a
+    /// day-only schedule (`hasTime == false`, midnight placeholder) renders the day alone:
+    /// no fabricated "12:00 AM" (P4/N6).
+    private func dayTimeText(_ date: Date) -> String {
+        let calendar = Calendar.current
+        let day: String
+        if calendar.isDateInToday(date) {
+            day = "Today"
+        } else if calendar.isDateInTomorrow(date) {
+            day = "Tomorrow"
+        } else {
+            day = date.formatted(.dateTime.weekday(.abbreviated))
         }
-        return .dateTime.weekday(.abbreviated).hour().minute()
+        guard entry.hasTime else { return day }
+        let time = date.formatted(date: .omitted, time: .shortened)
+        // Today/tomorrow with a time keep the widget's terse original read: time only.
+        if calendar.isDateInToday(date) || calendar.isDateInTomorrow(date) { return time }
+        return "\(day) \(time)"
     }
 }

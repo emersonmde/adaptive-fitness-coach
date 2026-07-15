@@ -1,4 +1,5 @@
 import Foundation
+import os
 import AdaptiveCore
 
 /// Post-strength read-back (the strength analogue of `SessionSummary`). Acknowledgement, not a
@@ -10,6 +11,9 @@ struct StrengthSummary: Sendable, Hashable {
     var setsCompleted: Int = 0
     var averageHeartRate: Double?
     var progressionNotes: [String] = []
+    /// Ended by hand with cards remaining — gates the done-today receipt (W22): a bail
+    /// must never read back as "Done today ✓".
+    var endedEarly: Bool = false
 }
 
 /// Drives one **strength block** — a flat run of exercise and rest cards (already expanded by the
@@ -116,6 +120,11 @@ final class StrengthSessionManager {
 
     private let haptics = HapticManager()
 
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "AdaptiveFitnessCoach",
+        category: "StrengthSession"
+    )
+
     init(backend: WorkoutBackend? = nil, now: @escaping () -> Date = Date.init, autoTick: Bool = true) {
         self.injectedBackend = backend
         self.now = now
@@ -200,7 +209,8 @@ final class StrengthSessionManager {
             }
         }
         guard meta.values.contains(where: { _ in true }) else {
-            sessionState = .failed
+            // No coachable exercise in the block — nothing ever started, nothing saved.
+            sessionState = .failedToStart(.unknown)
             return
         }
         self.cards = resolved
@@ -215,8 +225,10 @@ final class StrengthSessionManager {
         do {
             try await backend.start()
         } catch {
+            // Same contract as the run manager: explicit failure, classified cause (W5).
             self.backend = nil
-            sessionState = .failed
+            Self.logger.error("Strength workout failed to start: \(String(describing: error), privacy: .public)")
+            sessionState = .failedToStart(StartFailureCause(from: error))
             return
         }
 
@@ -323,10 +335,13 @@ final class StrengthSessionManager {
 
     private func handleFailure() {
         guard sessionState == .active else { return }
+        // Snapshot elapsed before teardown — the failed screen's one honest number (B1).
+        let elapsed = sessionStartDate.map { now().timeIntervalSince($0) } ?? 0
         let failedBackend = backend
         backend = nil
         Task { _ = await failedBackend?.end() } // wind down whatever survives (fire-and-forget)
-        sessionState = .failed
+        Self.logger.error("Strength session died mid-workout after \(elapsed, privacy: .public)s")
+        sessionState = .failedMidSession(elapsed: elapsed)
     }
 
     // MARK: - Progression (test seams)
@@ -460,7 +475,8 @@ final class StrengthSessionManager {
             exercisesCompleted: exercisesDone,
             setsCompleted: setLog.count,
             averageHeartRate: nil,
-            progressionNotes: []
+            progressionNotes: [],
+            endedEarly: currentIndex < cards.count
         )
 
         healthSaveState = .saving

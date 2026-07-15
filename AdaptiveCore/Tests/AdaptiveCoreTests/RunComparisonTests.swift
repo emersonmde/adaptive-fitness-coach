@@ -77,6 +77,43 @@ struct RunComparisonTests {
                                          history: history, now: now) == nil)
     }
 
+    // MARK: - Ended-early gate (W19: an abort is a fact for Health, never a baseline)
+
+    @Test func abortedCurrentRunShowsNoComparisons() {
+        var current = digest(runSeconds: 90)
+        current.endedEarly = true
+        #expect(RunComparison.vsLastRun(current: current, previous: digest(runSeconds: 600)) == nil)
+        let history = [dated(26, runSeconds: 500), dated(18, runSeconds: 520),
+                       dated(10, runSeconds: 540), dated(3, runSeconds: 560)]
+        #expect(RunComparison.vsBaseline(current: current, history: history, now: now) == nil)
+    }
+
+    @Test func abortedPreviousRunNeverInflatesVsLast() {
+        var abort = digest(runSeconds: 20)
+        abort.endedEarly = true
+        #expect(RunComparison.vsLastRun(current: digest(runSeconds: 600), previous: abort) == nil)
+    }
+
+    @Test func lastComparableSkipsAborts() {
+        var abort = digest(runSeconds: 20)
+        abort.endedEarly = true
+        let history = [DatedRunDigest(date: now, digest: abort),
+                       dated(3, runSeconds: 560), dated(10, runSeconds: 540)]
+        #expect(RunComparison.lastComparable(in: history)?.runSeconds == 560)
+    }
+
+    @Test func abortedRunsAreExcludedFromTheBaselineWindow() {
+        var abort = digest(runSeconds: 20)
+        abort.endedEarly = true
+        // Four clean spread runs pass the gate; the interleaved abort must not drag the mean.
+        let history = [dated(26, runSeconds: 500), dated(18, runSeconds: 520),
+                       DatedRunDigest(date: now.addingTimeInterval(-12 * 86_400), digest: abort),
+                       dated(10, runSeconds: 540), dated(3, runSeconds: 560)]
+        let line = RunComparison.vsBaseline(current: digest(runSeconds: 640), history: history, now: now)
+        // Mean of the four clean runs = 530 → +1:50; with the abort counted it would differ.
+        #expect(line?.delta == "+1:50 running")
+    }
+
     @Test func windowConstantsMatchTheEvidence() {
         // 7:28 ACWR (Gabbett; Apple Training Load) — the 28-day chronic window is the point.
         #expect(RunComparison.baselineWindowDays == 28)

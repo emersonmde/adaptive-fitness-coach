@@ -10,6 +10,9 @@ struct PendingProposalCard: View {
     let store: RoutineStore
     let journal: ProgressionJournal
     let proposals: ProgressionProposalStore
+    /// P14 receipt: called with the one-line settled text (confirm / hold) AFTER the store
+    /// mutation, so the host can collapse this card in place instead of vanishing it.
+    var onSettled: ((_ text: String, _ confirmed: Bool) -> Void)? = nil
 
     var body: some View {
         let display = ProgressionIntake.display(for: proposal, store: store)
@@ -33,9 +36,13 @@ struct PendingProposalCard: View {
                 HStack(spacing: 10) {
                     Button {
                         Theme.Haptics.success()
+                        // Settled text is read BEFORE the store mutates — after apply the
+                        // routine already holds the new value and "from → to" is gone.
+                        let settled = "Stepped up — \(display.subject) \(display.changeText)"
                         withAnimation(Theme.Motion.settle) {
                             ProgressionIntake.confirm(proposal.id, store: store,
                                                       journal: journal, proposals: proposals)
+                            onSettled?(settled, true)
                         }
                     } label: {
                         Text("Confirm")
@@ -52,9 +59,11 @@ struct PendingProposalCard: View {
 
                     Button {
                         Theme.Haptics.selection()
+                        let settled = "Kept \(currentValueText ?? "your current level") — the watch will re-propose when earned."
                         withAnimation(Theme.Motion.settle) {
                             ProgressionIntake.decline(proposal.id, store: store,
                                                       journal: journal, proposals: proposals)
+                            onSettled?(settled, false)
                         }
                     } label: {
                         Text("Hold")
@@ -71,6 +80,23 @@ struct PendingProposalCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("proposal.card")
+    }
+
+    /// What holding KEEPS, read from the routine's current seed ("25 lb", "12 reps",
+    /// "45s hold", or the run intervals). nil when the routine has since been deleted.
+    private var currentValueText: String? {
+        guard let routine = store.routines.first(where: { $0.id == proposal.routineId }) else {
+            return nil
+        }
+        if let update = proposal.update,
+           let old = routine.cards.compactMap(\.exercise)
+               .first(where: { $0.exerciseId == update.exerciseId }) {
+            if let weight = old.seedWeight { return weight.displayString() }
+            if let hold = old.holdSeconds { return "\(Int(hold))s hold" }
+            if let reps = old.reps { return "\(reps) reps" }
+        }
+        if proposal.runUpdate != nil { return "the current intervals" }
+        return nil
     }
 
     private func reasonLine(_ reason: String?) -> String {

@@ -148,6 +148,37 @@ struct ContextPackTests {
         #expect(pack.includesLine == "2 routines · no snapshot · no progression history · no meals")
     }
 
+    /// P27: the scope PROMISED a snapshot but Health returned nothing — the composed pack's
+    /// includes-line must reconcile to "no snapshot", and `includedSections` must expose the
+    /// shortfall so the export sheet can say so.
+    @Test func promisedButEmptySnapshotReconcilesTheIncludesLine() {
+        let scope = ContextPackScope(includeFitnessSnapshot: true, journalDays: 30)
+        let input = makeInput(snapshot: HealthSnapshot())   // promised, composes empty
+        let pack = ContextPackComposer.pack(useCase: .programDesign, scope: scope, input: input)
+
+        #expect(!pack.includedSections.contains(.fitnessSnapshot))
+        #expect(!pack.includedSections.contains(.progressionHistory))   // empty journal window
+        #expect(pack.includedSections.contains(.routines))
+        #expect(pack.includesLine == "2 routines · no snapshot · no progression history · no meals")
+        // The scope-derived line (the live pre-export footer) still shows the promise — the
+        // difference is exactly what the sheet warns about.
+        let promised = ContextPackComposer.includesLine(useCase: .programDesign, scope: scope, input: input)
+        #expect(promised.contains("fitness snapshot"))
+        #expect(scope.promisedSections.subtracting(pack.includedSections)
+            == [.fitnessSnapshot, .progressionHistory])
+    }
+
+    @Test func composedSectionsMatchWhatActuallyRendered() {
+        let pack = ContextPackComposer.pack(
+            useCase: .checkIn, scope: ContextPackUseCase.checkIn.preset,
+            input: makeInput(snapshot: HealthSnapshot(vo2Max: 41),
+                             nutrition: NutritionDigest(days: [.init(date: now, totalKcal: 2100)]),
+                             journal: [journalEntry(daysAgo: 2)])
+        )
+        #expect(pack.includedSections == [.routines, .fitnessSnapshot, .progressionHistory, .nutrition])
+        #expect(pack.includesLine == "2 routines · fitness snapshot · 90-day progression · recent meals")
+    }
+
     @Test func healthDataFlagDrivesDisclosure() {
         #expect(ContextPackScope(includeFitnessSnapshot: true).includesHealthData)
         #expect(ContextPackScope(includeNutrition: true).includesHealthData)

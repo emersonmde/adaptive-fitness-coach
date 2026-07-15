@@ -1,6 +1,20 @@
 import CoreMotion
 import Foundation
 import HealthKit
+import os
+
+extension StartFailureCause {
+    /// Classify a HealthKit start error into a user-meaningful cause (W5). Lives in the
+    /// HealthKit-importing layer so the managers — which branch on the cause — never need
+    /// to know `HKError` exists.
+    init(classifying error: Error) {
+        if (error as? HKError)?.code == .errorAuthorizationDenied {
+            self = .permissionsDenied
+        } else {
+            self = .unknown
+        }
+    }
+}
 
 /// The production backend: a real Apple outdoor-run workout via `HKWorkoutSession` +
 /// `HKLiveWorkoutBuilder` (N2). It surfaces live heart rate and Apple's *personalized* zone
@@ -30,7 +44,12 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
         configuration.activityType = .running
         configuration.locationType = .outdoor
 
-        let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+        let session: HKWorkoutSession
+        do {
+            session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+        } catch {
+            throw WorkoutStartFailure(cause: StartFailureCause(classifying: error), underlying: error)
+        }
         let builder = session.associatedWorkoutBuilder()
         builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
         session.delegate = self
@@ -49,7 +68,7 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
             session.end()
             self.session = nil
             self.builder = nil
-            throw error
+            throw WorkoutStartFailure(cause: StartFailureCause(classifying: error), underlying: error)
         }
         startCadenceUpdates(from: startDate)
     }
@@ -112,6 +131,20 @@ final class HealthKitWorkoutBackend: NSObject, WorkoutBackend {
         await Self.relateEffort(score, to: finishedWorkout, store: healthStore)
     }
 
+    /// Delete the just-finished saved workout (W20). Only the `HKWorkout` this backend wrote
+    /// via `finishWorkout` is ever deleted — deleting the workout also removes the samples
+    /// the builder collected for it.
+    func discardWorkout() async -> Bool {
+        guard let finishedWorkout else { return false }
+        do {
+            try await healthStore.delete(finishedWorkout)
+            self.finishedWorkout = nil
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Write an `HKWorkoutEffortScore` (1–10) sample and relate it to the workout — the same
     /// field Apple's Fitness "Effort" writes, feeding Training Load (N2: the OS is the record).
     static func relateEffort(_ score: Int, to workout: HKWorkout?, store: HKHealthStore) async {
@@ -167,6 +200,8 @@ extension HealthKitWorkoutBackend: HKWorkoutSessionDelegate {
 
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
         // The session died after starting — never fabricate continued guidance (N6).
+        Logger(subsystem: Bundle.main.bundleIdentifier ?? "AdaptiveFitnessCoach", category: "WorkoutBackend")
+            .error("HKWorkoutSession failed mid-run: \(String(describing: error), privacy: .public)")
         Task { @MainActor in self.onFailure?() }
     }
 }

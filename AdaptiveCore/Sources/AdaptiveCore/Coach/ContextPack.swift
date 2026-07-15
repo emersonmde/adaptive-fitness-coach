@@ -107,6 +107,35 @@ public struct ContextPackScope: Sendable, Hashable {
 
     /// Whether this scope exports any Apple Health–derived data (drives the disclosure).
     public var includesHealthData: Bool { includeFitnessSnapshot || includeNutrition }
+
+    /// The sections this scope PROMISES. Composition can deliver less (empty Health reads,
+    /// an empty journal window) — callers reconcile against `ContextPack.includedSections`.
+    public var promisedSections: Set<ContextPackSection> {
+        var promised: Set<ContextPackSection> = []
+        if includeRoutines { promised.insert(.routines) }
+        if includeFitnessSnapshot { promised.insert(.fitnessSnapshot) }
+        if journalDays != nil { promised.insert(.progressionHistory) }
+        if includeNutrition { promised.insert(.nutrition) }
+        return promised
+    }
+}
+
+/// One optional section of a composed pack — the unit the includes-line reconciles over.
+public enum ContextPackSection: String, Sendable, Hashable, CaseIterable {
+    case routines
+    case fitnessSnapshot
+    case progressionHistory
+    case nutrition
+
+    /// How the export sheet names the section in a "went out without…" warning.
+    public var displayName: String {
+        switch self {
+        case .routines: return "routines"
+        case .fitnessSnapshot: return "fitness snapshot"
+        case .progressionHistory: return "progression history"
+        case .nutrition: return "recent meals"
+        }
+    }
 }
 
 /// Aggregate fitness numbers read from Health on the phone — every field optional, and a
@@ -204,8 +233,13 @@ public struct ContextPack: Sendable, Hashable {
     public var title: String
     public var promptText: String
     /// The honest one-liner shown on the export sheet and under every export
-    /// ("3 routines · fitness snapshot · 90-day progression · no meals").
+    /// ("3 routines · fitness snapshot · 90-day progression · no meals"). Derived from what
+    /// actually composed, not from the scope — a promised-but-empty section reads "no …".
     public var includesLine: String
+    /// The sections that actually made it into `promptText`. Composition silently drops a
+    /// section whose data came back empty; callers compare this against
+    /// `scope.promisedSections` to say so instead of shipping a line that lies.
+    public var includedSections: Set<ContextPackSection>
 }
 
 public enum ContextPackComposer {
@@ -215,9 +249,11 @@ public enum ContextPackComposer {
         input: ContextPackInput
     ) -> ContextPack {
         var sections: [String] = [brief(for: useCase)]
+        var composed: Set<ContextPackSection> = []
 
         let routines = scopedRoutines(scope: scope, input: input)
         if scope.includeRoutines, !routines.isEmpty {
+            composed.insert(.routines)
             sections.append("""
             My current routines from the app, as JSON (schema "\(RoutineExchange.schemaName)" \
             v\(RoutineExchange.schemaVersion)):
@@ -232,15 +268,20 @@ public enum ContextPackComposer {
         }
 
         if scope.includeFitnessSnapshot, let snapshot = input.snapshot, !snapshot.isEmpty {
+            composed.insert(.fitnessSnapshot)
             sections.append(snapshotSection(snapshot))
         }
 
         if let days = scope.journalDays {
             let history = journalSection(input.journal, days: days, now: input.now)
-            if let history { sections.append(history) }
+            if let history {
+                composed.insert(.progressionHistory)
+                sections.append(history)
+            }
         }
 
         if scope.includeNutrition, let nutrition = input.nutrition, !nutrition.days.isEmpty {
+            composed.insert(.nutrition)
             sections.append(nutritionSection(nutrition))
         }
 
@@ -249,7 +290,9 @@ public enum ContextPackComposer {
         return ContextPack(
             title: useCase.title,
             promptText: sections.joined(separator: "\n\n"),
-            includesLine: includesLine(useCase: useCase, scope: scope, input: input)
+            includesLine: includesLine(scope: scope, composed: composed,
+                                       routineCount: routines.count),
+            includedSections: composed
         )
     }
 
@@ -394,6 +437,27 @@ public enum ContextPackComposer {
             parts.append("no progression history")
         }
         parts.append(scope.includeNutrition ? "recent meals" : "no meals")
+        return parts.joined(separator: " · ")
+    }
+
+    /// The truthful variant: derived from the sections that actually composed, so a promised
+    /// section whose data came back empty reads "no snapshot", never "fitness snapshot".
+    public static func includesLine(
+        scope: ContextPackScope, composed: Set<ContextPackSection>, routineCount: Int
+    ) -> String {
+        var parts: [String] = []
+        if composed.contains(.routines) {
+            parts.append(routineCount == 1 ? "1 routine" : "\(routineCount) routines")
+        } else {
+            parts.append("no routines")
+        }
+        parts.append(composed.contains(.fitnessSnapshot) ? "fitness snapshot" : "no snapshot")
+        if composed.contains(.progressionHistory), let days = scope.journalDays {
+            parts.append("\(days)-day progression")
+        } else {
+            parts.append("no progression history")
+        }
+        parts.append(composed.contains(.nutrition) ? "recent meals" : "no meals")
         return parts.joined(separator: " · ")
     }
 

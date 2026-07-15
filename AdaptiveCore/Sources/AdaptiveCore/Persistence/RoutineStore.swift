@@ -254,10 +254,15 @@ public final class RoutineStore {
         return routines(on: weekday).first
     }
 
-    /// The next scheduled occurrence across all routines: the routine and the exact `Date` it
-    /// next fires (its repeat-day at its scheduled time, or midnight if no time is set). Drives
-    /// the phone's "Up Next" hero ("Tomorrow · 7:00 AM"). Returns nil if nothing is scheduled.
-    public func nextOccurrence(now: Date = Date(), calendar: Calendar = .current) -> (routine: Routine, date: Date)? {
+    /// The next scheduled occurrence across all routines. Drives the phone's "Up Next" hero
+    /// ("Tomorrow · 7:00 AM"). Returns nil if nothing is scheduled.
+    ///
+    /// A routine scheduled for **today whose time has already passed stays up next until the
+    /// day ends** — a missed 7 AM run is still today's workout, not next week's (the hub
+    /// silently skipping it read as the app forgetting). Time-less routines occur all day:
+    /// their `date` is the start of the day and `hasTime` is false so no clock time is ever
+    /// fabricated from the midnight placeholder.
+    public func nextOccurrence(now: Date = Date(), calendar: Calendar = .current) -> RoutineOccurrence? {
         Self.nextOccurrence(in: routines, now: now, calendar: calendar)
     }
 
@@ -274,27 +279,44 @@ public final class RoutineStore {
 
     /// The next scheduled occurrence across a routine set — pure, nonisolated (the instance
     /// method delegates here, and extensions call it directly on `routinesFromDisk()`).
+    ///
+    /// Searches from the start of today, not from `now`, so an occurrence earlier today is
+    /// still returned (its `date` is in the past — "Today" — until midnight rolls it over).
     public nonisolated static func nextOccurrence(
         in routines: [Routine], now: Date = Date(), calendar: Calendar = .current
-    ) -> (routine: Routine, date: Date)? {
-        var best: (routine: Routine, date: Date)?
+    ) -> RoutineOccurrence? {
+        // nextDate(after:) is strictly-after; back off 1s so a time-less routine's 00:00
+        // occurrence today still matches.
+        let searchStart = calendar.startOfDay(for: now).addingTimeInterval(-1)
+        var best: RoutineOccurrence?
         for routine in routines where !routine.repeatDays.isEmpty {
             for day in routine.repeatDays {
                 var components = DateComponents()
                 components.weekday = day.rawValue
-                if let time = routine.scheduleTime {
-                    components.hour = time.hour
-                    components.minute = time.minute
-                } else {
-                    components.hour = 0
-                    components.minute = 0
-                }
-                guard let date = calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTime) else { continue }
+                let time = routine.scheduleTime
+                components.hour = time?.hour ?? 0
+                components.minute = time?.minute ?? 0
+                guard let date = calendar.nextDate(after: searchStart, matching: components, matchingPolicy: .nextTime) else { continue }
                 if best == nil || date < best!.date {
-                    best = (routine, date)
+                    best = RoutineOccurrence(routine: routine, date: date, hasTime: time != nil)
                 }
             }
         }
         return best
+    }
+}
+
+/// One "Up Next" answer: which routine, when, and whether "when" carries a real clock time.
+/// `hasTime == false` means the routine is scheduled by day only — `date` is the start of
+/// that day and callers must render "Mon", never a fabricated "Mon · 12:00 AM" (N6-adjacent).
+public struct RoutineOccurrence: Sendable {
+    public let routine: Routine
+    public let date: Date
+    public let hasTime: Bool
+
+    public init(routine: Routine, date: Date, hasTime: Bool) {
+        self.routine = routine
+        self.date = date
+        self.hasTime = hasTime
     }
 }

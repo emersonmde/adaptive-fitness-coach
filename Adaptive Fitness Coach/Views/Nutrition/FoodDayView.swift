@@ -408,6 +408,10 @@ private struct FoodDayContent: View {
     /// The last fetch THREW (cold-launch reads can race the Health daemon). Rendering that
     /// as "Nothing logged" reads as data loss — the one thing this screen must never fake.
     @State private var loadFailed = false
+    /// Whether `intake` holds REAL numbers (parent cache seed, or a fetch that succeeded).
+    /// False + `loadFailed` = the gauge knows nothing — it must em-dash, not claim "0 eaten"
+    /// (B2); true + `loadFailed` = last-known numbers, labeled as such.
+    @State private var hasData: Bool
 
     init(
         day: Date,
@@ -437,6 +441,7 @@ private struct FoodDayContent: View {
         // Seed from the cache so the slide-in carries real numbers, not blanks.
         _intake = State(initialValue: initial?.intake ?? DailyIntake())
         _activeKcal = State(initialValue: initial?.activeKcal)
+        _hasData = State(initialValue: initial != nil)
     }
 
     var body: some View {
@@ -487,31 +492,66 @@ private struct FoodDayContent: View {
         .frame(minHeight: 236)   // won't shrink below the no-target prompt (no jump when a target appears)
     }
 
+    /// B2: the gauge's failure posture. `unknown` = read failed with nothing cached — every
+    /// consumed-derived number is fabrication, so em-dash and say so. `stale` = read failed
+    /// but real numbers are on screen — keep them, labeled last-known, never passed off as live.
+    private var consumedUnknown: Bool { loadFailed && !hasData }
+    private var showingLastKnown: Bool { loadFailed && hasData }
+
     /// Deficit mode. Three tiers, each derived from the one above so the arithmetic is
     /// self-evident: the ring center is what's eaten of the budget; the remaining line is the
     /// decision number; the breakdown proves it (base + active − eaten == remaining, always).
+    @ViewBuilder
     private func dynamicGauge(_ dynamic: DynamicDayBudget) -> some View {
         VStack(spacing: 8) {
-            CalorieGaugeView(budget: dynamic.budget)
-            remainingLine(dynamic.remainingSignedKcal)   // A — decision, signed, never "Target"
-            breakdownLine(dynamic)                        // B — proof, sums to A exactly
-            if let note = dynamicNote(dynamic) {          // C — floor / calibration, only if present
-                Text(note)
-                    .font(.caption2)
-                    .foregroundStyle(Theme.textTertiary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 1)
-                    .accessibilityIdentifier("meal.day.calibrationNote")
+            CalorieGaugeView(budget: dynamic.budget, consumedUnknown: consumedUnknown)
+            if consumedUnknown {
+                gaugeFailureLine   // the decision number is unknowable — say so, offer retry
+            } else {
+                remainingLine(dynamic.remainingSignedKcal)   // A — decision, signed, never "Target"
+                breakdownLine(dynamic)                        // B — proof, sums to A exactly
+                if showingLastKnown {
+                    gaugeFailureLine
+                } else if let note = dynamicNote(dynamic) {   // C — floor / calibration, only if present
+                    Text(note)
+                        .font(.caption2)
+                        .foregroundStyle(Theme.textTertiary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 1)
+                        .accessibilityIdentifier("meal.day.calibrationNote")
+                }
             }
         }
     }
 
     /// Fixed manual target (Health lacked body data) — same remaining line, no adaptive breakdown.
+    @ViewBuilder
     private func fixedGauge(_ budget: DayBudget) -> some View {
         VStack(spacing: 8) {
-            CalorieGaugeView(budget: budget)
-            remainingLine(budget.targetKcal - Int(budget.consumedKcal.rounded()))
+            CalorieGaugeView(budget: budget, consumedUnknown: consumedUnknown)
+            if consumedUnknown {
+                gaugeFailureLine
+            } else {
+                remainingLine(budget.targetKcal - Int(budget.consumedKcal.rounded()))
+                if showingLastKnown { gaugeFailureLine }
+            }
+        }
+    }
+
+    /// The gauge's honesty line (B2): what's wrong, in one quiet row, with the exit right
+    /// there — the entry list's own retry stays, but the gauge must not depend on it.
+    private var gaugeFailureLine: some View {
+        HStack(spacing: 8) {
+            Text(showingLastKnown ? "Last known — couldn't refresh from Health" : "Couldn't read Health")
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+                .accessibilityIdentifier("meal.day.gauge.failure")
+            Button("Try again") { Task { await refresh() } }
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("meal.day.gauge.retry")
         }
     }
 
@@ -562,10 +602,12 @@ private struct FoodDayContent: View {
                 Image(systemName: "fork.knife")
                     .font(.subheadline)
                     .foregroundStyle(Theme.textTertiary)
-                Text("\(Int(intake.totalKcal.rounded()).formatted()) kcal")
+                // Same B2 rule without a target: an unread day is "—", never a false 0.
+                Text(consumedUnknown ? "— kcal" : "\(Int(intake.totalKcal.rounded()).formatted()) kcal")
                     .font(Theme.metricNumber)
-                    .foregroundStyle(Theme.textPrimary)
+                    .foregroundStyle(consumedUnknown ? Theme.textSecondary : Theme.textPrimary)
             }
+            if loadFailed { gaugeFailureLine }
             Button("Set a daily target", action: onEditTarget)
                 .font(.subheadline)
                 .foregroundStyle(Theme.accent)
@@ -672,6 +714,7 @@ private struct FoodDayContent: View {
         let (fetched, active) = await DaySnapshot.fetch(recorder: recorder, day: day)
         if let fetched {
             loadFailed = false
+            hasData = true
             intake = fetched
             activeKcal = active
             onFetched(day, DaySnapshot(intake: fetched, activeKcal: active))

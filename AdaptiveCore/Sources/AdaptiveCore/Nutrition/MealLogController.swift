@@ -74,6 +74,9 @@ public final class MealLogController {
     private var activeResolveLoop: Task<Void, Never>?
     private var resolutionEpochs: [DraftItem.ID: Int] = [:]
     private var isCommitting = false
+    /// This session's commit bookkeeping: which queue row backs each committed item, so a
+    /// visible "Some didn't save" can retry exactly the failed rows and update their statuses.
+    private var pendingIDsByItem: [DraftItem.ID: UUID] = [:]
     /// Turn-token guard (CoachConversation pattern): a stale identify/commit finishing late
     /// can't corrupt a newer session's state.
     private var generation = 0
@@ -325,6 +328,7 @@ public final class MealLogController {
         for item in checked {
             let pendingID = UUID()
             pendingIDs[item.id] = pendingID
+            pendingIDsByItem[item.id] = pendingID
             queue?.enqueue(PendingMealQueue.PendingItem(
                 id: pendingID,
                 date: loggedDate,
@@ -410,6 +414,54 @@ public final class MealLogController {
             )
             if (try? await recorder.record(entry)) != nil {
                 queue.remove(id: pending.id)
+            }
+        }
+    }
+
+    /// Re-run just this session's failed writes NOW (the "Some didn't save" tap) — the same
+    /// queue rows `resumePending` would drain at next launch, but with honest live statuses:
+    /// each failed item flips back to "Looking up…" and lands on Saved or an honest re-fail.
+    public func retryPending() async {
+        guard let queue else { return }
+        let token = generation
+        let failedIDs = itemStatuses.compactMap { status -> DraftItem.ID? in
+            if case .failed = status.state { return status.id }
+            return nil
+        }
+        for itemID in failedIDs {
+            guard token == generation else { return }
+            guard let pendingID = pendingIDsByItem[itemID],
+                  let pending = queue.pending.first(where: { $0.id == pendingID }) else {
+                // Row already drained (a launch resume won the race) — leave the status; the
+                // recorder's change stream refreshes the day's truth either way.
+                continue
+            }
+            setStatus(itemID, .lookingUp)
+            let item = pending.item.draftItem
+            let (resolved, _) = await resolver.resolve(
+                item: item,
+                seller: pending.seller,
+                capture: nil,
+                answers: pending.answers
+            )
+            guard token == generation else { return }
+            let entry = MealEntry(
+                date: pending.date,
+                name: item.name,
+                quantity: item.quantity,
+                facts: resolved.facts,
+                provenance: resolved.provenance,
+                meal: pending.meal,
+                seller: pending.seller
+            )
+            do {
+                try await recorder.record(entry)
+                queue.remove(id: pendingID)
+                guard token == generation else { return }
+                setStatus(itemID, .saved(entry))
+            } catch {
+                guard token == generation else { return }
+                setStatus(itemID, .failed("Couldn't save to Health"))
             }
         }
     }

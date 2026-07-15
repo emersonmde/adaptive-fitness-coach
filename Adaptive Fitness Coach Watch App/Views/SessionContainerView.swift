@@ -84,18 +84,26 @@ struct SessionContainerView: View {
             // The user picked a routine — run its flow, returning to the picker when done.
             routedFlow(for: chosen)
         } else if orderedRoutines.isEmpty {
-            if awaitingFirstSync {
+            if let connectivity, !connectivity.hasReceivedInitialContext {
                 // A fresh install's store is empty until the phone's context lands. Saying
                 // "create a routine on your iPhone" here would assert *nothing exists* when
-                // the truth is *not synced yet* (N6) — so say what's actually happening,
-                // with the timeout above as the exit to the genuine empty state.
-                SyncingView()
-                    .task {
-                        try? await Task.sleep(for: .seconds(10))
-                        syncWaitExpired = true
-                    }
+                // the truth is *not synced yet* (N6) — so say what's actually happening.
+                // After the timeout the phone still hasn't spoken, and that must NOT read
+                // as confirmed-empty either (W1): the watch keeps listening (the context
+                // applies whenever it arrives and this view re-renders on the flip), so the
+                // settled state says exactly that.
+                if syncWaitExpired {
+                    WaitingForPhoneView()
+                } else {
+                    SyncingView()
+                        .task {
+                            try? await Task.sleep(for: .seconds(10))
+                            syncWaitExpired = true
+                        }
+                }
             } else {
-                // No routines — the run container shows the "create one on iPhone" empty state.
+                // The phone HAS spoken and there really are zero routines — the run
+                // container shows the honest "create one on iPhone" empty state.
                 RunSessionContainerView(store: store, simulate: false)
             }
         } else {
@@ -120,13 +128,6 @@ struct SessionContainerView: View {
             // re-run the match when routines arrive so the request lands instead of dying.
             .onChange(of: store.routines) { _, _ in routeLaunchRequest() }
         }
-    }
-
-    /// Still waiting on the phone's first context: nothing synced yet and the timeout hasn't
-    /// fired. Reading `hasReceivedInitialContext` in body makes the flip re-render this view.
-    private var awaitingFirstSync: Bool {
-        guard let connectivity else { return false }   // previews/tests: no receiver to wait on
-        return !connectivity.hasReceivedInitialContext && !syncWaitExpired
     }
 
     /// The quick-log complication / `LogMealIntent` wants the meal sheet. Consume even when
@@ -205,16 +206,39 @@ struct SessionContainerView: View {
 }
 
 /// The honest first-launch state: the store is empty because the phone hasn't synced yet, not
-/// because no routines exist. Quiet by design — a spinner and one line, and the container's
-/// timeout guarantees it can't outlive a phone that never answers.
+/// because no routines exist. The status line paints with the spinner from the first frame —
+/// a wrist peek is ≤5s, and a bare spinner reads as "hung" (W3). The container's timeout
+/// hands off to `WaitingForPhoneView`, never to a fabricated empty state.
 private struct SyncingView: View {
     var body: some View {
         VStack(spacing: 8) {
             ProgressView()
+                .controlSize(.small)
             Text("Syncing from iPhone…")
                 .font(.caption)
                 .foregroundStyle(WatchTheme.textSecondary)
         }
+    }
+}
+
+/// The sync timeout elapsed and the phone never spoke (W1). Not an error and not "no routines
+/// exist" — the watch is still listening (context applies whenever it arrives), so say that
+/// instead of asserting an empty library the phone never confirmed (N6).
+private struct WaitingForPhoneView: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: "iphone.slash")
+                .font(.title3)
+                .foregroundStyle(WatchTheme.textSecondary)
+            Text("Waiting for your iPhone…")
+                .font(.headline)
+                .multilineTextAlignment(.center)
+            Text("Keep the app open — the watch is still listening.")
+                .font(.caption2)
+                .foregroundStyle(WatchTheme.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 6)
     }
 }
 
@@ -325,7 +349,8 @@ struct RunSessionContainerView: View {
                 if forcedRoutine != nil {
                     StartingView(tint: WatchTheme.run)
                 } else {
-                    LaunchView(routine: effectiveRoutine, estimatedDuration: plannedDuration, onStart: start)
+                    LaunchView(routine: effectiveRoutine, estimatedDuration: plannedDuration,
+                               doneToday: doneToday, nextDayLabel: nextDayLabel, onStart: start)
                 }
             case .active:
                 WorkoutSessionPager(manager: manager)
@@ -335,7 +360,20 @@ struct RunSessionContainerView: View {
                         summary: summary,
                         saveState: manager.healthSaveState,
                         comparisons: comparisons,
+                        // Discardable only when the session ended before the first planned
+                        // run interval could finish — a mis-tap-sized workout (W20).
+                        canDiscard: summary.endedEarly
+                            && summary.totalDuration < TimeInterval(sessionCard.runSeconds),
                         notePreview: { effort in progressionNote(for: summary, effort: effort) },
+                        onDiscard: {
+                            // The user called the workout a mis-tap: delete our just-saved
+                            // workout, no progression, no done-today marker, back to launch.
+                            Task {
+                                comparisons = nil
+                                await awaitBestEffort(timeoutSeconds: 5) { _ = await manager.discard() }
+                                onFinish?()
+                            }
+                        },
                         onDone: { effort, userAdjusted in
                             // Emit progression ONCE, on Done, with the rating (so a high rating
                             // holds rather than advances). Then write Health and tear down —
@@ -347,6 +385,12 @@ struct RunSessionContainerView: View {
                             // it into the high-effort gate would double-count them (it still
                             // records to Health below, per the prefill decision).
                             recordOutcome(summary, effort: userAdjusted ? effort : nil)
+                            // Done-today receipt (W22): the launch screen shows the closed
+                            // loop for the rest of the day. Real, completed sessions only —
+                            // an ended-early bail must not read back as "Done today ✓".
+                            if !simulate, !summary.endedEarly, let routineId = activeRoutineId {
+                                LastCompletionStore.shared.recordCompletion(routineId: routineId)
+                            }
                             Task {
                                 if let effort {
                                     await awaitBestEffort(timeoutSeconds: 5) {
@@ -370,19 +414,33 @@ struct RunSessionContainerView: View {
                 } else {
                     WrappingUpView(tint: WatchTheme.run) { manager.reset(); onFinish?() }
                 }
-            case .failed:
-                ContentUnavailableView {
-                    Label("Couldn't start", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text("The workout couldn't start. Nothing was saved. Check Health permissions and try again.")
-                } actions: {
-                    Button("Back") { manager.reset(); onFinish?() }
+            case let .failedToStart(cause):
+                WorkoutFailedView(failure: .start(cause)) {
+                    RetryFailedActions(
+                        onRetry: { manager.reset(); start() },
+                        onBack: { manager.reset(); onFinish?() }
+                    )
+                }
+            case let .failedMidSession(elapsed):
+                WorkoutFailedView(failure: .midSession(elapsed: elapsed)) {
+                    Button("Done") { manager.reset(); onFinish?() }
                 }
             }
         }
         .task {
             if (simulate || forcedRoutine != nil), manager.sessionState == .idle { start() }
         }
+    }
+
+    /// Whether the up-next routine already completed a session today (W22).
+    private var doneToday: Bool {
+        guard !simulate, let routine = effectiveRoutine else { return false }
+        return LastCompletionStore.shared.completedToday(routineId: routine.id)
+    }
+
+    /// The routine's next repeat day after today, for the "Next: Thu" receipt line.
+    private var nextDayLabel: String? {
+        effectiveRoutine.flatMap { LastCompletionStore.nextDayLabel(repeatDays: $0.repeatDays) }
     }
 
     /// The routine to run: the picked one if forced, else the next scheduled adaptive run.
@@ -501,7 +559,10 @@ struct RunSessionContainerView: View {
     /// every honest delta into the "even" band); `-simulateNoHistory` demos the empty slot.
     private func loadComparisons(for summary: SessionSummary) async {
         if simulate {
-            guard !ProcessInfo.processInfo.arguments.contains("-simulateNoHistory") else {
+            // Mirror the real pipeline's W19 gate: an aborted sim run must render the same
+            // silence the production path would, or the sim demo shows a state that can't exist.
+            guard !summary.endedEarly,
+                  !ProcessInfo.processInfo.arguments.contains("-simulateNoHistory") else {
                 comparisons = []
                 return
             }
@@ -516,7 +577,10 @@ struct RunSessionContainerView: View {
         let history = await HealthRunDigestReader.history(
             routineId: activeRoutineId, before: sessionStart ?? Date())
         var lines: [RunComparison.Line] = []
-        if let line = RunComparison.vsLastRun(current: current, previous: history.previous?.digest) {
+        // "Last run" skips aborts (W19): an ended-early bail is a fact for Health, never a
+        // comparison baseline.
+        if let line = RunComparison.vsLastRun(current: current,
+                                              previous: RunComparison.lastComparable(in: history.all)) {
             lines.append(line)
         }
         if let line = RunComparison.vsBaseline(current: current, history: history.window) {

@@ -71,6 +71,23 @@ struct RunDigestTests {
         ))
     }
 
+    @Test func endedEarlyRoundTripsAndLegacyDigestsDecodeAsClean() throws {
+        var abort = sample
+        abort.endedEarly = true
+        #expect(abort.metadata()[RunDigest.Key.endedEarly] == "1")
+        #expect(try #require(RunDigest(metadata: abort.metadata())).endedEarly)
+
+        // Clean runs omit the key; pre-endedEarly (legacy v1) digests likewise lack it —
+        // both decode as not-ended-early rather than invalidating the stored history.
+        #expect(sample.metadata()[RunDigest.Key.endedEarly] == nil)
+        #expect(try #require(RunDigest(metadata: sample.metadata())).endedEarly == false)
+    }
+
+    @Test func summaryEndedEarlyReachesTheDigest() {
+        let summary = SessionSummary(totalDuration: 95, totalRunDuration: 20, endedEarly: true)
+        #expect(RunDigest(summary: summary, routineId: nil).endedEarly)
+    }
+
     @Test func runFractionIsHonest() {
         #expect(sample.runFraction.map { abs($0 - 732.0 / 1180.0) < 0.0001 } == true)
         #expect(RunDigest().runFraction == nil)   // no interval time → no percentage

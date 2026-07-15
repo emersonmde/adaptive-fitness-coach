@@ -10,6 +10,31 @@ struct WorkoutTotals: Sendable {
     var savedToHealth: Bool = true
 }
 
+/// Why a workout could not start, in user-meaningful terms (W5 — the start error must not be
+/// discarded; the failed screen's copy branches on this). Foundation-only: the HealthKit
+/// backends classify their own `HKError`s into a cause so the managers stay HealthKit-free.
+enum StartFailureCause: Equatable, Sendable {
+    /// Health authorization was denied — the one cause the user can actually fix themselves
+    /// (iPhone → Health → Sharing), so it's the only one whose copy mentions permissions.
+    case permissionsDenied
+    case unknown
+}
+
+/// A typed start failure thrown across the `WorkoutBackend.start()` boundary: carries the
+/// classified cause for the failed-to-start UI plus the underlying error for logging.
+struct WorkoutStartFailure: Error {
+    let cause: StartFailureCause
+    let underlying: Error
+}
+
+extension StartFailureCause {
+    /// The cause behind an arbitrary start error: typed failures carry their own; anything
+    /// else (test doubles, unexpected throws) is honestly unknown.
+    init(from error: Error) {
+        self = (error as? WorkoutStartFailure)?.cause ?? .unknown
+    }
+}
+
 /// The sensor/zone source behind a workout. Abstracting it lets the adaptive loop run against
 /// either real HealthKit (`HealthKitWorkoutBackend`) or a scripted source
 /// (`SimulatedWorkoutBackend`) — the latter makes the whole workout deterministically testable
@@ -53,11 +78,19 @@ protocol WorkoutBackend: AnyObject {
     /// (`HKWorkoutEffortScore`), called after `end()` when the user rates on the complete
     /// screen (build 9). No-op for backends that don't persist to Health.
     func writeEffortScore(_ score: Int) async
+
+    /// Delete the just-finished workout this backend saved (W20 — "Discard workout" on a
+    /// mis-tap-sized ended-early session). Deletes only our own just-written `HKWorkout`,
+    /// never anything else in Health (N2-adjacent). Returns whether the delete succeeded.
+    func discardWorkout() async -> Bool
 }
 
 extension WorkoutBackend {
     /// Default: simulated backends and test doubles don't write to Health.
     func writeEffortScore(_ score: Int) async {}
+
+    /// Default: backends that don't persist to Health have nothing to delete.
+    func discardWorkout() async -> Bool { true }
 
     /// Default: metadata is a Health-persistence concern; everything else just ends.
     func end(metadata: [String: String]) async -> WorkoutTotals { await end() }

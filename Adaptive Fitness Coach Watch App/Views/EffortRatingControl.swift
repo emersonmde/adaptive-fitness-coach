@@ -47,10 +47,19 @@ struct EffortRatingControl: View {
                     effort = (level?.up ?? .easy).score
                 }
             }
-            Text(level == nil ? "How did it feel?"
-                 : (isSuggested ? "Suggested — adjust if it felt different" : " "))
-                .font(.caption2)
-                .foregroundStyle(WatchTheme.textSecondary)
+            // Reserved caption slot (T5): the three captions have different line counts and
+            // swap under the user's finger — a hidden template of the LONGEST caption keeps
+            // the slot at its tallest height at every Dynamic Type size, so the ± buttons
+            // never migrate mid-interaction (the old " " placeholder only held one line).
+            ZStack {
+                Text("Suggested — adjust if it felt different")
+                    .hidden()
+                Text(level == nil ? "How did it feel?"
+                     : (isSuggested ? "Suggested — adjust if it felt different" : ""))
+            }
+            .font(.caption2)
+            .foregroundStyle(WatchTheme.textSecondary)
+            .multilineTextAlignment(.center)
         }
         // One element for VoiceOver, adjustable: swipe up/down steps the levels.
         .accessibilityElement()

@@ -8,7 +8,24 @@ final class SimulatedWorkoutBackend: WorkoutBackend {
     var onHeartRate: ((Double) -> Void)?
     var onZoneChange: ((Int?) -> Void)?
     var onCadence: ((Double) -> Void)?
-    var onFailure: (() -> Void)? // never invoked; the simulated workout cannot fail
+    var onFailure: (() -> Void)? // fired only by injected failures (below); real scripts can't fail
+
+    /// Failure injection so the simulator can render the failure states (no real HealthKit
+    /// error is reachable there): `-simulateStartFailure` / `-simulateStartFailurePermissions`
+    /// make `start()` throw; `-simulateMidFailure` fires `onFailure` ~6s into the script.
+    enum InjectedFailure { case none, startUnknown, startPermissions, midSession }
+    var injectedFailure: InjectedFailure
+
+    nonisolated static func injectedFailureFromArguments(
+        _ args: [String] = ProcessInfo.processInfo.arguments
+    ) -> InjectedFailure {
+        if args.contains("-simulateStartFailurePermissions") { return .startPermissions }
+        if args.contains("-simulateStartFailure") { return .startUnknown }
+        if args.contains("-simulateMidFailure") { return .midSession }
+        return .none
+    }
+
+    private struct InjectedStartError: Error {}
 
     /// One scripted reading: at `at` seconds into the session, report `zone` (1-based position)
     /// and `hr`, plus optionally a `cadence` (steps/minute — drives warmup run-detection).
@@ -29,11 +46,26 @@ final class SimulatedWorkoutBackend: WorkoutBackend {
     private let script: [Step]
     private var task: Task<Void, Never>?
 
-    init(script: [Step] = SimulatedWorkoutBackend.demoScript) {
+    init(script: [Step] = SimulatedWorkoutBackend.demoScript,
+         injectedFailure: InjectedFailure = SimulatedWorkoutBackend.injectedFailureFromArguments()) {
         self.script = script.sorted { $0.at < $1.at }
+        self.injectedFailure = injectedFailure
     }
 
     func start() async throws {
+        switch injectedFailure {
+        case .startPermissions:
+            throw WorkoutStartFailure(cause: .permissionsDenied, underlying: InjectedStartError())
+        case .startUnknown:
+            throw InjectedStartError()
+        case .midSession:
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(6))
+                self?.onFailure?()
+            }
+        case .none:
+            break
+        }
         let script = self.script
         let startDate = Date()
         task = Task { [weak self] in

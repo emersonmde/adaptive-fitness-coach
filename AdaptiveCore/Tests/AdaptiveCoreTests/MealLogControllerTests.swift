@@ -189,6 +189,46 @@ struct MealLogControllerTests {
         }
     }
 
+    /// P13: the "Some didn't save" tap retries THIS session's failed rows in place — statuses
+    /// flip to Saved, the queue empties, and Health gets exactly one write per item.
+    @Test func retryPendingRecoversFailedWritesWithHonestStatuses() async {
+        let recorder = InMemoryNutritionRecorder()
+        recorder.failWrites = true
+        let queue = tempQueue()
+        let (controller, _) = makeController(recorder: recorder, queue: queue)
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        await controller.commit()
+        #expect(queue.pending.count == 3)
+
+        recorder.failWrites = false   // the transient Health blip passes
+        await controller.retryPending()
+        #expect(queue.pending.isEmpty)
+        #expect(recorder.entries.count == 3)
+        for status in controller.itemStatuses {
+            guard case .saved = status.state else {
+                Issue.record("\(status.name) should read Saved after a successful retry"); return
+            }
+        }
+    }
+
+    /// A retry that fails again stays honestly failed (and queued) — never a fake Saved.
+    @Test func retryPendingReFailsHonestly() async {
+        let recorder = InMemoryNutritionRecorder()
+        recorder.failWrites = true
+        let queue = tempQueue()
+        let (controller, _) = makeController(recorder: recorder, queue: queue)
+        await controller.beginCapture(MealCapture(ocrLines: ["receipt"]))
+        await controller.commit()
+
+        await controller.retryPending()   // Health still down
+        #expect(queue.pending.count == 3)
+        for status in controller.itemStatuses {
+            guard case .failed = status.state else {
+                Issue.record("\(status.name) must not fake Saved on a failed retry"); return
+            }
+        }
+    }
+
     @Test func resumeDrainsThePendingQueue() async {
         let queue = tempQueue()
         queue.enqueue(PendingMealQueue.PendingItem(

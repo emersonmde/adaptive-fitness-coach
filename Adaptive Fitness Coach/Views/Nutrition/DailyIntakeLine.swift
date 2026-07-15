@@ -90,7 +90,20 @@ struct DailyIntakeLine: View {
 
             // One reserved slot: status when working, camera when idle — no layout jumps.
             ZStack(alignment: .trailing) {
-                if let status = statusText {
+                if hasFailedItems {
+                    // P13: a failed Health write is a warning with an exit, not a caption in
+                    // the same quiet tier as "Saved". Tap = retry the failed items in place.
+                    Button {
+                        Task { await controller.retryPending() }
+                    } label: {
+                        Label("Some didn't save", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.heat)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("meal.dailyLine.status")
+                    .accessibilityHint("Retries saving to Health")
+                } else if let status = statusText {
                     Text(status)
                         .font(.caption)
                         .foregroundStyle(Theme.textSecondary)
@@ -134,6 +147,15 @@ struct DailyIntakeLine: View {
         intake.entries.contains { if case .estimate = $0.provenance { true } else { false } }
     }
 
+    /// Failed writes settled (nothing still in flight) — the slot becomes the P13 warning.
+    /// In-flight statuses outrank it, so a retry honestly reads "Looking up N…" again.
+    private var hasFailedItems: Bool {
+        let statuses = controller.itemStatuses
+        let inFlight = statuses.contains { $0.state == .waiting || $0.state == .lookingUp }
+        return !inFlight
+            && statuses.contains { if case .failed = $0.state { true } else { false } }
+    }
+
     /// Honest, minimal: counts still in flight, or a brief "Saved".
     private var statusText: String? {
         let statuses = controller.itemStatuses
@@ -142,9 +164,6 @@ struct DailyIntakeLine: View {
             $0.state == .waiting || $0.state == .lookingUp
         }.count
         if inFlight > 0 { return "Looking up \(inFlight)…" }
-        if statuses.contains(where: { if case .failed = $0.state { true } else { false } }) {
-            return "Some didn't save"
-        }
         if controller.phase == .done { return "Saved" }
         return nil
     }

@@ -8,6 +8,9 @@ import AdaptiveCore
 struct UpNextCard: View {
     let routine: Routine
     let date: Date
+    /// False = day-only schedule: `date` is a midnight placeholder, so the chip renders the
+    /// day alone — never a fabricated "· 12:00 AM" (P4/N6).
+    var hasTime: Bool = true
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -49,7 +52,7 @@ struct UpNextCard: View {
                 }
                 .padding(.top, 8)
 
-                Text(RelativeWhen.string(for: date))
+                Text(RelativeWhen.string(for: date, hasTime: hasTime))
                     .font(.system(.headline, design: .rounded))
                     .foregroundStyle(Theme.textPrimary)
                     .padding(.horizontal, 12)
@@ -89,17 +92,28 @@ struct UpNextCard: View {
 
 /// Friendly relative phrasing for a future date: "Today · 7:00 AM", "Tomorrow · 7:00 AM",
 /// "Wed · 7:00 AM", else "Jun 30 · 7:00 AM".
+///
+/// `hasTime: false` (a day-only schedule handing in a midnight placeholder) drops the time
+/// entirely — "Mon", never a fabricated "Mon · 12:00 AM" (P4/N6). A date earlier today (a
+/// missed-but-still-today occurrence from `RoutineStore.nextOccurrence`) reads "Today ·
+/// 7:00 AM" — the day branch fires before any relative/rollover phrasing could.
 enum RelativeWhen {
-    static func string(for date: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
-        let time = date.formatted(date: .omitted, time: .shortened)
-        if calendar.isDateInToday(date) { return "Today · \(time)" }
-        if calendar.isDateInTomorrow(date) { return "Tomorrow · \(time)" }
-        let startNow = calendar.startOfDay(for: now)
-        let startDate = calendar.startOfDay(for: date)
-        let days = calendar.dateComponents([.day], from: startNow, to: startDate).day ?? 0
-        if (0..<7).contains(days) {
-            return "\(date.formatted(.dateTime.weekday(.abbreviated))) · \(time)"
+    static func string(for date: Date, hasTime: Bool = true,
+                       now: Date = Date(), calendar: Calendar = .current) -> String {
+        let day: String
+        if calendar.isDateInToday(date) {
+            day = "Today"
+        } else if calendar.isDateInTomorrow(date) {
+            day = "Tomorrow"
+        } else {
+            let startNow = calendar.startOfDay(for: now)
+            let startDate = calendar.startOfDay(for: date)
+            let days = calendar.dateComponents([.day], from: startNow, to: startDate).day ?? 0
+            day = (0..<7).contains(days)
+                ? date.formatted(.dateTime.weekday(.abbreviated))
+                : date.formatted(.dateTime.month().day())
         }
-        return "\(date.formatted(.dateTime.month().day())) · \(time)"
+        guard hasTime else { return day }
+        return "\(day) · \(date.formatted(date: .omitted, time: .shortened))"
     }
 }

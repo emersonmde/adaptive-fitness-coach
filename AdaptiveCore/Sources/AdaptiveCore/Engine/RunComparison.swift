@@ -48,18 +48,28 @@ public enum RunComparison {
     static let evenBandSeconds: TimeInterval = 15
 
     /// vs the previous run of this routine. nil when none exists (pre-feature history has no
-    /// digests — silence, never a fabricated zero).
+    /// digests — silence, never a fabricated zero). Aborted sessions never compare: an
+    /// ended-early current run shows no delta (its numbers aren't the session that was
+    /// planned), and an ended-early previous run is skipped by `lastComparable(in:)`.
     public static func vsLastRun(current: RunDigest, previous: RunDigest?) -> Line? {
-        guard let previous else { return nil }
+        guard !current.endedEarly, let previous, !previous.endedEarly else { return nil }
         return line(label: "vs last run", delta: current.runSeconds - previous.runSeconds)
+    }
+
+    /// The most recent digest that can honestly serve as "last run" — skips aborts.
+    /// `history` is newest-first, as both digest readers return it.
+    public static func lastComparable(in history: [DatedRunDigest]) -> RunDigest? {
+        history.first(where: { !$0.digest.endedEarly })?.digest
     }
 
     /// vs the mean of this routine's digest-bearing runs over the last 28 days. nil until the
     /// gate passes: ≥ `baselineMinimumRuns` in-window runs whose oldest is
-    /// ≥ `baselineMinimumSpreadDays` old.
+    /// ≥ `baselineMinimumSpreadDays` old. Ended-early runs are excluded on both sides of the
+    /// comparison — an abort is a fact for Health, not a baseline.
     public static func vsBaseline(current: RunDigest, history: [DatedRunDigest], now: Date = Date()) -> Line? {
+        guard !current.endedEarly else { return nil }
         let windowStart = now.addingTimeInterval(-Double(baselineWindowDays) * 86_400)
-        let window = history.filter { $0.date >= windowStart && $0.date < now }
+        let window = history.filter { $0.date >= windowStart && $0.date < now && !$0.digest.endedEarly }
         guard window.count >= baselineMinimumRuns,
               let oldest = window.map(\.date).min(),
               now.timeIntervalSince(oldest) >= Double(baselineMinimumSpreadDays) * 86_400

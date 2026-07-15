@@ -5,9 +5,9 @@ import AdaptiveCore
 ///
 /// A sentence banner over the metrics fails the core premise (follow the buzz, don't read the
 /// watch mid-run — N5) and covers the HR/timer. Instead this is a tiny directional chip: a
-/// chevron + one word, colored by direction (green = pushing, amber = easing), shown briefly at
-/// the bottom edge where it occludes nothing. The full, readable detail lives in the post-run
-/// summary, where there's time to read.
+/// chevron + one word, colored by direction (green = pushing, cool sky-blue = easing), shown
+/// briefly at the bottom edge where it occludes nothing. The full, readable detail lives in the
+/// post-run summary, where there's time to read.
 struct AdaptationCue: View {
     let event: AdaptationEvent
 

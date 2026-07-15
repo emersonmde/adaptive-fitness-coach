@@ -203,11 +203,13 @@ struct RoutineDetailView: View {
     private func form(for routine: Routine) -> some View {
         ScrollView {
             VStack(spacing: 18) {
-                if let next = nextDate(for: routine) {
+                if let next = RoutineStore.nextOccurrence(in: [routine]) {
                     HStack(spacing: 8) {
                         Image(systemName: "calendar")
                             .foregroundStyle(Theme.accent)
-                        Text("Next · \(RelativeWhen.string(for: next))")
+                        // hasTime-aware: a day-only schedule reads "Next · Mon", never a
+                        // fabricated default clock time (P4/N6).
+                        Text("Next · \(RelativeWhen.string(for: next.date, hasTime: next.hasTime))")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(Theme.textPrimary)
                         Spacer()
@@ -366,14 +368,4 @@ struct RoutineDetailView: View {
     }
 
     /// Next fire date for *this* routine, for the "Next · …" echo.
-    private func nextDate(for routine: Routine, now: Date = Date(), calendar: Calendar = .current) -> Date? {
-        guard !routine.repeatDays.isEmpty else { return nil }
-        return routine.repeatDays.compactMap { day -> Date? in
-            var c = DateComponents()
-            c.weekday = day.rawValue
-            let t = routine.scheduleTime ?? Self.defaultTime
-            c.hour = t.hour; c.minute = t.minute
-            return calendar.nextDate(after: now, matching: c, matchingPolicy: .nextTime)
-        }.min()
-    }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import os
 
 /// The production strength backend: a real Apple Traditional Strength Training workout via
 /// `HKWorkoutSession` + `HKLiveWorkoutBuilder` (N2). It records the session to Health — including
@@ -25,7 +26,12 @@ final class HealthKitStrengthBackend: NSObject, WorkoutBackend {
         configuration.activityType = .traditionalStrengthTraining
         configuration.locationType = .indoor
 
-        let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+        let session: HKWorkoutSession
+        do {
+            session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+        } catch {
+            throw WorkoutStartFailure(cause: StartFailureCause(classifying: error), underlying: error)
+        }
         let builder = session.associatedWorkoutBuilder()
         builder.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
         session.delegate = self
@@ -43,7 +49,7 @@ final class HealthKitStrengthBackend: NSObject, WorkoutBackend {
             session.end()
             self.session = nil
             self.builder = nil
-            throw error
+            throw WorkoutStartFailure(cause: StartFailureCause(classifying: error), underlying: error)
         }
     }
 
@@ -88,6 +94,8 @@ extension HealthKitStrengthBackend: HKWorkoutSessionDelegate {
 
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
         // The session died after starting — stop rather than keep a dead session on screen (N6).
+        Logger(subsystem: Bundle.main.bundleIdentifier ?? "AdaptiveFitnessCoach", category: "WorkoutBackend")
+            .error("HKWorkoutSession failed mid-strength: \(String(describing: error), privacy: .public)")
         Task { @MainActor in self.onFailure?() }
     }
 }

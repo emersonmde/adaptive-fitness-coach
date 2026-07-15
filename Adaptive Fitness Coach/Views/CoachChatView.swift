@@ -35,6 +35,11 @@ struct CoachChatView: View {
     /// entry — a single value marked EVERY proposal applied, so a revised proposal after one
     /// apply rendered without its Review button (the revision loop dead-ended).
     @State private var appliedResults: [UUID: String] = [:]
+    /// P23: per-routine NEW/UPDATES verdicts frozen when Review & apply is tapped (i.e.
+    /// against the store apply will run against). Post-apply the card renders THESE — the
+    /// live recompute would flip every applied "NEW" to "UPDATES" the moment the store
+    /// gained the routine, contradicting the frozen "updated 0, added 2" line.
+    @State private var appliedVerdicts: [UUID: [String: Bool]] = [:]
     @State private var applyingEntryID: UUID?
     @FocusState private var inputFocused: Bool
 
@@ -225,6 +230,11 @@ struct CoachChatView: View {
         let existingNames = Set(store.routines.map(\.name))
         return VStack(alignment: .leading, spacing: 12) {
             ForEach(proposal.routines) { routine in
+                // Live while actionable (the badge previews what apply WILL do); frozen to
+                // the at-apply verdict once applied (P23) — the receipt never rewrites itself.
+                let isUpdate = appliedResults[entryID] != nil
+                    ? (appliedVerdicts[entryID]?[routine.name] ?? existingNames.contains(routine.name))
+                    : existingNames.contains(routine.name)
                 HStack(spacing: 10) {
                     Image(systemName: routine.type == .strength ? "dumbbell.fill" : "figure.run")
                         .font(.caption)
@@ -239,9 +249,9 @@ struct CoachChatView: View {
                             .foregroundStyle(Theme.textSecondary)
                     }
                     Spacer(minLength: 0)
-                    Text(existingNames.contains(routine.name) ? "UPDATES" : "NEW")
+                    Text(isUpdate ? "UPDATES" : "NEW")
                         .font(.caption2.weight(.bold))
-                        .foregroundStyle(existingNames.contains(routine.name) ? Theme.info : Theme.accent)
+                        .foregroundStyle(isUpdate ? Theme.info : Theme.accent)
                 }
             }
 
@@ -254,26 +264,37 @@ struct CoachChatView: View {
                     .foregroundStyle(Theme.textSecondary)
             }
 
-            if let applied = appliedResults[entryID] {
-                Text(applied)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(Theme.accent)
-            } else {
-                Button {
-                    applyingEntryID = entryID
-                    pendingImport = ImportCandidate(routines: proposal.routines)
-                } label: {
-                    Text("Review & apply")
-                        .font(.subheadline.weight(.semibold))
+            // T5: the applied line settles into the exact slot the capsule occupied — a
+            // constant-height ZStack so the card never jumps at the moment of commitment.
+            ZStack(alignment: .leading) {
+                if let applied = appliedResults[entryID] {
+                    Text(applied)
+                        .font(.caption.weight(.medium))
                         .foregroundStyle(Theme.accent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Theme.surface2, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.6), lineWidth: 1))
+                } else {
+                    Button {
+                        applyingEntryID = entryID
+                        // P23: freeze what apply will do against TODAY'S store — the badge
+                        // this receipt keeps after the store changes underneath it.
+                        appliedVerdicts[entryID] = Dictionary(
+                            proposal.routines.map { ($0.name, existingNames.contains($0.name)) },
+                            uniquingKeysWith: { first, _ in first }
+                        )
+                        pendingImport = ImportCandidate(routines: proposal.routines)
+                    } label: {
+                        Text("Review & apply")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Theme.surface2, in: Capsule())
+                            .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.6), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("coachProposalReview")
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("coachProposalReview")
             }
+            .frame(height: 44, alignment: .leading)   // the capsule's height, reserved either way
         }
         .padding(14)
         .background(Theme.surface1, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
@@ -295,39 +316,9 @@ struct CoachChatView: View {
 
     private var inputBar: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if let conversation {
-                if conversation.transcript.isEmpty {
-                    // One-tap answers to the greeting; gone after the first message.
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(suggestionChips, id: \.self) { chip in
-                                Button(chip) { conversation.send(chip) }
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(Theme.textPrimary)
-                                    .padding(.horizontal, 12).padding(.vertical, 8)
-                                    .background(Theme.surface2, in: Capsule())
-                                    .overlay(Capsule().strokeBorder(Theme.hairline))
-                            }
-                        }
-                    }
-                } else if conversation.latestProposal == nil, !conversation.isResponding {
-                    // Skip-ahead for users done talking (the model normally decides when to
-                    // draft). Rendered as the same capsule chip as the one-tap answers above —
-                    // a bare tertiary caption read as a status line, not a control.
-                    Button {
-                        conversation.send("Draft the plan now with what you know so far.")
-                    } label: {
-                        Label("Draft the plan now", systemImage: "wand.and.stars")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(Theme.textPrimary)
-                            .padding(.horizontal, 12).padding(.vertical, 8)
-                            .background(Theme.surface2, in: Capsule())
-                            .overlay(Capsule().strokeBorder(Theme.hairline))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("coachDraftNow")
-                }
-            }
+            // T5: ONE reserved chip slot — the row keeps its height whether chips render or
+            // not, so the input bar never reflows turn-to-turn under a typing thumb.
+            chipSlot
 
             HStack(spacing: 10) {
                 TextField("Answer the coach…", text: $input, axis: .vertical)
@@ -355,6 +346,53 @@ struct CoachChatView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Theme.bg)
+    }
+
+    /// The chip content that lives inside the reserved slot (empty renders as blank space,
+    /// never as a collapsed row).
+    @ViewBuilder
+    private var chipContent: some View {
+        if let conversation {
+            if conversation.transcript.isEmpty {
+                // One-tap answers to the greeting; gone after the first message.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(suggestionChips, id: \.self) { chip in
+                            Button(chip) { conversation.send(chip) }
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(Theme.textPrimary)
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .background(Theme.surface2, in: Capsule())
+                                .overlay(Capsule().strokeBorder(Theme.hairline))
+                        }
+                    }
+                }
+            } else if conversation.latestProposal == nil, !conversation.isResponding {
+                // Skip-ahead for users done talking (the model normally decides when to
+                // draft). Rendered as the same capsule chip as the one-tap answers above —
+                // a bare tertiary caption read as a status line, not a control.
+                Button {
+                    conversation.send("Draft the plan now with what you know so far.")
+                } label: {
+                    Label("Draft the plan now", systemImage: "wand.and.stars")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(Theme.surface2, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Theme.hairline))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("coachDraftNow")
+            }
+        }
+    }
+
+    private var chipSlot: some View {
+        ZStack(alignment: .leading) {
+            chipContent
+        }
+        .frame(height: 34, alignment: .leading)   // one capsule-chip row, reserved always
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var canSend: Bool {

@@ -24,6 +24,10 @@ public struct RunDigest: Sendable, Hashable {
     public var meanRecoveryDrop: Double?
     public var backOffs: Int
     public var fastRecoveries: Int
+    /// The session was ended by hand before completing. Aborts still save to Health (N2)
+    /// but must not become comparison baselines — a 20-second bail would inflate the next
+    /// real run's "vs last run" and drag the 28-day mean.
+    public var endedEarly: Bool
 
     public init(
         routineId: UUID? = nil,
@@ -35,7 +39,8 @@ public struct RunDigest: Sendable, Hashable {
         timeInTargetZoneSeconds: TimeInterval = 0,
         meanRecoveryDrop: Double? = nil,
         backOffs: Int = 0,
-        fastRecoveries: Int = 0
+        fastRecoveries: Int = 0,
+        endedEarly: Bool = false
     ) {
         self.routineId = routineId
         self.runSeconds = runSeconds
@@ -47,6 +52,7 @@ public struct RunDigest: Sendable, Hashable {
         self.meanRecoveryDrop = meanRecoveryDrop
         self.backOffs = backOffs
         self.fastRecoveries = fastRecoveries
+        self.endedEarly = endedEarly
     }
 
     public init(summary: SessionSummary, routineId: UUID?) {
@@ -60,7 +66,8 @@ public struct RunDigest: Sendable, Hashable {
             timeInTargetZoneSeconds: summary.timeInTargetZone,
             meanRecoveryDrop: summary.meanRecoveryDrop,
             backOffs: summary.runBackOffCount,
-            fastRecoveries: summary.fastRecoveries
+            fastRecoveries: summary.fastRecoveries,
+            endedEarly: summary.endedEarly
         )
     }
 
@@ -85,8 +92,12 @@ public struct RunDigest: Sendable, Hashable {
         public static let meanRecoveryDrop = "AFCMeanRecoveryDrop"
         public static let backOffs = "AFCBackOffs"
         public static let fastRecoveries = "AFCFastRecoveries"
+        public static let endedEarly = "AFCEndedEarly"
     }
 
+    /// Still "1": `endedEarly` is an additive optional key whose absence decodes as false —
+    /// bumping the version would make every pre-existing digest read as "no digest" and
+    /// erase the user's comparison history for a field old digests can't carry anyway.
     public static let currentVersion = "1"
 
     public func metadata() -> [String: String] {
@@ -101,6 +112,7 @@ public struct RunDigest: Sendable, Hashable {
             Key.backOffs: String(backOffs),
             Key.fastRecoveries: String(fastRecoveries),
         ]
+        if endedEarly { dict[Key.endedEarly] = "1" }
         if let routineId { dict[Key.routineID] = routineId.uuidString }
         if let meanRecoveryDrop {
             dict[Key.meanRecoveryDrop] = String(format: "%.1f", meanRecoveryDrop)
@@ -123,7 +135,8 @@ public struct RunDigest: Sendable, Hashable {
             timeInTargetZoneSeconds: metadata[Key.timeInTargetZone].flatMap(TimeInterval.init) ?? 0,
             meanRecoveryDrop: metadata[Key.meanRecoveryDrop].flatMap(Double.init),
             backOffs: metadata[Key.backOffs].flatMap(Int.init) ?? 0,
-            fastRecoveries: metadata[Key.fastRecoveries].flatMap(Int.init) ?? 0
+            fastRecoveries: metadata[Key.fastRecoveries].flatMap(Int.init) ?? 0,
+            endedEarly: metadata[Key.endedEarly] == "1"
         )
     }
 }

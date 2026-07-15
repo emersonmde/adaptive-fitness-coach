@@ -15,12 +15,41 @@ private final class FailingBackend: WorkoutBackend {
     var onCadence: ((Double) -> Void)?
     var onFailure: (() -> Void)?
     let failOnStart: Bool
+    /// When set, `start()` throws a typed `WorkoutStartFailure` with this cause (the shape
+    /// the HealthKit backends throw); nil throws an untyped error.
+    let startCause: StartFailureCause?
 
-    init(failOnStart: Bool = true) { self.failOnStart = failOnStart }
+    init(failOnStart: Bool = true, startCause: StartFailureCause? = nil) {
+        self.failOnStart = failOnStart
+        self.startCause = startCause
+    }
 
     struct StartError: Error {}
-    func start() async throws { if failOnStart { throw StartError() } }
+    func start() async throws {
+        guard failOnStart else { return }
+        if let startCause {
+            throw WorkoutStartFailure(cause: startCause, underlying: StartError())
+        }
+        throw StartError()
+    }
     func end() async -> WorkoutTotals { WorkoutTotals() }
+}
+
+/// Records whether `discardWorkout()` was called — pins the W20 discard plumbing.
+@MainActor
+private final class DiscardSpyBackend: WorkoutBackend {
+    var onHeartRate: ((Double) -> Void)?
+    var onZoneChange: ((Int?) -> Void)?
+    var onCadence: ((Double) -> Void)?
+    var onFailure: (() -> Void)?
+    private(set) var discardCalled = false
+
+    func start() async throws {}
+    func end() async -> WorkoutTotals { WorkoutTotals() }
+    func discardWorkout() async -> Bool {
+        discardCalled = true
+        return true
+    }
 }
 
 /// Captures the metadata dict handed to `end(metadata:)` — pins that the run digest reaches
@@ -301,20 +330,66 @@ struct WorkoutFlowTests {
 
     // MARK: - Failure & manual end
 
-    @Test func startFailureSurfacesFailedStateWithoutFakingCompletion() async {
+    @Test func startFailureSurfacesFailedToStartWithoutFakingCompletion() async {
         let manager = WorkoutSessionManager(backend: FailingBackend(), autoTick: false)
         await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
-        #expect(manager.sessionState == .failed)
+        // An untyped error is honestly unknown — never guessed into a specific cause (W5).
+        #expect(manager.sessionState == .failedToStart(.unknown))
         #expect(manager.summary == nil) // never fabricate a "saved to Health" summary (N2/N6)
     }
 
-    @Test func runtimeFailureStopsTheSession() async {
+    @Test func typedStartFailureCarriesItsCauseToTheFailedState() async {
+        // The HealthKit backends classify HKError.errorAuthorizationDenied into
+        // .permissionsDenied and throw it typed; the manager must surface it verbatim so
+        // the failed screen's permissions copy only appears when it's actually the cause.
+        let backend = FailingBackend(startCause: .permissionsDenied)
+        let manager = WorkoutSessionManager(backend: backend, autoTick: false)
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        #expect(manager.sessionState == .failedToStart(.permissionsDenied))
+    }
+
+    @Test func runtimeFailureStopsTheSessionWithElapsedSnapshot() async {
         let backend = FailingBackend(failOnStart: false)
         let manager = WorkoutSessionManager(backend: backend, autoTick: false)
         await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
         #expect(manager.sessionState == .active)
+        tick(manager, seconds: 5)
         backend.onFailure?() // simulate a mid-run sensor/session failure
-        #expect(manager.sessionState == .failed)
+        // Mid-session death is its own state (B1), carrying the engine's elapsed at the
+        // moment of death — the one honest number the failed screen can show.
+        #expect(manager.sessionState == .failedMidSession(elapsed: 5))
+    }
+
+    @Test func startFailureAndMidSessionFailureAreDistinctStates() async {
+        // The whole point of B1: "never started, nothing saved, retry is safe" and "died
+        // mid-run, partial data may be in Health" must be distinguishable by the UI.
+        let startFailed = WorkoutSessionManager(backend: FailingBackend(), autoTick: false)
+        await startFailed.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        let midFailed: WorkoutSessionManager
+        let backend = FailingBackend(failOnStart: false)
+        midFailed = WorkoutSessionManager(backend: backend, autoTick: false)
+        await midFailed.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        backend.onFailure?()
+        #expect(startFailed.sessionState != midFailed.sessionState)
+    }
+
+    @Test func discardDeletesTheSavedWorkoutAndResets() async {
+        // W20: a mis-tap-sized ended-early session offers Discard — the manager must route
+        // it to the retained finished backend (the workout is already saved by then), then
+        // tear down to idle.
+        let backend = DiscardSpyBackend()
+        let manager = WorkoutSessionManager(backend: backend, autoTick: false)
+        await manager.begin(config: SessionConfig(plan: shortPlan()), routineName: "Test")
+        tick(manager, seconds: 3)
+        manager.endManually()
+        await waitUntilComplete(manager)
+        #expect(manager.summary?.endedEarly == true)
+
+        let deleted = await manager.discard()
+        #expect(deleted)
+        #expect(backend.discardCalled)
+        #expect(manager.sessionState == .idle)
+        #expect(manager.summary == nil)
     }
 
     @Test func endManuallyCompletesAndBuildsSummary() async {

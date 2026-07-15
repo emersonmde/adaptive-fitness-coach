@@ -37,9 +37,15 @@ app-wide sweep, M3 adaptation legibility + mixed, M4 watch session, M5 food loop
 phone surfaces), plus M0 (on-body verify, parallel) and an M7+ big-swing menu — each with
 finding refs, decisions-needed, and acceptance criteria.
 
-**NEXT (new session): `docs/ROADMAP.md` M1 — trust & honesty** (blockers B1/B2, the
-end-early/start-failure clusters, and the receipt states). M0 (on-body verification of
-the review's §7 list) runs whenever the user next has the watch on-wrist, in parallel.
+**NEXT (new session): `docs/ROADMAP.md` M2 — app-wide mechanical sweep** (targets ·
+type · copy · color; resolve the M2 decision-register rows with the user first). M0
+(on-body verification of the review's §7 list) runs whenever the user next has the watch
+on-wrist, in parallel — it also picks up the three M1 states the sim can't force (B2
+loadFailed gauge, P13 partial-save warning, W22 done-today receipt).
+
+**M1 — trust & honesty: DONE 2026-07-15** (blockers B1/B2 closed; see the ROADMAP status
+line for scope; new watch sim args `-simulateStartFailure[Permissions]`/`-simulateMidFailure`
+force the failure states for screenshots).
 
 **Adaptive energy budget (2026-07-09 → build 22).** The fixed daily calorie target became a
 **live budget** built from Apple Health: basal (Mifflin) banked up front, active energy

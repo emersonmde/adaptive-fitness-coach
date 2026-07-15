@@ -21,6 +21,14 @@ struct ExportPackSheet: View {
     @State private var pendingExport: ExportKind?
     /// Built lazily for ShareLink previews after the first build.
     @State private var sharePack: ContextPack?
+    /// P27: what the LAST export actually contained, when it fell short of the scope's
+    /// promise — replaces the scope-derived footer line until the scope changes again.
+    @State private var reconciledIncludesLine: String?
+    /// The quiet "went out without…" warning for that shortfall (nil = the export delivered
+    /// everything promised).
+    @State private var exportShortfall: String?
+    /// The last export kind, so the shortfall's Try again re-runs the same action.
+    @State private var lastExportKind: ExportKind?
 
     private let snapshotBuilder = HealthSnapshotBuilder()
     private let recorder = MealPipelineProvider.sharedRecorder
@@ -174,10 +182,34 @@ struct ExportPackSheet: View {
     }
 
     private var includesFooter: some View {
-        Label(currentIncludesLine, systemImage: "list.bullet.rectangle")
-            .font(.footnote)
-            .foregroundStyle(Theme.textSecondary)
-            .accessibilityIdentifier("export.includesLine")
+        VStack(alignment: .leading, spacing: 8) {
+            // After an export that fell short, the line shows what actually went out —
+            // the scope-derived promise returns the moment the scope changes.
+            Label(reconciledIncludesLine ?? currentIncludesLine, systemImage: "list.bullet.rectangle")
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+                .accessibilityIdentifier("export.includesLine")
+            if let shortfall = exportShortfall {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Label(shortfall, systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.heat)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Try again") {
+                        if let kind = lastExportKind { requestExport(kind) }
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("export.shortfall.retry")
+                }
+                .accessibilityIdentifier("export.shortfall")
+            }
+        }
+        .onChange(of: scope) {
+            reconciledIncludesLine = nil
+            exportShortfall = nil
+        }
     }
 
     private var exportBar: some View {
@@ -274,6 +306,8 @@ struct ExportPackSheet: View {
             )
         )
         sharePack = pack
+        lastExportKind = kind
+        reconcile(pack)
         switch kind {
         case .copy:
             UIPasteboard.general.string = pack.promptText
@@ -282,6 +316,32 @@ struct ExportPackSheet: View {
         case .share:
             presentShare(pack)
         }
+    }
+
+    /// P27: the includes-line under the export must describe what actually went out. If a
+    /// promised section composed empty (Health returned nothing, an empty journal window),
+    /// swap in the pack's truthful line and say so — quietly, with a retry.
+    private func reconcile(_ pack: ContextPack) {
+        let missing = scope.promisedSections.subtracting(pack.includedSections)
+        guard !missing.isEmpty else {
+            reconciledIncludesLine = nil
+            exportShortfall = nil
+            return
+        }
+        reconciledIncludesLine = pack.includesLine
+        let names = ContextPackSection.allCases
+            .filter { missing.contains($0) }
+            .map(\.displayName)
+        let list = ListFormatter.localizedString(byJoining: names)
+        let cause: String
+        if missing.subtracting([.fitnessSnapshot, .nutrition]).isEmpty {
+            cause = "Health returned nothing."
+        } else if missing == [.progressionHistory] {
+            cause = "nothing in that window."
+        } else {
+            cause = "it came back empty."
+        }
+        exportShortfall = "Exported without \(list) — \(cause)"
     }
 
     /// ShareLink can't be triggered programmatically after an async build; the classic

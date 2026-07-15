@@ -10,6 +10,10 @@ import AdaptiveCore
 /// alarm: a budget informs, it never demands attention (amended C6).
 struct CalorieGaugeView: View {
     let budget: DayBudget
+    /// B2: today's Health read failed and nothing is cached — the consumed number is
+    /// UNKNOWN, not zero. The hero em-dashes and the ring stays empty; the target (an app
+    /// setting, not a Health read) still renders. Never a confident "0 of 2,200".
+    var consumedUnknown: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -18,7 +22,7 @@ struct CalorieGaugeView: View {
             Circle()
                 .stroke(Theme.surface2, style: StrokeStyle(lineWidth: 12, lineCap: .round))
             Circle()
-                .trim(from: 0, to: budget.fillFraction)
+                .trim(from: 0, to: consumedUnknown ? 0 : budget.fillFraction)
                 .stroke(
                     budget.isOver ? Theme.heat : Theme.accent,
                     style: StrokeStyle(lineWidth: 12, lineCap: .round)
@@ -32,9 +36,9 @@ struct CalorieGaugeView: View {
                     Image(systemName: "fork.knife")
                         .font(.footnote)
                         .foregroundStyle(Theme.textTertiary)
-                    Text("\(Int(budget.consumedKcal.rounded()).formatted())")
+                    Text(consumedUnknown ? "—" : "\(Int(budget.consumedKcal.rounded()).formatted())")
                         .font(Theme.metricNumber)
-                        .foregroundStyle(Theme.textPrimary)
+                        .foregroundStyle(consumedUnknown ? Theme.textSecondary : Theme.textPrimary)
                         .accessibilityIdentifier("meal.day.gauge.consumed")
                 }
                 // Always the budget denominator — the ring's meaning (eaten of budget). Over-ness
@@ -52,7 +56,9 @@ struct CalorieGaugeView: View {
     }
 
     private var accessibilitySummary: String {
-        if let over = budget.overKcal {
+        if consumedUnknown {
+            "Couldn't read today's calories from Health. Target \(budget.targetKcal)."
+        } else if let over = budget.overKcal {
             "\(Int(budget.consumedKcal)) calories eaten, \(over) over your \(budget.targetKcal) target"
         } else {
             "\(Int(budget.consumedKcal)) of \(budget.targetKcal) calories, \(budget.remainingKcal ?? 0) left"

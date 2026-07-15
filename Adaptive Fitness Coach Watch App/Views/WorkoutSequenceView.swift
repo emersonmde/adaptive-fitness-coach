@@ -4,7 +4,8 @@ import AdaptiveCore
 /// Plays a multi-block routine's workout blocks in sequence, switching Apple workouts
 /// automatically: each block runs the same active screen it would on its own (the adaptive-run
 /// pager for a run block, the strength pager for a strength block) and, when it finishes, the next
-/// block's workout begins. A brief "up next" launch masks the session handoff.
+/// block's workout begins directly — the handoff shows each block's brief starting spinner while
+/// its Apple workout spins up, nothing more.
 ///
 /// "Adaptive run" is the run block — it alternates running and walking by heart rate — and is
 /// distinct from a future steady-walk workout; this view never confuses the two, it just sequences
@@ -39,6 +40,13 @@ struct WorkoutSequenceView: View {
             .id(i) // fresh manager + session per block
         case .done:
             SequenceDoneView { if let onExit { onExit() } else { phase = .launch } }
+                .onAppear {
+                    // Done-today receipt (W22) — the whole sequence finished. Idempotent
+                    // (latest-wins), so a re-appear can't double anything. Real routines only.
+                    if !simulate, let routineId {
+                        LastCompletionStore.shared.recordCompletion(routineId: routineId)
+                    }
+                }
         }
     }
 
@@ -97,7 +105,14 @@ private struct RunBlockView: View {
             case .idle: ProgressView().tint(WatchTheme.run)
             case .active: WorkoutSessionPager(manager: manager)
             case .complete: Color.clear.onAppear { recordOutcome(); onComplete() }
-            case .failed: BlockFailedView(onSkip: onComplete, onExit: onExit)
+            case let .failedToStart(cause):
+                WorkoutFailedView(failure: .start(cause)) {
+                    BlockFailedActions(onSkip: onComplete, onExit: onExit)
+                }
+            case let .failedMidSession(elapsed):
+                WorkoutFailedView(failure: .midSession(elapsed: elapsed)) {
+                    BlockFailedActions(onSkip: onComplete, onExit: onExit)
+                }
             }
         }
         .task {
@@ -179,7 +194,14 @@ private struct StrengthBlockView: View {
             case .idle: ProgressView().tint(WatchTheme.strength)
             case .active: StrengthSessionPager(manager: manager)
             case .complete: Color.clear.onAppear(perform: onComplete)
-            case .failed: BlockFailedView(onSkip: onComplete, onExit: onExit)
+            case let .failedToStart(cause):
+                WorkoutFailedView(failure: .start(cause)) {
+                    BlockFailedActions(onSkip: onComplete, onExit: onExit)
+                }
+            case let .failedMidSession(elapsed):
+                WorkoutFailedView(failure: .midSession(elapsed: elapsed)) {
+                    BlockFailedActions(onSkip: onComplete, onExit: onExit)
+                }
             }
         }
         .task {
@@ -191,21 +213,27 @@ private struct StrengthBlockView: View {
     }
 }
 
-/// A block failed to start (or died mid-way). Never a dead end: the user can skip to the next
-/// part or leave the sequence — being wedged mid-workout with no way out is the one failure
-/// mode worse than the failure itself.
-private struct BlockFailedView: View {
+/// A failed block's exits, slotted into the shared `WorkoutFailedView`. Never a dead end: the
+/// user can skip to the next part or leave the sequence — being wedged mid-workout with no
+/// way out is the one failure mode worse than the failure itself.
+private struct BlockFailedActions: View {
     var onSkip: (() -> Void)?
     var onExit: (() -> Void)?
 
     var body: some View {
-        ContentUnavailableView {
-            Label("Couldn't start", systemImage: "exclamationmark.triangle")
-        } description: {
-            Text("That part of the workout couldn't start. Nothing was saved.")
-        } actions: {
-            if let onSkip { Button("Skip this part", action: onSkip) }
-            if let onExit { Button("End workout", role: .cancel, action: onExit) }
+        VStack(spacing: 6) {
+            if let onSkip {
+                Button(action: onSkip) {
+                    Text("Skip this part")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            if let onExit {
+                Button("End workout", role: .cancel, action: onExit)
+                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(WatchTheme.textSecondary)
+            }
         }
     }
 }

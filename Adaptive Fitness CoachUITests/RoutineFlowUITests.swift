@@ -83,6 +83,12 @@ final class RoutineFlowUITests: XCTestCase {
 
         app.buttons["proposal.confirm"].tap()
         XCTAssertFalse(card.waitForExistence(timeout: 2))
+        // P14: the card settles in place as a one-line receipt instead of vanishing.
+        let settled = app.otherElements["proposal.settled"]
+        XCTAssertTrue(settled.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH 'Stepped up'")
+        ).firstMatch.exists)
 
         // The journal shows the confirmed structural step and the automatic micro bump.
         app.buttons["journalToolbar"].tap()
@@ -101,6 +107,11 @@ final class RoutineFlowUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         app.buttons["proposal.hold"].tap()
         XCTAssertFalse(card.waitForExistence(timeout: 2))
+        // P14: holding leaves a receipt too — the loop closed, nothing was lost.
+        XCTAssertTrue(app.otherElements["proposal.settled"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH 'Kept'")
+        ).firstMatch.exists)
 
         app.buttons["journalToolbar"].tap()
         XCTAssertTrue(app.staticTexts["HELD"].waitForExistence(timeout: 5))

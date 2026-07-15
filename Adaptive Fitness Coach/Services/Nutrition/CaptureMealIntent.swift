@@ -62,14 +62,16 @@ struct NextWorkoutIntent: AppIntent {
             return .result(value: nil, dialog: "Nothing is scheduled. Open Adaptive Fitness Coach to plan your week.")
         }
         let day = next.date.formatted(.dateTime.weekday(.wide))
-        let time = next.date.formatted(.dateTime.hour().minute())
+        // A day-only schedule has no clock time to speak — "on Monday", never a fabricated
+        // "at 12:00 AM" from the midnight placeholder (P4/N6).
+        let time = next.hasTime ? next.date.formatted(.dateTime.hour().minute()) : nil
         let relative: String
         if Calendar.current.isDateInToday(next.date) {
-            relative = "today at \(time)"
+            relative = time.map { "today at \($0)" } ?? "today"
         } else if Calendar.current.isDateInTomorrow(next.date) {
-            relative = "tomorrow at \(time)"
+            relative = time.map { "tomorrow at \($0)" } ?? "tomorrow"
         } else {
-            relative = "\(day) at \(time)"
+            relative = time.map { "\(day) at \($0)" } ?? "on \(day)"
         }
         return .result(
             value: RoutineEntity(routine: next.routine),

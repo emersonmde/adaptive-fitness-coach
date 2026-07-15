@@ -2,8 +2,8 @@ import SwiftUI
 import AdaptiveCore
 
 /// A2 / A3 — the core loop. One screen, pure glance: a phase label (WARM UP / RUN / WALK /
-/// COOL DOWN), a direction glyph, and the live interval timer, over a green (work) or amber
-/// (recover) field. Confirmation, not instruction — the haptics lead (N5). No controls clutter
+/// COOL DOWN), a direction glyph, and the live interval timer, over a green (work) or cool
+/// sky-blue (recover) field. Confirmation, not instruction — the haptics lead (N5). No controls clutter
 /// the glance screen: End lives on a swipe-away controls page; adaptations show as a brief
 /// non-occluding cue at the bottom, never a sentence to read mid-stride.
 struct WorkoutActiveView: View {
@@ -102,7 +102,11 @@ struct WorkoutActiveView: View {
 
                 ZStack {
                     // Reserve a constant slot so the layout doesn't jump when the cue appears.
-                    Color.clear.frame(height: 20)
+                    // The reservation is a hidden template pill, not a magic height (T5): the
+                    // real cue renders ~22–23pt at default type and grows with Dynamic Type —
+                    // a fixed 20pt slot would let the pill push the zone bar on arrival.
+                    AdaptationCue(event: AdaptationEvent(action: .lengthenedWalk, atSessionTime: 0, zone: nil))
+                        .hidden()
                     if let event = manager.adaptationEvent {
                         AdaptationCue(event: event)
                     } else if phase == .warmupWalk {

@@ -14,8 +14,9 @@ import AdaptiveCore
 enum HealthRunDigestReader {
 
     struct History: Sendable {
-        /// The most recent prior digest of this routine (any age), for "vs last run".
-        var previous: DatedRunDigest?
+        /// All prior digests of this routine (any age), **newest-first** — the shape
+        /// `RunComparison.lastComparable(in:)` expects for picking the last non-abort run.
+        var all: [DatedRunDigest] = []
         /// This routine's digests inside the 28-day baseline window, oldest to newest.
         var window: [DatedRunDigest]
     }
@@ -57,7 +58,7 @@ enum HealthRunDigestReader {
         let windowStart = sessionStart.addingTimeInterval(
             -Double(RunComparison.baselineWindowDays) * 86_400)
         return History(
-            previous: dated.last,
+            all: dated.reversed(),
             window: dated.filter { $0.date >= windowStart }
         )
     }

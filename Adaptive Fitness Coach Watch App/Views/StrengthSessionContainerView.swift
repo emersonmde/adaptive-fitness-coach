@@ -36,7 +36,8 @@ struct StrengthSessionContainerView: View {
                 if forcedRoutine != nil {
                     StartingView(tint: WatchTheme.strength)
                 } else {
-                    StrengthLaunchView(routine: effectiveRoutine, exerciseCount: exerciseCount, onStart: start)
+                    StrengthLaunchView(routine: effectiveRoutine, exerciseCount: exerciseCount,
+                                       doneToday: doneToday, nextDayLabel: nextDayLabel, onStart: start)
                 }
             case .active:
                 StrengthSessionPager(manager: manager)
@@ -52,6 +53,11 @@ struct StrengthSessionContainerView: View {
                             // a timeout: progression emission happens synchronously up front, so
                             // if the OS finalize wedges only the effort write is skipped —
                             // Done must never hang on HealthKit bookkeeping.
+                            // Done-today receipt (W22) — real, completed sessions only; an
+                            // ended-early bail must not read back as "Done today ✓".
+                            if !simulate, !summary.endedEarly, let routineId = manager.routineId {
+                                LastCompletionStore.shared.recordCompletion(routineId: routineId)
+                            }
                             Task {
                                 await awaitBestEffort(timeoutSeconds: 5) {
                                     await manager.finalizeProgression(perceivedEffort: effort)
@@ -63,13 +69,16 @@ struct StrengthSessionContainerView: View {
                 } else {
                     WrappingUpView(tint: WatchTheme.strength) { manager.reset(); onFinish?() }
                 }
-            case .failed:
-                ContentUnavailableView {
-                    Label("Couldn't start", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text("The workout couldn't start. Nothing was saved. Check Health permissions and try again.")
-                } actions: {
-                    Button("Back") { manager.reset(); onFinish?() }
+            case let .failedToStart(cause):
+                WorkoutFailedView(failure: .start(cause)) {
+                    RetryFailedActions(
+                        onRetry: { manager.reset(); start() },
+                        onBack: { manager.reset(); onFinish?() }
+                    )
+                }
+            case let .failedMidSession(elapsed):
+                WorkoutFailedView(failure: .midSession(elapsed: elapsed)) {
+                    Button("Done") { manager.reset(); onFinish?() }
                 }
             }
         }
@@ -102,6 +111,17 @@ struct StrengthSessionContainerView: View {
 
     /// The routine to run: the picked one if forced, else the next scheduled strength routine.
     private var effectiveRoutine: Routine? { forcedRoutine ?? nextRoutine }
+
+    /// Whether the up-next routine already completed a session today (W22).
+    private var doneToday: Bool {
+        guard !simulate, let routine = effectiveRoutine else { return false }
+        return LastCompletionStore.shared.completedToday(routineId: routine.id)
+    }
+
+    /// The routine's next repeat day after today, for the "Next: Thu" receipt line.
+    private var nextDayLabel: String? {
+        effectiveRoutine.flatMap { LastCompletionStore.nextDayLabel(repeatDays: $0.repeatDays) }
+    }
 
     /// The cards the watch will run: the chosen/next strength routine's cards (round-expanded), or a
     /// compact demo under `-simulateStrength`. Runs are filtered out by the manager.
@@ -149,9 +169,15 @@ struct StrengthSessionContainerView: View {
 }
 
 /// B0 — pre-session for strength: the routine name and exercise count, one Start. Strength blue.
+/// When today's session is already done (W22) the screen becomes a receipt — "Done today ✓ ·
+/// Next: Thu" — and Start demotes to "Start again" (still fully functional, N4).
 struct StrengthLaunchView: View {
     let routine: Routine?
     let exerciseCount: Int
+    /// True when this routine already completed a session today (W22).
+    var doneToday = false
+    /// The routine's next repeat day after today ("Thu"); nil when unscheduled.
+    var nextDayLabel: String? = nil
     let onStart: () -> Void
 
     var body: some View {
@@ -180,10 +206,13 @@ struct StrengthLaunchView: View {
                     Text("Strength · \(exerciseCount) exercise\(exerciseCount == 1 ? "" : "s")")
                         .font(.caption)
                         .foregroundStyle(WatchTheme.textSecondary)
+                    if doneToday {
+                        DoneTodayLine(tint: WatchTheme.strength, nextDayLabel: nextDayLabel)
+                    }
                 }
                 Spacer(minLength: 0)
                 Button(action: onStart) {
-                    Text("Start")
+                    Text(doneToday ? "Start again" : "Start")
                         .font(.title3.bold())
                         .frame(maxWidth: .infinity)
                 }

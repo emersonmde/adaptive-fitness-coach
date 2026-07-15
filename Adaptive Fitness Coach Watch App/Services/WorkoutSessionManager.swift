@@ -1,4 +1,5 @@
 import Foundation
+import os
 import AdaptiveCore
 
 /// The lifecycle state of the on-watch workout, driving which screen shows.
@@ -6,8 +7,13 @@ enum SessionState: Equatable {
     case idle
     case active
     case complete
-    /// The workout could not start, or failed after starting. Nothing was saved (N2/N6).
-    case failed
+    /// The workout never started. Nothing was saved (N2/N6); the cause drives the copy and
+    /// a retry is safe (B1/W5).
+    case failedToStart(StartFailureCause)
+    /// The workout died *after* starting (sensor loss, OS termination). Partial data may
+    /// already be in Health — the builder collected live — so the UI must never claim
+    /// "nothing was saved" here (B1). Carries the engine's elapsed at the moment of death.
+    case failedMidSession(elapsed: TimeInterval)
 }
 
 /// Where HealthKit finalization stands after the session ends. The summary shows the moment
@@ -123,6 +129,11 @@ final class WorkoutSessionManager {
 
     private let haptics = HapticManager()
 
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "AdaptiveFitnessCoach",
+        category: "WorkoutSession"
+    )
+
     /// - Parameters:
     ///   - backend: sensor/zone source. Defaults to real HealthKit when nil.
     ///   - autoTick: when false, the 1s timer is not started (tests drive `tick` themselves).
@@ -165,9 +176,11 @@ final class WorkoutSessionManager {
             try await backend.start()
         } catch {
             // Couldn't start the underlying workout. Do NOT fake a saved workout — there is
-            // nothing in Health and nothing to log (N2/N6). Surface an explicit failure.
+            // nothing in Health and nothing to log (N2/N6). Surface an explicit failure with
+            // its classified cause so the copy can be specific (W5).
             self.backend = nil
-            sessionState = .failed
+            Self.logger.error("Workout failed to start: \(String(describing: error), privacy: .public)")
+            sessionState = .failedToStart(StartFailureCause(from: error))
             return
         }
 
@@ -190,10 +203,14 @@ final class WorkoutSessionManager {
     private func handleFailure() {
         guard sessionState == .active else { return }
         tickTask?.cancel(); tickTask = nil
+        // Snapshot the engine's elapsed BEFORE teardown — it's the one honest number the
+        // failed screen can show ("stopped after 12:34").
+        let elapsed = machine?.sessionElapsed ?? sessionElapsed
         let failedBackend = backend
         backend = nil
         Task { _ = await failedBackend?.end() }
-        sessionState = .failed
+        Self.logger.error("Workout session died mid-run after \(elapsed, privacy: .public)s")
+        sessionState = .failedMidSession(elapsed: elapsed)
     }
 
     // MARK: - Signal intake (also the test seams)
@@ -444,6 +461,21 @@ final class WorkoutSessionManager {
     func writeEffort(_ score: Int) async {
         await finalizeTask?.value
         await finishedBackend?.writeEffortScore(score)
+    }
+
+    /// Delete the just-saved workout and reset (W20 — the "Discard workout" path for a
+    /// mis-tap-sized ended-early session). Waits for the OS finalize so there is a saved
+    /// workout to delete, asks the retained finished backend to remove it, then tears down
+    /// either way — the user chose to leave. Returns whether the delete succeeded.
+    @discardableResult
+    func discard() async -> Bool {
+        await finalizeTask?.value
+        let deleted = await finishedBackend?.discardWorkout() ?? true
+        if !deleted {
+            Self.logger.error("Discard failed: the saved workout could not be deleted")
+        }
+        reset()
+        return deleted
     }
 
     /// Reset to idle so a new session can start (e.g. after dismissing the summary).

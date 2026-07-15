@@ -26,6 +26,16 @@ struct WeekView: View {
     // P3 coach: a tapped entry point stages an intent; the sheet owns the conversation.
     @State private var coachLaunch: CoachLaunch?
 
+    /// P14: answered proposals settle in place as one-line receipts instead of vanishing.
+    /// Deliberately session-scoped @State (no persistence) — they recede on the next visit.
+    @State private var settledProposals: [SettledProposal] = []
+
+    struct SettledProposal: Identifiable {
+        let id: PendingStructuralProposal.ID
+        let text: String
+        let confirmed: Bool
+    }
+
     // Manual Claude round-trip (RoutineExchange) — kept as the coach's fallback path.
     @State private var pendingImport: ImportCandidate?
     @State private var copied = false
@@ -411,17 +421,26 @@ struct WeekView: View {
             VStack(spacing: 18) {
                 if let next = store.nextOccurrence(now: today) {
                     NavigationLink(value: next.routine) {
-                        UpNextCard(routine: next.routine, date: next.date)
+                        UpNextCard(routine: next.routine, date: next.date, hasTime: next.hasTime)
                     }
                     .buttonStyle(.plain)
                 }
 
                 // P6 structural confirms: a proposed load step-up / run graduation waits
-                // here until answered. Declined or confirmed, the card leaves; unanswered,
-                // the next session simply runs the old seed (hold).
+                // here until answered. Answered, it settles in place as a one-line receipt
+                // for the rest of this visit (P14); unanswered, the next session simply
+                // runs the old seed (hold).
                 ForEach(proposals.proposals) { proposal in
                     PendingProposalCard(proposal: proposal, store: store,
-                                        journal: journal, proposals: proposals)
+                                        journal: journal, proposals: proposals,
+                                        onSettled: { text, confirmed in
+                        settledProposals.append(
+                            SettledProposal(id: proposal.id, text: text, confirmed: confirmed))
+                    })
+                }
+                ForEach(settledProposals) { settled in
+                    settledProposalRow(settled)
+                        .transition(Theme.Motion.slideTransition(.opacity, reduceMotion: reduceMotion))
                 }
 
                 // P6 watch quick-log offline path: a queued dictation waits HERE, visibly,
@@ -494,6 +513,32 @@ struct WeekView: View {
             }
             .padding(16)
         }
+    }
+
+    /// P14: the collapsed receipt an answered proposal leaves behind — one line, with the
+    /// journal (where the change now lives) one tap away. Session-scoped by design.
+    private func settledProposalRow(_ settled: SettledProposal) -> some View {
+        Card(padding: 12, cornerRadius: Theme.radiusInset) {
+            HStack(spacing: 8) {
+                Image(systemName: settled.confirmed ? "checkmark.circle.fill" : "pause.circle")
+                    .font(.subheadline)
+                    .foregroundStyle(settled.confirmed ? Theme.accent : Theme.textTertiary)
+                Text(settled.text)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    // Two lines so the terms of the change ("20 → 25 lb") survive next to
+                    // the journal link — a receipt that truncates its own delta isn't one.
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                Button("View journal") { showingJournal = true }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("proposal.settled.journal")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("proposal.settled")
     }
 
     private var emptyState: some View {

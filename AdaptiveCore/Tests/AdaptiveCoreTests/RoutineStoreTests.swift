@@ -201,7 +201,7 @@ struct RoutineStoreTests {
         #expect(next?.date == cal.date(from: DateComponents(year: 2026, month: 6, day: 16, hour: 6)))
     }
 
-    @Test func nextOccurrenceSkipsPassedTimeTodayToNextWeek() {
+    @Test func nextOccurrenceKeepsPassedTimeTodayUntilDayEnd() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
         let now = cal.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 9))!
@@ -210,8 +210,38 @@ struct RoutineStoreTests {
         let store = makeStore()
         store.add(run("Earlier today", at: ScheduleTime(hour: 6, minute: 0), days: [today]))
         let next = store.nextOccurrence(now: now, calendar: cal)
-        // 06:00 already passed today → next is the same weekday next week (June 22).
+        // 06:00 already passed today, but the workout is still today's — it stays up next
+        // (dated earlier today) until the day ends, rather than vanishing to next week.
+        #expect(next?.date == cal.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 6)))
+        #expect(next?.hasTime == true)
+    }
+
+    @Test func nextOccurrenceRollsToNextWeekOnceTheDayEnds() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        // Just past midnight the day after the June 15 06:00 occurrence.
+        let now = cal.date(from: DateComponents(year: 2026, month: 6, day: 16, hour: 0, minute: 5))!
+        let monday = DayOfWeek(rawValue: cal.component(.weekday, from: cal.date(from: DateComponents(year: 2026, month: 6, day: 15))!))!
+
+        let store = makeStore()
+        store.add(run("Monday run", at: ScheduleTime(hour: 6, minute: 0), days: [monday]))
+        let next = store.nextOccurrence(now: now, calendar: cal)
         #expect(next?.date == cal.date(from: DateComponents(year: 2026, month: 6, day: 22, hour: 6)))
+    }
+
+    @Test func nextOccurrenceTimelessRoutineIsAllDayTodayWithNoFabricatedTime() {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let now = cal.date(from: DateComponents(year: 2026, month: 6, day: 15, hour: 9))!
+        let today = DayOfWeek(rawValue: cal.component(.weekday, from: now))!
+
+        let store = makeStore()
+        store.add(run("Anytime", at: nil, days: [today]))
+        let next = store.nextOccurrence(now: now, calendar: cal)
+        // A day-only routine occurs all day: today at start-of-day, flagged time-less so no
+        // caller can render "12:00 AM" from the midnight placeholder.
+        #expect(next?.date == cal.startOfDay(for: now))
+        #expect(next?.hasTime == false)
     }
 
     @Test func nextOccurrenceNilWhenNoRoutines() {

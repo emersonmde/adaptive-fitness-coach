@@ -19,8 +19,13 @@ struct WorkoutCompleteView: View {
     /// Comparison lines, filled asynchronously by the container; nil while loading (the slot
     /// holds its height), empty when there's honestly nothing to compare against.
     var comparisons: [RunComparison.Line]?
+    /// True when the session ended before meaningful work (under the first planned run
+    /// interval) — offers the quiet "Discard workout" exit (W20). Keep is the default.
+    var canDiscard = false
     /// The "Next run" note for a given effort — recomputed live as the level steps.
     var notePreview: (Int?) -> String?
+    /// Deletes the just-saved workout and exits (W20). Only wired when `canDiscard`.
+    var onDiscard: (() -> Void)? = nil
     /// Done with the rating and whether the user actually adjusted/confirmed it by touch.
     /// An untouched suggestion still records to Health (user decision) but must NOT gate
     /// progression: the suggestion is derived from the same objective signals the policy
@@ -73,14 +78,26 @@ struct WorkoutCompleteView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
-                // Identity moment, compressed — the hero below owns the screen now.
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(WatchTheme.run)
-                        .symbolEffect(.bounce, options: .nonRepeating)
-                    Text("Done")
-                        .font(.title3.bold())
+                // Identity moment, compressed — the hero below owns the screen now. An
+                // ended-early session drops the celebration grammar entirely (W17): neutral
+                // title, no checkmark, no bounce — the save line stays honest either way.
+                if summary.endedEarly {
+                    HStack(spacing: 6) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(WatchTheme.textSecondary)
+                        Text("Ended early")
+                            .font(.title3.bold())
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(WatchTheme.run)
+                            .symbolEffect(.bounce, options: .nonRepeating)
+                        Text("Done")
+                            .font(.title3.bold())
+                    }
                 }
                 Text(saveLine.text)
                     .font(.caption2)
@@ -88,18 +105,39 @@ struct WorkoutCompleteView: View {
                     .animation(WatchTheme.Motion.settle, value: saveState)
 
                 // HERO: time running — glyph-anchored so the number identifies itself (N5).
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Image(systemName: "figure.run")
-                        .font(.body)
-                        .foregroundStyle(WatchTheme.run)
-                    Text(summary.totalRunDuration.clockString)
-                        .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
-                    Text("running")
-                        .font(.caption)
-                        .foregroundStyle(WatchTheme.textSecondary)
+                // A session that never reached its first run has no running time to show:
+                // "0:00 running" as the hero fabricates a grade out of a mis-tap, so show
+                // the honest quantity instead — total elapsed (W18).
+                if summary.totalRunDuration == 0 {
+                    VStack(spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                            Image(systemName: "clock")
+                                .font(.body)
+                                .foregroundStyle(WatchTheme.textSecondary)
+                            Text(summary.totalDuration.clockString)
+                                .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                        }
+                        Text("ended before the first run interval")
+                            .font(.caption2)
+                            .foregroundStyle(WatchTheme.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 2)
+                    .accessibilityElement(children: .combine)
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Image(systemName: "figure.run")
+                            .font(.body)
+                            .foregroundStyle(WatchTheme.run)
+                        Text(summary.totalRunDuration.clockString)
+                            .font(.system(size: 34, weight: .bold, design: .rounded).monospacedDigit())
+                        Text("running")
+                            .font(.caption)
+                            .foregroundStyle(WatchTheme.textSecondary)
+                    }
+                    .padding(.top, 2)
+                    .accessibilityElement(children: .combine)
                 }
-                .padding(.top, 2)
-                .accessibilityElement(children: .combine)
 
                 if let splitLine {
                     Text(splitLine)
@@ -149,18 +187,39 @@ struct WorkoutCompleteView: View {
 
                 // The note previews what progression will actually see: an untouched
                 // suggestion doesn't gate the policy, so it doesn't move the preview either.
-                if let note = notePreview(effortTouched ? effort : nil) {
-                    Text(note)
-                        .font(.caption2)
-                        .foregroundStyle(WatchTheme.run)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 2)
-                        .animation(WatchTheme.Motion.settle, value: note)
+                // Reserved slot (T5): the note comes and goes as the effort level steps —
+                // a fixed-height slot keeps the Done button from jumping under the finger.
+                Group {
+                    if let note = notePreview(effortTouched ? effort : nil) {
+                        Text(note)
+                            .font(.caption2)
+                            .foregroundStyle(WatchTheme.run)
+                            .multilineTextAlignment(.center)
+                            .animation(WatchTheme.Motion.settle, value: note)
+                    } else {
+                        Color.clear
+                    }
                 }
+                .frame(minHeight: 26)
+                .padding(.top, 2)
 
                 Button("Done") { onDone(effort, effortTouched) }
                     .tint(WatchTheme.run)
                     .padding(.top, 4)
+
+                // The mis-tap exit (W20): quiet, destructive-tinted, below Done — keep is
+                // the default. One tap, no confirm sheet: at this size the workout is
+                // seconds old and re-doing it costs nothing (N5 — no modal ceremony).
+                if canDiscard, let onDiscard {
+                    Button("Discard workout", role: .destructive, action: onDiscard)
+                        .font(.caption)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(WatchTheme.hot)
+                        .padding(.top, 2)
+                        // Visual stays a quiet caption; the target meets the 44pt floor.
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
             }
             .padding(.horizontal, 6)
         }

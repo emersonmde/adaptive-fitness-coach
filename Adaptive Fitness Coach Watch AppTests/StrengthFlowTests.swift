@@ -14,9 +14,21 @@ private final class FailingStrengthBackend: WorkoutBackend {
     var onCadence: ((Double) -> Void)?
     var onFailure: (() -> Void)?
     let failOnStart: Bool
-    init(failOnStart: Bool = true) { self.failOnStart = failOnStart }
+    /// When set, `start()` throws a typed `WorkoutStartFailure` with this cause (the shape
+    /// the HealthKit backends throw); nil throws an untyped error.
+    let startCause: StartFailureCause?
+    init(failOnStart: Bool = true, startCause: StartFailureCause? = nil) {
+        self.failOnStart = failOnStart
+        self.startCause = startCause
+    }
     struct StartError: Error {}
-    func start() async throws { if failOnStart { throw StartError() } }
+    func start() async throws {
+        guard failOnStart else { return }
+        if let startCause {
+            throw WorkoutStartFailure(cause: startCause, underlying: StartError())
+        }
+        throw StartError()
+    }
     func end() async -> WorkoutTotals { WorkoutTotals() }
 }
 
@@ -59,14 +71,14 @@ struct StrengthFlowTests {
     @Test func emptyBlockFails() async {
         let manager = makeManager()
         await manager.begin(cards: [], routineName: "Empty")
-        #expect(manager.sessionState == .failed)
+        #expect(manager.sessionState == .failedToStart(.unknown))
         #expect(manager.summary == nil)
     }
 
     @Test func blockOfOnlyUnknownIdsFails() async {
         let manager = makeManager()
         await manager.begin(cards: [.exercise(StrengthExerciseItem(exerciseId: "ghost", reps: 5))], routineName: "Ghosts")
-        #expect(manager.sessionState == .failed)
+        #expect(manager.sessionState == .failedToStart(.unknown))
     }
 
     @Test func leadingRestIsSkipped() async {
@@ -259,20 +271,33 @@ struct StrengthFlowTests {
 
     // MARK: - Failure & manual end
 
-    @Test func startFailureSurfacesFailedWithoutFakingCompletion() async {
+    @Test func startFailureSurfacesFailedToStartWithoutFakingCompletion() async {
         let manager = StrengthSessionManager(backend: FailingStrengthBackend(), autoTick: false)
         await manager.begin(cards: sampleCards(), routineName: "Push Day")
-        #expect(manager.sessionState == .failed)
+        // An untyped error is honestly unknown — never guessed into a specific cause (W5).
+        #expect(manager.sessionState == .failedToStart(.unknown))
         #expect(manager.summary == nil)
     }
 
-    @Test func runtimeFailureStopsTheSession() async {
+    @Test func typedStartFailureCarriesItsCause() async {
+        let manager = StrengthSessionManager(
+            backend: FailingStrengthBackend(startCause: .permissionsDenied), autoTick: false)
+        await manager.begin(cards: sampleCards(), routineName: "Push Day")
+        #expect(manager.sessionState == .failedToStart(.permissionsDenied))
+    }
+
+    @Test func runtimeFailureStopsTheSessionMidWorkout() async {
         let backend = FailingStrengthBackend(failOnStart: false)
         let manager = StrengthSessionManager(backend: backend)
         await manager.begin(cards: sampleCards(), routineName: "Push Day")
         #expect(manager.sessionState == .active)
         backend.onFailure?()
-        #expect(manager.sessionState == .failed)
+        // Mid-session death is its own state (B1); the injected clock never moved, so the
+        // snapshot elapsed is exactly zero here.
+        guard case .failedMidSession = manager.sessionState else {
+            Issue.record("expected .failedMidSession, got \(manager.sessionState)")
+            return
+        }
     }
 
     @Test func endManuallyCompletesAndBuildsSummary() async {
