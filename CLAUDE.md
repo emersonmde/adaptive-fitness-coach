@@ -42,7 +42,17 @@ Pre-boot the simulator (`xcrun simctl boot <UDID>`) to save the cold-boot 20–4
 
 **Simulator launch args** (the sim generates no HR/zone data and `simctl` can't grant HealthKit/notification auth, so use these to demo/test):
 - Watch `-simulateWorkout` — scripted HR/zones via `SimulatedWorkoutBackend`, compressed plan, auto-starts, skips the HealthKit prompt. **The only way to see the adaptive loop in the simulator.** (`-simulateStrength` is the strength analogue.) Add `-startPage=controls|exercise` to land the session pager on a specific page — the screenshot hook for visual review (watch-sim XCUI can't tap or swipe, so `simctl launch` + `simctl io screenshot` per page is how watch screens get eyeballed).
-- Watch `-simulateQuickLog` — the quick-log flow standalone (pre-filled field, no-op park; paired-sim WC is unreliable). Always-pending: input → "Saved for iPhone". Phone side demos via `-seedNeedsReview`. NOTE: watchOS-sim XCUI taps don't fire ANY watch `Button` (see the `WatchSessionUITests` header) — watch flows verify manually, not by UI test.
+- Watch `-simulateQuickLog` — the quick-log flow standalone (pre-filled field, no-op park; paired-sim WC is unreliable). Always-pending: input → "Saved for iPhone". Phone side demos via `-seedNeedsReview`. NOTE: watchOS-sim XCUI taps don't fire ANY watch `Button` (see the `WatchSessionUITests` header) — but `axe` does (below), so watch flows ARE drivable agent-side; they just can't be XCUITests.
+
+**Driving the watch sim interactively: `axe`** (`~/.local/bin/axe`, cameroncooke/AXe v1.7.1 — installed from the GitHub binary release; `brew install cameroncooke/axe/axe` works once the CLT is current). XCUITest's synthesized events don't reach watch buttons, but AXe injects at the CoreSimulator HID layer (FBSimulatorControl) — the same path as a human clicking the Simulator window — and taps, swipes/scrolls, and AX-tree dumps all work on watchOS sims (verified on the watchOS 27 sim, 2026-07-14):
+
+```bash
+axe describe-ui --udid <UDID>     # full AX tree with frames/labels — get coordinates from this, don't guess
+axe tap -x 93 -y 153 --udid <UDID>                                # fires real watch Buttons
+axe swipe --start-x 93 --start-y 180 --end-x 93 --end-y 60 --duration 0.5 --udid <UDID>   # scrolls
+```
+
+Coordinates are in points (42mm watch = 187×223 pt; `simctl io screenshot` is @2x). Workflow: `simctl launch` with the right `-simulate*` args → `describe-ui` to locate the element → `tap` at its frame center → screenshot to verify. This reaches below-the-fold summary content, sheet flows (quick-log save), and controls-page actions — previously "manual verify only".
 - Phone `-uiTesting` — throwaway store so runs start clean (used by the XCUITests).
 - Phone `-seedDemo` — throwaway store seeded with demo routines (QA/screenshots).
 - Phone `-simulateCoach` — the P3 coach runs on the deterministic `ScriptedCoachEngine` (scripted intake → canned proposal). **The only way to see the coach flow in the simulator** (Apple Intelligence can't be granted there); used by `CoachFlowUITests`.

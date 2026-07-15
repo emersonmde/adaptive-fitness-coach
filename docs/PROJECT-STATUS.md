@@ -1,6 +1,8 @@
 # Project Status & Handoff
 
 The entry point for picking up this project. Read this, then:
+- **`docs/ROADMAP.md`** — the active roadmap (design-review remediation milestones;
+  pick the next unchecked milestone when starting a work session).
 - **`docs/ADAPTIVE-SYSTEM.md`** — how run & strength adaptation actually work (the
   design reference for any engine/progression/sync change).
 - **`docs/adaptive-fitness-coach-spec.md`** — the PRD; §3 non-negotiables N1–N7 bind
@@ -15,12 +17,29 @@ The entry point for picking up this project. Read this, then:
 Detailed build-by-build history lives in git (`git log` — commit messages are thorough);
 this file carries only current state, the active roadmap, and still-open items.
 
-_Last updated 2026-07-09._
+_Last updated 2026-07-14._
 
 ## Where things stand
 
 **Shipped:** P0–P6 plus P6.1 (run summary & insights). **Build 22** (the adaptive energy
-budget below, plus the build-21 follow-ups) is releasing to TestFlight.
+budget below, plus the build-21 follow-ups) is releasing to TestFlight. The P0–P6.1
+roadmap is **complete**.
+
+**Design review (2026-07-14).** A comprehensive whole-app UI/UX review (136-agent
+multi-phase workflow over the `design-review/` storyboards, adversarially verified)
+produced **`docs/design/DESIGN-REVIEW-2026-07.md`**: 511 findings — 4 blockers (two N6
+fabrication points, an unguarded End Workout tap, the bare mixed-session summary), a
+scorecard (typography 3/5 is the weakest channel; color system 4.5/5 the strongest), 16
+redesign concepts, a 36-item hardware-verify list, and 10 principle/spec decisions that
+need the user. Its remediation plan is the **active roadmap: `docs/ROADMAP.md`** —
+six work milestones grouped by shared verification workflow (M1 trust & honesty, M2
+app-wide sweep, M3 adaptation legibility + mixed, M4 watch session, M5 food loop, M6
+phone surfaces), plus M0 (on-body verify, parallel) and an M7+ big-swing menu — each with
+finding refs, decisions-needed, and acceptance criteria.
+
+**NEXT (new session): `docs/ROADMAP.md` M1 — trust & honesty** (blockers B1/B2, the
+end-early/start-failure clusters, and the receipt states). M0 (on-body verification of
+the review's §7 list) runs whenever the user next has the watch on-wrist, in parallel.
 
 **Adaptive energy budget (2026-07-09 → build 22).** The fixed daily calorie target became a
 **live budget** built from Apple Health: basal (Mifflin) banked up front, active energy
@@ -64,7 +83,7 @@ screenshot-verified:
    the user: a failed read must never render as absence. Data / genuinely-empty /
    failed-to-load are three distinct UI states, everywhere.**
 
-**NEXT (new session):** on-device verification of build 22 — set a deficit on a real device,
+**Still pending on-device:** build-22 verification — set a deficit on a real device,
 confirm the live budget banks active energy through the day, and (over weeks, with a scale
 reporting to Health) watch the calibration note appear and the target tune. Then the deferred
 "lose X lb/week" view over the deficit (dynamic model, never the 3500-kcal rule — see
@@ -107,8 +126,8 @@ gates, honest reasons/stats, sim grid scaling) — all fixed and test-pinned.
 prefill accuracy, cue duration; convergence bounds are literature-seeded
 (ADAPTIVE-SYSTEM.md §7 tuning debt).
 
-**NEXT:** strength-adaptation feedback from the user (details TBD — parked out of the
-run milestone), then on-device validation of builds 20/21.
+**Still parked:** strength-adaptation feedback from the user (details TBD — parked out of
+the run milestone), and on-device validation of builds 20/21.
 
 **Package tests:** ~517 (`cd AdaptiveCore && swift test`). Phone UI suites
 (`RoutineFlowUITests`, `CoachFlowUITests`, `MealFlowUITests`) run **serially**; watch
@@ -230,6 +249,10 @@ tap in-workout paged views).
 ## Open items
 
 **On-device validation pending (the user's job, standing list):**
+- **Design-review hardware-verify list** (`DESIGN-REVIEW-2026-07.md` §7, 36 items =
+  roadmap M0): safe-area renders, Always-On dimming, sunlight legibility of the tinted
+  state fields, End-Workout false-touch rate, haptic discriminability, real-model
+  latency/compliance checks.
 - Build 18/19 checklist: quick-log dictation feel; locked-phone → "Saved for iPhone"
   ~1s; review card + 4h notification + in-sheet trash; cold-launch quick-log
   pre-activation; "Log a Meal" complication tap (incl. mid-workout no-sheet case);
