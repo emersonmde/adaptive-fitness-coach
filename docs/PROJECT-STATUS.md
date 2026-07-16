@@ -48,17 +48,24 @@ line for scope; new watch sim args `-simulateStartFailure[Permissions]`/`-simula
 force the failure states for screenshots). Committed to `main` as `d362975`, **not pushed
 to TestFlight**.
 
-**Run-loop engine change — time box + struggle ladder (2026-07-16, UNCOMMITTED on `main`).**
+**Run-loop engine change — time box + struggle ladder (2026-07-16, committed + pushed).**
 Outside the M1–M6 sweep, from the user's real run: a run session is now a **time box, not
 an interval count** — the engine reshapes the run/walk cycle count live to fit the block
 (`IntervalStateMachine.fitCyclesToTimeBox()`), and the watch face's "n of N" counter is
 gone. The struggle-day fill was decided by a `/deep-research` pass (not our intuition): keep
 offering **shortened** runs while recovery returns, and only after `struggleCap` (3)
 consecutive no-recovery back-offs make one switch to continuous easy walking
-(`convertRemainderToWalking`). See ADAPTIVE-SYSTEM.md §1/§2.2/§5 (invariant 13) + §7.
-**This diff is uncommitted — `git status` on a fresh session will show it; the user reviews
-and commits.** 550 package + 90 watch unit tests green. Independent of M2 (M2 is a UI sweep,
-touches no engine).
+(`convertRemainderToWalking`). See ADAPTIVE-SYSTEM.md §1/§2.2/§5 (invariant 13) + §7. On
+`main` as `a551c41`. 550 package + 90 watch unit tests green. Independent of M2 (M2 is a UI
+sweep, touches no engine).
+
+**⏳ TestFlight build 25 — bumped + committed (`8b16983`), NOT yet uploaded.** The upload
+was blocked 2026-07-16: Apple now rejects builds made with the Xcode 27 **beta** SDK
+("Unsupported SDK or Xcode version — use the latest Release Candidate"), and the watch
+target's watchOS 27 minimum currently ships only in the beta. **Unblock:** install the
+Xcode 27 RC/GM, then re-run `docs/TESTFLIGHT.md` steps 2–3 (a fresh archive with the RC —
+the beta-built archive is also rejected; build number 25 is already set, no re-bump). Last
+build actually on TestFlight is 24.
 
 **Adaptive energy budget (2026-07-09 → build 22).** The fixed daily calorie target became a
 **live budget** built from Apple Health: basal (Mifflin) banked up front, active energy
