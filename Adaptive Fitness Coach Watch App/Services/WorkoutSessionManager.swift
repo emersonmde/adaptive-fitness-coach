@@ -53,9 +53,10 @@ final class WorkoutSessionManager {
     private(set) var currentZoneIndex: Int?
     /// The aerobic target zone position (1-based), exposed so the zone bar can mark the band.
     private(set) var targetZone = 2
-    /// Run intervals completed so far and the plan's total, for the ambient progress readout.
+    /// Run intervals completed so far. (No "of N" companion: the session is a time box —
+    /// the interval count is an artifact of the seeds and shrinks/grows as segments adapt,
+    /// so a fixed total would be a promise the engine can't keep.)
     private(set) var intervalsCompleted = 0
-    private(set) var totalRunIntervals = 0
     /// The most recent adaptation, for a brief glanceable on-screen cue. Cleared after a few
     /// seconds. Carries the action (direction) rather than a sentence to read mid-run (N5).
     private(set) var adaptationEvent: AdaptationEvent?
@@ -188,7 +189,6 @@ final class WorkoutSessionManager {
             config: SessionConfig(plan: config.plan, targetZone: config.targetZone),
             adaptationConfig: adaptationConfig
         )
-        totalRunIntervals = config.plan.runIntervalCount
         currentPhase = machine?.currentPhase
         intervalTarget = machine?.currentTargetDuration ?? 0
         lastTickDate = Date()
@@ -414,7 +414,9 @@ final class WorkoutSessionManager {
             totalWalkDuration: machine?.totalWalkDuration ?? 0,
             intervalsCompleted: machine?.intervalsCompleted ?? 0,
             adaptationsApplied: machine?.adaptationsApplied ?? 0,
-            plannedRunIntervals: totalRunIntervals,
+            // The working plan's run count, not the seed plan's: time-box trimming means a
+            // session of extended runs legitimately plans fewer intervals as it goes.
+            plannedRunIntervals: machine?.plannedRunIntervals ?? 0,
             runBackOffCount: machine?.runBackOffCount ?? 0,
             walksHitCap: machine?.walksHitCap ?? 0,
             walksDefied: walksDefied,
@@ -507,7 +509,6 @@ final class WorkoutSessionManager {
         intervalElapsed = 0
         sessionElapsed = 0
         intervalsCompleted = 0
-        totalRunIntervals = 0
         currentPhase = nil
         sessionState = .idle
     }

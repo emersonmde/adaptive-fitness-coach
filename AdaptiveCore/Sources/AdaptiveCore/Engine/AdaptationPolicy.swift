@@ -54,6 +54,19 @@ public struct AdaptationConfig: Sendable, Hashable {
     /// Source: 5,200-runner cohort — session-specific overdistance, not weekly progression,
     /// predicted overuse injury (Br J Sports Med 2025; PMC12421110).
     public var maxUpwardConvergenceStep: TimeInterval
+    /// Consecutive struggled run intervals (a back-off with no fast recovery since) before the
+    /// session converts its remaining run/walk block to one continuous easy walk. The evidence
+    /// ladder for a struggling beginner is *slow → shorten → walk*: keep offering shortened
+    /// run attempts while recovery keeps returning, but after this many failures in a row —
+    /// recovery genuinely not coming back — make a single decisive switch to sub-threshold
+    /// walking rather than push more run attempts (which delays autonomic recovery and reads as
+    /// homogeneously unpleasant above the ventilatory threshold, hurting adherence). A fast
+    /// recovery resets the count: a lone back-off is the live loop calibrating a too-long seed,
+    /// not a failure. Source: convergent beginner-coaching consensus (NHS C25K, Galloway,
+    /// ACSM-credentialed coaches) + Dual-Mode affect theory (Ekkekakis) + VT1 autonomic-recovery
+    /// physiology (Seiler 2007); deep-research synthesis 2026-07-16. No primary novice trial
+    /// tests the exact cap, so it is deliberately forgiving (3, not 2) — keep trying to run.
+    public var struggleCap: Int
 
     public init(
         backOffWindow: TimeInterval = 20,
@@ -70,7 +83,8 @@ public struct AdaptationConfig: Sendable, Hashable {
         walkLengthenIncrement: TimeInterval = 15,
         maxWalkDuration: TimeInterval = 300,
         convergenceRounding: TimeInterval = 15,
-        maxUpwardConvergenceStep: TimeInterval = 30
+        maxUpwardConvergenceStep: TimeInterval = 30,
+        struggleCap: Int = 3
     ) {
         self.backOffWindow = backOffWindow
         self.hardBackOffWindow = hardBackOffWindow
@@ -87,6 +101,7 @@ public struct AdaptationConfig: Sendable, Hashable {
         self.maxWalkDuration = maxWalkDuration
         self.convergenceRounding = convergenceRounding
         self.maxUpwardConvergenceStep = maxUpwardConvergenceStep
+        self.struggleCap = struggleCap
     }
 }
 

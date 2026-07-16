@@ -321,10 +321,15 @@ struct IntervalStateMachineTests {
     @Test func runBackOffsAreCounted() {
         let adapt = AdaptationConfig(backOffWindow: 2, recoverWindow: 2, minRunDuration: 2, minWalkDuration: 2)
         var machine = IntervalStateMachine(config: config([(.run, 30), (.walk, 30), (.run, 30)]), adaptationConfig: adapt)
-        // Hot through each run (cut at 2s), recovered through the walk (cut at 2s).
-        _ = drive(&machine, zone: { elapsed in elapsed <= 2 || elapsed > 4 ? 3 : 1 }, maxSeconds: 60)
-        #expect(machine.runBackOffCount == 2)
-        #expect(machine.intervalsCompleted == 2) // cut-short runs still count as reached
+        // Hot through each run (cut at 2s), recovered through the walk (cut at 2s). Each fast
+        // recovery resets the struggle ladder, so the runner keeps being offered shortened runs
+        // and the time box fills with more cut-short cycles than the seed plan held.
+        _ = drive(&machine, zone: { elapsed in elapsed <= 2 || elapsed > 4 ? 3 : 1 }, maxSeconds: 200)
+        #expect(machine.runBackOffCount >= 2)
+        // Every cut-short run still counts as reached — back-offs and reached intervals move
+        // together (the invariant this test guards), whatever the box-fill count lands on.
+        #expect(machine.intervalsCompleted == machine.runBackOffCount)
+        #expect(!machine.struggleConverted)   // recovery kept returning → never converts to walking
     }
 
     @Test func fastRecoveryUnlocksRunExtensionForTheRestOfTheSession() {
@@ -471,8 +476,10 @@ struct IntervalStateMachineTests {
 
     @Test func cappedWalkRaisesFutureWalks() {
         let adapt = AdaptationConfig(recoveryDropBPM: 20, walkLengthenIncrement: 15, maxWalkDuration: 90)
+        // Walk 2 seeded at 75 keeps the cap-ride's overshoot under half a cycle — this test
+        // pins the upward-convergence VALUE; the time-box trim has its own tests below.
         var machine = IntervalStateMachine(config: config([
-            (.run, 10), (.walk, 60), (.run, 10), (.walk, 60),
+            (.run, 10), (.walk, 60), (.run, 10), (.walk, 75),
         ]), adaptationConfig: adapt)
 
         while machine.currentPhase == .run {
@@ -491,8 +498,10 @@ struct IntervalStateMachineTests {
     @Test func downwardConvergenceAfterUpwardWins() {
         let adapt = AdaptationConfig(backOffWindow: 10, allowRunExtension: true, extendWindow: 5,
                                      recoverWindow: 999, minRunDuration: 10, runExtendIncrement: 30)
+        // 60s walks give the extension enough time-box headroom that no cycle is trimmed —
+        // this test pins down-after-up on real future segments.
         var machine = IntervalStateMachine(config: config([
-            (.run, 60), (.walk, 30), (.run, 60), (.walk, 30), (.run, 60),
+            (.run, 60), (.walk, 60), (.run, 60), (.walk, 60), (.run, 60),
         ]), adaptationConfig: adapt)
 
         // Run 1 extends to 90 and completes → future runs raised to 75.
@@ -552,10 +561,11 @@ struct IntervalStateMachineTests {
         #expect(machine.convergedRunSeconds == 60)
     }
 
-    @Test func finalRunExtensionRecordsNoUpwardConvergence() {
-        // Run 1 backs off (converged 30); run 2 — the LAST run — extends and completes. With
-        // no future segment to slew-limit against, recording the raw demonstration would
-        // bypass the injury cap; the long run is the snap path's job (`longestRunInterval`).
+    @Test func extendedRunAfterBackOffIsSlewLimitedNotRawRecorded() {
+        // Run 1 backs off (converged 30); its shortfall box-fills a shortened cycle, so run 2's
+        // later extension slew-limits against that real future segment (+15 to 45) instead of
+        // recording the raw 60s demonstration — the injury cap holds either way (upward moves
+        // by one step, never a spike; the raw long run lives in `longestRunInterval`).
         let adapt = AdaptationConfig(backOffWindow: 10, allowRunExtension: true, extendWindow: 5,
                                      recoverWindow: 999, minRunDuration: 10, runExtendIncrement: 30)
         var machine = IntervalStateMachine(config: config([
@@ -575,31 +585,31 @@ struct IntervalStateMachineTests {
             if machine.isComplete { break }
         }
 
-        #expect(machine.convergedRunSeconds == 30)          // unchanged — no un-slewed record
-        #expect(machine.longestRunInterval >= 59)           // the demonstration lives here
+        #expect(machine.convergedRunSeconds == 45)          // one slew step past 30, never raw 60
+        #expect(machine.longestRunInterval >= 59)           // the raw demonstration lives here
     }
 
     // MARK: - Cooldown backfill
 
     @Test func cooldownBackfillsAdaptationShrinkUpToTheCap() {
+        // A CONTINUOUS-run plan (no walk seed to build a shortened cycle from) that shortens:
+        // box-fill can't append run/walk cycles here, so cooldown backfill remains the fill of
+        // last resort (easy walking). Plans WITH walks now fill the shrink with shortened runs
+        // instead — see boxFillOffersShortenedRunsAcrossTheBox.
         let adapt = AdaptationConfig(backOffWindow: 10, recoverWindow: 10,
                                      minRunDuration: 10, minWalkDuration: 60)
         var machine = IntervalStateMachine(config: config([
-            (.run, 300), (.walk, 300), (.cooldownWalk, 300),
+            (.run, 600), (.cooldownWalk, 300),
         ]), adaptationConfig: adapt)
 
-        // Run cut at 10s (hot from the start), walk recovered at the 60s floor:
-        // 350s of planned interval time evaporates to adaptation.
+        // Run cut at 10s (hot from the start): 590s of planned run time evaporates to adaptation.
         while machine.currentPhase == .run {
             _ = machine.tick(deltaTime: 1, sample: WorkoutSample(zone: 3, heartRate: 160))
         }
-        while machine.currentPhase == .walk {
-            _ = machine.tick(deltaTime: 1, sample: WorkoutSample(zone: 1, heartRate: 120))
-        }
 
-        // Shortfall = 900 − (70 + 300) = 530, but the cap is min(300+600, 300×2) = 600.
+        // Shortfall = 900 − (10 + 300) = 590, but the cap is min(300+600, 300×2) = 600.
         #expect(machine.currentPhase == .cooldownWalk)
-        #expect(machine.segments[2].targetDuration == 600)
+        #expect(machine.segments[1].targetDuration == 600)
         #expect(machine.backfilledCooldownSeconds == 300)
 
         // Delivered backfill counts only what was actually walked (N6): nothing until the
@@ -635,6 +645,156 @@ struct IntervalStateMachineTests {
         }
         #expect(machine.segments[2].targetDuration == 60)
         #expect(machine.backfilledCooldownSeconds == 0)
+    }
+
+    // MARK: - Time-box trim (the session is a time box, not an interval count)
+
+    @Test func extendedRunsTrimTrailingCyclesToTheTimeBox() {
+        // Comfortable start → run 1 extends 10 → 30; the growth consumes a whole trailing
+        // cycle's budget, so the plan sheds one run/walk pair and the session lands on time
+        // instead of overrunning the prescribed block.
+        let adapt = AdaptationConfig(backOffWindow: 999, allowRunExtension: true, extendWindow: 2,
+                                     recoverWindow: 999, runExtendIncrement: 20, maxWalkDuration: 999,
+                                     convergenceRounding: 1)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 10), (.walk, 10), (.run, 10), (.walk, 10), (.run, 10), (.walk, 10),
+            (.cooldownWalk, 10),
+        ]), adaptationConfig: adapt)   // planned total: 70
+
+        // Zone 2 (comfort) until the extension lands, then no signal — the stretched run
+        // completes naturally at its grown target and every walk runs its fixed timer.
+        let rec = drive(&machine, zone: { $0 <= 12 ? 2 : nil }, maxSeconds: 200)
+
+        #expect(rec.adaptations.contains { $0.action == .extendedRun })
+        // Run 1 ran 30s; one trailing cycle dropped; upward convergence nudged run 2 to 12s:
+        // 30 + 10 + 12 + 10 + 10 = 72 ≈ the 70s plan, instead of 90+s with all three cycles.
+        #expect(rec.completedAt == 72)
+        #expect(machine.intervalsCompleted == 2)
+        #expect(machine.plannedRunIntervals == 2)   // the as-lived plan, not the seed count
+        #expect(machine.walksCompleted == 2)
+    }
+
+    @Test func lengthenedWalksTrimTrailingCycles() {
+        // Never recovering: walk 1 lengthens 10 → 40 (cap) and future walks converge up to
+        // the cap, so two whole trailing cycles no longer fit the 55s box and are shed.
+        let adapt = AdaptationConfig(backOffWindow: 999, recoverWindow: 999,
+                                     walkLengthenIncrement: 10, maxWalkDuration: 40)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 5), (.walk, 10), (.run, 5), (.walk, 10), (.run, 5), (.walk, 10),
+            (.cooldownWalk, 10),
+        ]), adaptationConfig: adapt)   // planned total: 55
+
+        let rec = drive(&machine, zone: { _ in 3 }, maxSeconds: 200)
+
+        // 5 + 40 + 10 = 55: exactly the prescribed time, one cycle lived, two shed.
+        #expect(rec.completedAt == 55)
+        #expect(machine.intervalsCompleted == 1)
+        #expect(machine.plannedRunIntervals == 1)
+        #expect(machine.walksHitCap == 1)
+    }
+
+    @Test func smallOvershootNeverTradesACycleForCooldown() {
+        // A single modest extension (10 → 15) overshoots by less than half a cycle — dropping
+        // a cycle would move the total FURTHER from the plan, so everything is kept.
+        let adapt = AdaptationConfig(backOffWindow: 999, allowRunExtension: true, extendWindow: 2,
+                                     recoverWindow: 999, runExtendIncrement: 5, maxWalkDuration: 999,
+                                     convergenceRounding: 1)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 10), (.walk, 10), (.run, 10), (.walk, 10), (.cooldownWalk, 10),
+        ]), adaptationConfig: adapt)   // planned total: 50
+
+        _ = drive(&machine, zone: { $0 <= 12 ? 2 : nil }, maxSeconds: 200)
+
+        #expect(machine.intervalsCompleted == 2)   // both cycles kept
+        #expect(machine.plannedRunIntervals == 2)
+    }
+
+    // MARK: - Struggle ladder (evidence: keep offering shortened runs, cap failures, then walk)
+
+    @Test func boxFillOffersShortenedRunsAcrossTheBoxWhenRecoveryReturns() {
+        // A mis-seeded-too-long run backs off but the walk recovers fast every time → the runner
+        // is struggling with the SEED, not failing. The evidence says keep offering shortened
+        // runs to fill the box, not hand the shortfall to walking. The block should end on run
+        // volume near the full box, with several short run intervals, and never convert.
+        let adapt = AdaptationConfig(backOffWindow: 2, recoverWindow: 2, minRunDuration: 2,
+                                     minWalkDuration: 2, maxWalkDuration: 6, convergenceRounding: 1)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 30), (.walk, 6), (.cooldownWalk, 4),
+        ]), adaptationConfig: adapt)   // box 40
+
+        // Hot through each run (→ back off to the floor), recovered through each walk.
+        var iters = 0
+        while !machine.isComplete, iters < 400 {
+            let zone: Int? = machine.currentPhase == .run ? 3 : 1
+            _ = machine.tick(deltaTime: 1, currentZone: zone)
+            iters += 1
+        }
+
+        #expect(machine.isComplete)
+        #expect(!machine.struggleConverted)          // recovery returned → stays in run mode
+        #expect(machine.intervalsCompleted >= 4)     // many shortened run attempts, not one-and-walk
+        #expect(machine.runBackOffCount >= 4)
+    }
+
+    @Test func repeatedFailedRecoveryConvertsRemainderToOneContinuousWalk() {
+        // Runner backs off AND never recovers (walks ride the cap). After `struggleCap` (3)
+        // failures in a row the engine makes the single decisive switch: the remaining block
+        // becomes one continuous easy walk to the end of the box — no more run attempts.
+        let adapt = AdaptationConfig(backOffWindow: 2, recoveryDropBPM: 20, minRunDuration: 2,
+                                     minWalkDuration: 2, walkLengthenIncrement: 2, maxWalkDuration: 6,
+                                     struggleCap: 3)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 8), (.walk, 6), (.run, 8), (.walk, 6), (.run, 8), (.walk, 6),
+            (.run, 8), (.walk, 6), (.cooldownWalk, 6),
+        ]), adaptationConfig: adapt)   // box 62
+
+        // Every run hot (backs off); every walk stays hot too (never recovers → rides cap).
+        let rec = drive(&machine, zone: { _ in 3 }, maxSeconds: 400)
+
+        #expect(machine.struggleConverted)
+        // No run segment survives past the switch point — the remainder is continuous walking.
+        let runsAfterConversion = machine.segments.enumerated().filter {
+            $0.element.phase == .run && $0.offset > machine.currentIndex
+        }
+        #expect(runsAfterConversion.isEmpty)
+        #expect(rec.completedAt != nil)
+        #expect(machine.consecutiveStruggles >= 3)
+    }
+
+    @Test func aLoneBackOffFollowedByRecoveryNeverConverts() {
+        // The calibrating case: one hot run backs off, then everything recovers. The struggle
+        // ladder resets on the fast recovery, so a single bad interval never trips the walk switch.
+        let adapt = AdaptationConfig(backOffWindow: 2, recoverWindow: 2, minRunDuration: 2,
+                                     minWalkDuration: 2, maxWalkDuration: 6, convergenceRounding: 1,
+                                     struggleCap: 3)
+        var machine = IntervalStateMachine(config: config([
+            (.run, 30), (.walk, 6), (.cooldownWalk, 4),
+        ]), adaptationConfig: adapt)
+
+        // Only the first run runs hot (backs off once); everything after is comfortable and
+        // recovered, so the ladder resets and never reaches the cap.
+        var iters = 0
+        while !machine.isComplete, iters < 400 {
+            let hot = machine.currentPhase == .run && machine.runBackOffCount == 0
+            _ = machine.tick(deltaTime: 1, currentZone: hot ? 3 : 1)
+            iters += 1
+        }
+
+        #expect(machine.isComplete)
+        #expect(!machine.struggleConverted)
+        #expect(machine.consecutiveStruggles == 0)   // reset by recovery
+        #expect(machine.runBackOffCount >= 1)
+    }
+
+    @Test func unadaptedSessionsNeverTrim() {
+        var machine = IntervalStateMachine(config: config([
+            (.warmupWalk, 2), (.run, 3), (.walk, 3), (.run, 3), (.walk, 3), (.cooldownWalk, 2),
+        ]))
+        let rec = drive(&machine, zone: { _ in nil }, maxSeconds: 30)
+
+        #expect(rec.completedAt == 16)             // the full seed plan, to the second
+        #expect(machine.intervalsCompleted == 2)
+        #expect(machine.plannedRunIntervals == 2)
     }
 
     // MARK: - Above-zone dwell

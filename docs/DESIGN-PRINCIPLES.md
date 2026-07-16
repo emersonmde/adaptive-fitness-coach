@@ -28,9 +28,11 @@ the way code is checked against the PRD's non-negotiables.
    number *before* it's read — and disambiguates against the unremovable system clock.
    Corollary: keep our time readouts in the corner *farthest* from the system clock.
 
-6. **Two primary metrics flanking one quiet ambient value.** Top row = glyph-anchored clock
-   (left) · quiet "n of N" (center) · glyph-anchored HR (right). Promoting everything
-   removes hierarchy; a glance should land on a metric, not scan a lineup.
+6. **Two primary metrics, no vanity third.** In-workout top row = glyph-anchored session
+   clock (left) · glyph-anchored HR (right). Promoting everything removes hierarchy; a glance
+   should land on a metric, not scan a lineup. (The old center "n of N" interval counter was
+   removed 2026-07-16: a run session is a time box, not a fixed interval count, so the count
+   changes as the engine reshapes cycles — a moving denominator is a lie, not an ambient cue.)
 
 7. **Reserve layout slots; never jump.** The adaptation cue / Start Run pill share one
    fixed-height slot (`Color.clear.frame(height:)`). Content appears and disappears without

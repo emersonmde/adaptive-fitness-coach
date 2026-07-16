@@ -193,8 +193,14 @@ struct WorkoutFlowTests {
         let routineId = UUID()
         await manager.begin(config: SessionConfig(plan: shortPlan()),
                             routineName: "Test", routineId: routineId)
-        manager.receiveZone(2)   // in the target zone → zone dwell accrues during runs
-        tick(manager, seconds: 40)
+        // Zone 2 during runs (→ zone dwell accrues); a fresh "no zone" during walks so they
+        // run their fixed timers. Holding zone 2 through a walk reads as "not recovered",
+        // lengthens it, and the time-box trim then (correctly) sheds the second cycle —
+        // this test pins the digest handoff, not that interplay.
+        for _ in 0..<40 {
+            manager.receiveZone(manager.currentPhase == .run ? 2 : nil)
+            manager.tick(delta: 1)
+        }
         await waitUntilComplete(manager)
         await manager.finalizeTask?.value
 
@@ -416,11 +422,17 @@ struct WorkoutFlowTests {
     }
 
     @Test func summaryCarriesConvergedDurationsAndBackfill() async {
-        // A back-off converges future runs; the shrunk session backfills the cooldown; both
-        // reach the summary so progression and the complete screen see the demonstrated truth.
+        // A back-off converges the run; the shrunk session backfills the cooldown; both reach
+        // the summary so progression and the complete screen see the demonstrated truth. Uses a
+        // CONTINUOUS-run plan (no walk seed): with walks present the time box would instead
+        // refill with shortened runs (fitCyclesToTimeBox), so backfill is the fill of last
+        // resort exercised here (see the engine's boxFill/struggle-ladder suite for that path).
         let manager = makeManager()
-        let plan = IntervalPlan.beginnerRunWalk(warmup: 2, runDuration: 120, walkDuration: 10,
-                                                cycles: 2, cooldown: 60)
+        let plan = IntervalPlan(segments: [
+            IntervalSegment(phase: .warmupWalk, targetDuration: 2),
+            IntervalSegment(phase: .run, targetDuration: 240),
+            IntervalSegment(phase: .cooldownWalk, targetDuration: 60),
+        ])
         let adaptation = AdaptationConfig(backOffWindow: 3, recoverWindow: 999,
                                           minRunDuration: 2, convergenceRounding: 15)
         await manager.begin(config: SessionConfig(plan: plan), routineName: "Test",
@@ -430,14 +442,15 @@ struct WorkoutFlowTests {
         tick(manager, seconds: 27)                 // comfortable through 27s
         manager.receiveZone(4)
         tick(manager, seconds: 4)                  // sustained hot → back-off at 30s
-        #expect(manager.currentPhase == .walk)
+        // Continuous-run plan: the shortened run hands straight to the cooldown (no recovery walk).
+        #expect(manager.currentPhase == .cooldownWalk)
         manager.receiveZone(nil)                   // no signal for the rest — fixed intervals
         tick(manager, seconds: 400)                // ride the rest of the session out
         await waitUntilComplete(manager)
 
         #expect(manager.summary?.convergedRunSeconds == 30)
-        // Runs shrank 240 → 60 planned seconds; the cooldown backfilled up to its ×2 cap
-        // (60 authored + 60), not the full 180s shortfall.
+        // Box 302; run shrank to 30, so ~210s shortfall — the cooldown backfilled up to its ×2
+        // cap (60 authored + 60), not the full shortfall.
         #expect(manager.summary?.backfilledCooldownSeconds == 60)
     }
 

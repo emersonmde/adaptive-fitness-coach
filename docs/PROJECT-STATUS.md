@@ -17,7 +17,7 @@ The entry point for picking up this project. Read this, then:
 Detailed build-by-build history lives in git (`git log` — commit messages are thorough);
 this file carries only current state, the active roadmap, and still-open items.
 
-_Last updated 2026-07-14._
+_Last updated 2026-07-16._
 
 ## Where things stand
 
@@ -45,7 +45,20 @@ loadFailed gauge, P13 partial-save warning, W22 done-today receipt).
 
 **M1 — trust & honesty: DONE 2026-07-15** (blockers B1/B2 closed; see the ROADMAP status
 line for scope; new watch sim args `-simulateStartFailure[Permissions]`/`-simulateMidFailure`
-force the failure states for screenshots).
+force the failure states for screenshots). Committed to `main` as `d362975`, **not pushed
+to TestFlight**.
+
+**Run-loop engine change — time box + struggle ladder (2026-07-16, UNCOMMITTED on `main`).**
+Outside the M1–M6 sweep, from the user's real run: a run session is now a **time box, not
+an interval count** — the engine reshapes the run/walk cycle count live to fit the block
+(`IntervalStateMachine.fitCyclesToTimeBox()`), and the watch face's "n of N" counter is
+gone. The struggle-day fill was decided by a `/deep-research` pass (not our intuition): keep
+offering **shortened** runs while recovery returns, and only after `struggleCap` (3)
+consecutive no-recovery back-offs make one switch to continuous easy walking
+(`convertRemainderToWalking`). See ADAPTIVE-SYSTEM.md §1/§2.2/§5 (invariant 13) + §7.
+**This diff is uncommitted — `git status` on a fresh session will show it; the user reviews
+and commits.** 550 package + 90 watch unit tests green. Independent of M2 (M2 is a UI sweep,
+touches no engine).
 
 **Adaptive energy budget (2026-07-09 → build 22).** The fixed daily calorie target became a
 **live budget** built from Apple Health: basal (Mifflin) banked up front, active energy

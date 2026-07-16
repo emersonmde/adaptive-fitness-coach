@@ -34,13 +34,6 @@ struct WorkoutActiveView: View {
         }
     }
 
-    /// "n of N" run-interval progress, shown only during the repeating run/walk cycles.
-    private var progressText: String? {
-        guard let phase, phase == .run || phase == .walk, manager.totalRunIntervals > 0 else { return nil }
-        let current = min(manager.intervalsCompleted + (isRun ? 1 : 0), manager.totalRunIntervals)
-        return "\(current) of \(manager.totalRunIntervals)"
-    }
-
     var body: some View {
         content
             .pagedWorkoutBackground(WorkoutColors.field(for: phase))
@@ -48,19 +41,14 @@ struct WorkoutActiveView: View {
 
     private var content: some View {
         VStack(spacing: 2) {
-                // Top: workout clock · progress · HR. Two glyph-anchored primary metrics at
-                // full weight flanking a quiet center. The workout clock sits top-LEFT — the
-                // far corner from the (unremovable) system clock — so the two times can't be
-                // confused; the stopwatch and heart glyphs identify each number before it's
-                // read. "n of N" stays secondary: ambient context, not a metric.
+                // Top: workout clock · HR. Two glyph-anchored primary metrics at full
+                // weight. The workout clock sits top-LEFT — the far corner from the
+                // (unremovable) system clock — so the two times can't be confused; the
+                // stopwatch and heart glyphs identify each number before it's read.
+                // (No "n of N" interval counter: the session is a time box and the cycle
+                // count adapts with the segments — a fixed total would be a lie.)
                 HStack {
                     SessionClockView(elapsed: manager.sessionElapsed)
-                    Spacer()
-                    if let progressText {
-                        Text(progressText)
-                            .font(.caption2)
-                            .foregroundStyle(WatchTheme.textSecondary)
-                    }
                     Spacer()
                     HeartRateView(bpm: manager.currentHeartRate)
                 }

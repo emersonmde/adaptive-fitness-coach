@@ -54,6 +54,12 @@ Both run and strength follow the same **three-layer pattern**:
   apply automatically; *structural* moves (band-topped load step, walk shrink,
   continuous-run graduation) are **proposed** and wait for phone confirmation. Backing
   off is never structural by construction — easing is never gated behind a confirm.
+- **A run session is a time box, not an interval count** (2026-07-16): the block's
+  *duration* is the prescription; the run/walk cycle count is a seed-sizing artifact the
+  engine reshapes live to keep offering shortened runs across the whole box (§2.2). The
+  evidence-backed response to within-session struggle is *slow → shorten → walk* — keep
+  offering shortened runs while recovery returns, then one capped switch to continuous
+  walking, never rigid push-through and never an early hand-off to walking.
 
 ---
 
@@ -67,7 +73,12 @@ Only `.run` and `.walk` are ever adapted; warmup/cooldown always run their seed 
 
 `IntervalPlan.plan(for: RunCard)` → `runWalk(...)` builds the session: optional warmup,
 a block of whole run/walk cycles sized to land near the card's block duration, optional
-cooldown. Exactness doesn't matter — the engine adapts every segment live (N7).
+cooldown. Exactness doesn't matter — the engine adapts every segment live (N7), and the
+cycle count is only a *seed-sizing artifact*: **the session is a time box, not an
+interval count.** The machine trims trailing cycles that stop fitting (see time-box trim
+below) and backfills the cooldown when adaptation runs short, so the block duration —
+not the cycle count — is the promise kept. (This is also why the watch face shows no
+"n of N" interval counter.)
 **Continuous graduation:** when the run seed reaches/exceeds the block (or walk seed
 ≤ 0), the block collapses to a single continuous run **capped at the block duration,
 never the raw seed** — a large calibration sentinel seed must not produce an
@@ -151,13 +162,48 @@ interval or two — the seed stops lying once the body has demonstrated what it 
   record with no future segment to slew-limit against would bypass the injury cap (the
   long run is already captured by `longestRunInterval` for the snap path).
 
-**Cooldown backfill.** The machine captures the planned total at init; on entering the
-cooldown it extends the cooldown target by the adaptation-driven shortfall, capped at
-min(authored + 10 min, authored × 2) — a planned 30-minute session still delivers ~30
-minutes of volume, filled with easy walking (safe) rather than more running (the wrong
-direction on a back-off day). Time the user *skipped* is subtracted from the backfill
-budget — a skip is a choice, and the cooldown never re-adds it (same philosophy as
-`walksDefied`). `backfilledCooldownSeconds` records the planned extension;
+**The session is a time box, not an interval count** (`fitCyclesToTimeBox()`, at every
+`advance()`). Adaptation grows *and* shrinks segments, but the plan's cycle count was
+sized for the *seed* durations — interval count is a seed artifact, time is the
+prescription (the defect a real 20-minute run surfaced, 2026-07-16: nine planned cycles
+of extended segments overran the block). Each boundary the machine projects
+`sessionElapsed` + remaining targets against `effectivePlannedTotal` and reshapes,
+moving only when it brings the projection *closer* to the plan (the factory's rounding
+rule — a small mismatch never trades a whole cycle):
+- **Over-run** (extensions / lengthened walks): drop whole trailing run/walk cycles.
+- **Under-run** (backed-off runs finishing the block early): append shortened run/walk
+  cycles at the demonstrated durations, so a struggling-but-recovering runner keeps
+  getting run attempts across the whole box instead of an early hand-off to walking.
+Silent, like convergence; never touches the segment in progress, a bare final run
+(continuous plans), or warmup/cooldown. The two deadbands are symmetric (each acts only
+past half a cycle) so trim and append can't oscillate. `plannedRunIntervals` (machine
+property) is the **as-lived** working plan's run count after reshaping — the honest
+denominator for progression. Fewer-but-longer runs (or more-but-shorter) inside the same
+time box is the graduation path.
+
+**Struggle ladder → convert to walking** (`convertRemainderToWalking()`, gated on
+`AdaptationConfig.struggleCap`, default **3**). The evidence-backed response to a
+struggling beginner is *slow → shorten → walk*, not immediate walking and not rigid
+push-through (deep-research synthesis 2026-07-16: NHS C25K / Galloway / ACSM coaching
+consensus + Dual-Mode affect theory + VT1 autonomic-recovery physiology). So the engine
+keeps offering **shortened** runs (via the under-run append above) while recovery keeps
+returning — `consecutiveStruggles` climbs on each back-off and **resets on each fast
+recovery** (a lone back-off is the loop calibrating a too-long seed, not a failure). Only
+after `struggleCap` back-offs *in a row with no recovery* does it make one decisive
+switch: the remaining run/walk block becomes a single continuous easy `.cooldownWalk` to
+the end of the box (sub-threshold walking recovers HRV fast and reads as pleasant; more
+above-threshold run attempts delay recovery and hurt adherence). One-way per session
+(`struggleConverted`). The cap is deliberately forgiving — no primary novice trial fixes
+it, and the user's instinct (keep trying to run) is the tie-breaker the evidence permits.
+
+**Cooldown backfill (fill of last resort).** Now that the under-run append fills a
+shrinking run/walk block with shortened runs, cooldown backfill only fires when append
+*cannot* — a **continuous-run plan** (no walk seed to build a cycle from) that shortens,
+or a sub-half-cycle residual. On entering the cooldown it extends the target by the
+adaptation-driven shortfall, capped at min(authored + 10 min, authored × 2). Time the
+user *skipped* is subtracted from the backfill budget — a skip is a choice, and the
+cooldown never re-adds it (same philosophy as `walksDefied`). `backfilledCooldownSeconds`
+records the planned extension;
 `deliveredCooldownBackfill` clamps it to what was actually walked (an end mid-cooldown
 never claims undelivered volume, N6) and is what reaches the summary — the complete
 screen explains it when it exceeds a minute. It is deliberately *not* in `RunDigest`.
@@ -222,6 +268,7 @@ struggling one never extends.
 | `maxWalkDuration` | 300 s | live walk cap |
 | `convergenceRounding` | 15 s | future-segment convergence grid |
 | `maxUpwardConvergenceStep` | 30 s | slew cap on upward convergence |
+| `struggleCap` | 3 | consecutive no-recovery back-offs before converting the remainder to continuous walking |
 
 The asymmetries are the point: back-off confirms faster than extension
 (`backOffWindow < extendWindow`), easing fires immediately at segment end while
@@ -258,7 +305,8 @@ short or walk-pace workouts. Calibration never touches hand-edited seeds.
 `RunSessionOutcome` into `Evaluation{seeds, reason, isStructural}`:
 
 - **`isClean`**: not ended early, all planned run intervals reached, zero back-offs,
-  zero *non-defied* cap-hit walks.
+  zero *non-defied* cap-hit walks. ("Planned" = the as-lived working plan after time-box
+  trimming, so a session that legitimately shed cycles to extended runs still reads clean.)
 - **`isStrong`**: clean *and* every planned walk ended at the recovery floor
   (`fastRecoveries >= plannedRunIntervals`).
 - **`isStruggle`**: repeated back-offs (`regressBackOffCount`) *with degraded recovery*
@@ -598,12 +646,18 @@ On the watch, structural moves are *never applied locally*; the complete screen 
     grace, a cap, and acceptance, and the choice is never punished by progression.
 12. `RunSeeds.factoryDefault` is the single seed constant; calibration only touches
     untouched defaults.
+13. A run session is a time box: `plannedRunIntervals` is the *as-lived* working-plan run
+    count after live reshaping, not the seed plan's count — the honest denominator for the
+    progression gates. Reshaping (trim over-run / append shortened cycles / cap→walk) is
+    silent like convergence and never touches the segment in progress, a bare final run,
+    or warmup/cooldown.
 
 ## 6. Where the behavior is pinned (test map)
 
 Package (`AdaptiveCore/Tests`, run with `swift test`): `AdaptationPolicyTests`
 (hysteresis math, asymmetries, recovery signals), `IntervalStateMachineTests` (the
-whole-session flow suite — there is no separate "WorkoutFlowTests" for runs),
+whole-session flow suite — there is no separate "WorkoutFlowTests" for runs; includes the
+time-box reshape and struggle-ladder cases),
 `WalkComplianceMonitorTests`, `RunProgressionTests` (+ calibration + plan-factory
 cases), `StrengthProgressionTests` (incl. the grid property sweep),
 `EffortProgressionTests` (evaluation reasons, structural flags, batch v4 round-trip),
@@ -617,9 +671,12 @@ paged views, so logic is pinned at the manager level).
 
 The literature-seeded defaults awaiting on-body validation: `recoveryDropBPM` (20),
 the cadence running threshold (140 spm), `hardBackOffWindow` (8 s), the convergence
-bounds (`convergenceRounding`, `maxUpwardConvergenceStep`), the effort-predictor
-thresholds, and the strength rest band. Deferred signal ideas (documented, not built):
-pace-decay / running-power fatigue, VO2max-trend gating, IMU movement heuristics.
+bounds (`convergenceRounding`, `maxUpwardConvergenceStep`), `struggleCap` (3 — the
+consecutive-no-recovery back-offs before converting the remainder to walking; a judgment
+call, no primary novice trial fixes it, user's "keep trying to run" instinct broke the
+tie), the effort-predictor thresholds, and the strength rest band. Deferred signal ideas
+(documented, not built): pace-decay / running-power fatigue, VO2max-trend gating, IMU
+movement heuristics.
 
 **Controller-design note (decided 2026-07, user-confirmed):** a PID controller was
 considered and rejected — the in-session actuator is binary (run/walk), where PID
