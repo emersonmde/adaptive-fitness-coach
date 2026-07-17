@@ -60,12 +60,16 @@ consecutive no-recovery back-offs make one switch to continuous easy walking
 sweep, touches no engine).
 
 **⏳ TestFlight build 25 — bumped + committed (`8b16983`), NOT yet uploaded.** The upload
-was blocked 2026-07-16: Apple now rejects builds made with the Xcode 27 **beta** SDK
-("Unsupported SDK or Xcode version — use the latest Release Candidate"), and the watch
-target's watchOS 27 minimum currently ships only in the beta. **Unblock:** install the
-Xcode 27 RC/GM, then re-run `docs/TESTFLIGHT.md` steps 2–3 (a fresh archive with the RC —
-the beta-built archive is also rejected; build number 25 is already set, no re-bump). Last
-build actually on TestFlight is 24.
+was rejected 2026-07-16 with "Unsupported SDK or Xcode version — use the latest Release
+Candidate." Diagnosis: **no Xcode 27 RC exists yet** (latest on developer.apple.com is
+beta 3, `27A5218g`, 2026-07-06), but the installed toolchain is the *superseded* beta 2
+(`27A5209h`) — App Store Connect during beta season accepts only the newest beta seed and
+bounces stale ones (Apple's "latest RC" wording is boilerplate). **Unblock (most likely):**
+download **Xcode 27 beta 3 (`27A5218g`)** from developer.apple.com/download, then re-run
+`docs/TESTFLIGHT.md` steps 2–3 — a *fresh* archive (the beta-2 archive is stamped with the
+old SDK and still bounces; build number 25 is already set, no re-bump). macOS 27 is NOT
+required (the beta already builds on the current macOS). If beta 3 is also rejected, uploads
+are closed until the real RC ships. Last build actually on TestFlight is 24.
 
 **Adaptive energy budget (2026-07-09 → build 22).** The fixed daily calorie target became a
 **live budget** built from Apple Health: basal (Mifflin) banked up front, active energy
